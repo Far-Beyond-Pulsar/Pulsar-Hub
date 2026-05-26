@@ -864,7 +864,7 @@ impl InstallerView {
             cx.spawn(async move |_, _| {
                 let _ = smol::unblock(move || {
                     #[cfg(target_os = "macos")]
-                    { let _ = std::process::Command::new("open").arg(&path).spawn(); }
+                    { let _ = std::process::Command::new("open").args(["-R", &path.to_string_lossy()]).spawn(); }
                     #[cfg(windows)]
                     { let _ = std::process::Command::new("explorer").arg(&path).spawn(); }
                     #[cfg(target_os = "linux")]
@@ -878,7 +878,7 @@ impl InstallerView {
         cx.spawn(async move |_, _| {
             let _ = smol::unblock(move || {
                 #[cfg(target_os = "macos")]
-                { let _ = std::process::Command::new("open").arg(&path).spawn(); }
+                { let _ = std::process::Command::new("open").args(["-R", &path.to_string_lossy()]).spawn(); }
                 #[cfg(windows)]
                 { let _ = std::process::Command::new("explorer").arg(&path).spawn(); }
                 #[cfg(target_os = "linux")]
