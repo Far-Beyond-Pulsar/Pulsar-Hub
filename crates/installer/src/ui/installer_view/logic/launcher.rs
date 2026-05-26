@@ -84,34 +84,7 @@ fn launch_engine(path: &PathBuf) {
 }
 
 fn launch_sidecar(install_path: &PathBuf, sidecar_id: &str) {
-    let version_root = version_root_from_install_path(install_path);
-    let bin = sidecar_binary_path(&version_root, sidecar_id);
+    let version_root = InstallerView::version_root_from_installed_path(install_path);
+    let bin = InstallerView::sidecar_binary_path(&version_root, sidecar_id);
     let _ = std::process::Command::new(bin).spawn();
-}
-
-fn version_root_from_install_path(path: &PathBuf) -> PathBuf {
-    #[cfg(target_os = "macos")]
-    {
-        if path.extension() == Some(std::ffi::OsStr::new("app")) {
-            if let Some(parent) = path.parent() {
-                return parent.to_path_buf();
-            }
-        }
-    }
-
-    path.clone()
-}
-
-fn sidecar_binary_path(version_root: &PathBuf, sidecar_id: &str) -> PathBuf {
-    #[cfg(windows)]
-    {
-        return version_root
-            .join(sidecar_id)
-            .join(format!("{sidecar_id}.exe"));
-    }
-
-    #[cfg(not(windows))]
-    {
-        version_root.join(sidecar_id).join(sidecar_id)
-    }
 }

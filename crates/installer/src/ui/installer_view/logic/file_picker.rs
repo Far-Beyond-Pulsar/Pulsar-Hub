@@ -13,7 +13,7 @@ impl InstallerView {
             if let Some(path_str) = result {
                 let path = PathBuf::from(path_str);
                 this.update(cx, |v, cx| {
-                    v.install_config.install_path = path;
+                    v.install_config.install_path = InstallerView::normalize_versions_root(path);
                     cx.notify();
                 })
                 .ok();

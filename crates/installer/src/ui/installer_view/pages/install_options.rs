@@ -90,13 +90,10 @@ impl InstallerView {
                                             !use_bundle,
                                             cx.listener(|this, _, _, cx| {
                                                 this.macos_use_app_bundle = false;
-                                                #[cfg(target_os = "macos")]
-                                                if this.install_config.install_path.extension()
-                                                    == Some(std::ffi::OsStr::new("app"))
-                                                {
-                                                    this.install_config.install_path =
-                                                        this.install_config.install_path.with_extension("");
-                                                }
+                                                this.install_config.install_path =
+                                                    InstallerView::normalize_versions_root(
+                                                        this.install_config.install_path.clone(),
+                                                    );
                                                 cx.notify();
                                             }),
                                             cx,
@@ -110,19 +107,10 @@ impl InstallerView {
                                             use_bundle,
                                             cx.listener(|this, _, _, cx| {
                                                 this.macos_use_app_bundle = true;
-                                                #[cfg(target_os = "macos")]
-                                                if this.install_config.install_path.extension()
-                                                    != Some(std::ffi::OsStr::new("app"))
-                                                {
-                                                    let p = this.install_config.install_path.clone();
-                                                    this.install_config.install_path =
-                                                        p.with_file_name(format!(
-                                                            "{}.app",
-                                                            p.file_name()
-                                                                .and_then(|n| n.to_str())
-                                                                .unwrap_or("Pulsar")
-                                                        ));
-                                                }
+                                                this.install_config.install_path =
+                                                    InstallerView::normalize_versions_root(
+                                                        this.install_config.install_path.clone(),
+                                                    );
                                                 cx.notify();
                                             }),
                                             cx,

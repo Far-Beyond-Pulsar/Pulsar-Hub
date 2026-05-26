@@ -50,28 +50,7 @@ impl InstallerView {
         //
         // We want to delete the version root, NOT a parent of it.
 
-        let delete_path: PathBuf = if install_path.extension() == Some(std::ffi::OsStr::new("app")) {
-            // macOS .app bundle: the version root is the directory that contains
-            // the .app, which in our layout is <base>/<version>/Pulsar.app → parent
-            // is <base>/<version>/.
-            //
-            // IMPORTANT: if the .app lives directly inside Applications (i.e. there
-            // is no version subdirectory), parent() would be the Applications folder
-            // itself.  We guard against this in `is_safe_to_delete` below, but we
-            // also add an explicit depth check here.
-            match install_path.parent() {
-                Some(parent) => parent.to_path_buf(),
-                None => {
-                    tracing::error!(
-                        "Uninstall aborted: cannot determine parent of {:?}",
-                        install_path
-                    );
-                    return;
-                }
-            }
-        } else {
-            install_path.clone()
-        };
+        let delete_path: PathBuf = InstallerView::version_root_from_installed_path(&install_path);
 
         // ── Safety gate ───────────────────────────────────────────────────────
         match is_safe_to_delete(&delete_path) {

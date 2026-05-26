@@ -11,7 +11,7 @@ use gpui_component::{
     Icon, IconName,
 };
 use gpui::prelude::FluentBuilder;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use crate::installed_versions::InstalledVersion;
 use super::super::{InstallerView, Page, SIDECAR_PACKAGES};
 
@@ -464,12 +464,12 @@ impl InstallerView {
 }
 
 fn installed_sidecars_for_install(install_path: &Path) -> Vec<(&'static str, &'static str, IconName)> {
-    let version_root = version_root_from_install_path(install_path);
+    let version_root = InstallerView::version_root_from_installed_path(install_path);
 
     SIDECAR_PACKAGES
         .iter()
         .filter_map(|(sidecar_id, sidecar_name, _)| {
-            let sidecar_path = sidecar_binary_path(&version_root, sidecar_id);
+            let sidecar_path = InstallerView::sidecar_binary_path(&version_root, sidecar_id);
             if sidecar_path.exists() {
                 Some((*sidecar_id, *sidecar_name, sidecar_icon(sidecar_id)))
             } else {
@@ -477,33 +477,6 @@ fn installed_sidecars_for_install(install_path: &Path) -> Vec<(&'static str, &'s
             }
         })
         .collect()
-}
-
-fn version_root_from_install_path(install_path: &Path) -> PathBuf {
-    #[cfg(target_os = "macos")]
-    {
-        if install_path.extension() == Some(std::ffi::OsStr::new("app")) {
-            if let Some(parent) = install_path.parent() {
-                return parent.to_path_buf();
-            }
-        }
-    }
-
-    install_path.to_path_buf()
-}
-
-fn sidecar_binary_path(version_root: &Path, sidecar_id: &str) -> PathBuf {
-    #[cfg(windows)]
-    {
-        return version_root
-            .join(sidecar_id)
-            .join(format!("{sidecar_id}.exe"));
-    }
-
-    #[cfg(not(windows))]
-    {
-        version_root.join(sidecar_id).join(sidecar_id)
-    }
 }
 
 fn sidecar_icon(sidecar_id: &str) -> IconName {

@@ -34,7 +34,7 @@ impl InstallerView {
         self.installed_path = None;
 
         let prefer_app_bundle = self.macos_use_app_bundle;
-        let base_path = self.install_config.install_path.clone();
+        let versions_root = InstallerView::normalize_versions_root(self.install_config.install_path.clone());
 
         // Sanitise version string into a safe directory name.
         let version_dir = release_info
@@ -45,30 +45,9 @@ impl InstallerView {
             .replace(':', "_")
             .replace(' ', "_");
 
-        // Compute per-version install layout.
-        #[cfg(target_os = "macos")]
-        let (install_dir, version_root) = {
-            let is_app_path =
-                base_path.extension() == Some(std::ffi::OsStr::new("app"));
-            let versions_root = if is_app_path {
-                base_path.with_extension("")
-            } else {
-                base_path.clone()
-            };
-            let root = versions_root.join(&version_dir);
-            let engine_dir = if prefer_app_bundle {
-                root.join("Pulsar.app")
-            } else {
-                root.clone()
-            };
-            (engine_dir, root)
-        };
-
-        #[cfg(not(target_os = "macos"))]
-        let (install_dir, version_root) = {
-            let root = base_path.join(&version_dir);
-            (root.clone(), root)
-        };
+        // Compute per-version install layout from canonical versions root.
+        let (install_dir, version_root) =
+            InstallerView::compute_install_layout(&versions_root, &version_dir, prefer_app_bundle);
 
         let selected_sidecars = self.selected_sidecars.clone();
         let sidecar_specs: Vec<(String, PathBuf)> = selected_sidecars

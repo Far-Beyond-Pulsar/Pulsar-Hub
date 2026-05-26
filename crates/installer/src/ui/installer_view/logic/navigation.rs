@@ -1,7 +1,6 @@
 //! Navigation helpers and small utilities.
 
 use gpui::{Context, Window};
-use std::path::PathBuf;
 use crate::InstallerConfig;
 use super::super::{InstallerView, Page, LogLevel, LogEntry};
 
@@ -34,25 +33,6 @@ impl InstallerView {
     /// Build the platform-appropriate default install path and wrap it in an
     /// `InstallerConfig`.
     pub fn default_install_config() -> InstallerConfig {
-        let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/tmp"));
-
-        #[cfg(target_os = "macos")]
-        let path = home.join("Applications").join("Pulsar.app");
-
-        #[cfg(windows)]
-        let path = PathBuf::from(
-            std::env::var("LOCALAPPDATA")
-                .unwrap_or_else(|_| "C:\\Users\\Default\\AppData\\Local".to_string()),
-        )
-        .join("Programs")
-        .join("Pulsar");
-
-        #[cfg(target_os = "linux")]
-        let path = home.join(".local").join("share").join("pulsar");
-
-        #[cfg(not(any(target_os = "macos", windows, target_os = "linux")))]
-        let path = home.join("pulsar");
-
-        InstallerConfig::new(path)
+        InstallerConfig::new(Self::default_versions_root())
     }
 }
