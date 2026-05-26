@@ -35,6 +35,27 @@ impl InstallerView {
 
         let prefer_app_bundle = self.macos_use_app_bundle;
         let versions_root = InstallerView::normalize_versions_root(self.install_config.install_path.clone());
+        if !InstallerView::path_in_legal_area(&versions_root) {
+            let expected = InstallerView::default_versions_root();
+            self.install_failed = true;
+            self.install_message = "Install blocked: selected path escapes sandbox.".to_string();
+            self.log(
+                LogLevel::Warning,
+                format!(
+                    "Install blocked: '{}' escapes sandbox. Expected install root '{}'.",
+                    versions_root.display(),
+                    expected.display()
+                ),
+                cx,
+            );
+            tracing::warn!(
+                "Install blocked: '{}' escapes sandbox. Expected '{}'.",
+                versions_root.display(),
+                expected.display()
+            );
+            cx.notify();
+            return;
+        }
 
         // Sanitise version string into a safe directory name.
         let version_dir = release_info

@@ -52,6 +52,28 @@ impl InstallerView {
 
         let delete_path: PathBuf = InstallerView::version_root_from_installed_path(&install_path);
 
+        if !InstallerView::path_in_legal_area(&delete_path) {
+            let expected = InstallerView::sandbox_expected_path(&delete_path);
+            self.log(
+                super::super::LogLevel::Warning,
+                format!(
+                    "Uninstall blocked: '{}' escapes sandbox. Expected inside '{}' (e.g. '{}').",
+                    delete_path.display(),
+                    InstallerView::default_versions_root().display(),
+                    expected.display()
+                ),
+                cx,
+            );
+            tracing::warn!(
+                "Uninstall blocked: '{}' escapes sandbox. Expected '{}'.",
+                delete_path.display(),
+                expected.display()
+            );
+            self.uninstall_confirm = None;
+            cx.notify();
+            return;
+        }
+
         // ── Safety gate ───────────────────────────────────────────────────────
         match is_safe_to_delete(&delete_path) {
             Ok(()) => {}

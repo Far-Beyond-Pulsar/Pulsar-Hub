@@ -32,10 +32,12 @@ fn main() {
         let window_size = size(px(960.0), px(640.0));
         let window_bounds = Bounds::centered(None, window_size, cx);
 
+        let window_title = gpui::SharedString::from("Pulsar Engine Installer");
+
         let options = WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(window_bounds)),
             titlebar: Some(TitlebarOptions {
-                title: None,
+                title: Some(window_title),
                 appears_transparent: true,
                 traffic_light_position: Some(point(px(12.0), px(10.0))),
             }),

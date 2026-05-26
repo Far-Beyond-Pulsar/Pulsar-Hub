@@ -2,7 +2,7 @@
 
 use gpui::Context;
 use std::path::PathBuf;
-use super::super::InstallerView;
+use super::super::{InstallerView, LogLevel};
 
 impl InstallerView {
     /// Spawn a native folder-picker dialog and update `install_config.install_path`
@@ -13,7 +13,26 @@ impl InstallerView {
             if let Some(path_str) = result {
                 let path = PathBuf::from(path_str);
                 this.update(cx, |v, cx| {
-                    v.install_config.install_path = InstallerView::normalize_versions_root(path);
+                    let normalized = InstallerView::normalize_versions_root(path);
+                    if InstallerView::path_in_legal_area(&normalized) {
+                        v.install_config.install_path = normalized;
+                    } else {
+                        let expected = InstallerView::default_versions_root();
+                        v.log(
+                            LogLevel::Warning,
+                            format!(
+                                "Selected path '{}' escapes sandbox. Keeping current path; expected root '{}'.",
+                                normalized.display(),
+                                expected.display()
+                            ),
+                            cx,
+                        );
+                        tracing::warn!(
+                            "Selected path '{}' escapes sandbox. Expected '{}'.",
+                            normalized.display(),
+                            expected.display()
+                        );
+                    }
                     cx.notify();
                 })
                 .ok();

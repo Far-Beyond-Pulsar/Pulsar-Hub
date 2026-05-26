@@ -54,6 +54,30 @@ impl InstallerView {
         path
     }
 
+    /// Returns true when `path` is inside the installer's legal write/read area.
+    pub fn path_in_legal_area(path: &Path) -> bool {
+        if !path.is_absolute() {
+            return false;
+        }
+
+        let path_norm = normalize_path(&std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf()));
+
+        legal_roots()
+            .into_iter()
+            .map(|root| normalize_path(&std::fs::canonicalize(&root).unwrap_or(root)))
+            .any(|root| path_norm.starts_with(&root) || path_norm == root)
+    }
+
+    /// Suggest a sandbox-safe equivalent path for warning messages.
+    pub fn sandbox_expected_path(path: &Path) -> PathBuf {
+        let legal_root = Self::default_versions_root();
+        if let Some(name) = path.file_name() {
+            legal_root.join(name)
+        } else {
+            legal_root
+        }
+    }
+
     /// Build per-version install paths from the canonical versions root.
     pub fn compute_install_layout(
         versions_root: &Path,
@@ -84,8 +108,14 @@ impl InstallerView {
         #[cfg(target_os = "macos")]
         {
             if path.extension() == Some(std::ffi::OsStr::new("app")) {
+                // Version-managed layout: <versions_root>/<version>/Pulsar.app
+                // Only strip to parent when grandparent is the canonical versions root.
                 if let Some(parent) = path.parent() {
-                    return parent.to_path_buf();
+                    if let Some(grandparent) = parent.parent() {
+                        if normalize_path(grandparent) == normalize_path(&Self::default_versions_root()) {
+                            return parent.to_path_buf();
+                        }
+                    }
                 }
             }
         }
@@ -106,4 +136,37 @@ impl InstallerView {
             version_root.join(sidecar_id).join(sidecar_id)
         }
     }
+}
+
+fn legal_roots() -> Vec<PathBuf> {
+    let mut roots = vec![InstallerView::default_versions_root()];
+
+    #[cfg(target_os = "macos")]
+    {
+        // Legacy single-app installs created before version-managed root policy.
+        if let Some(home) = dirs::home_dir() {
+            roots.push(home.join("Applications").join("Pulsar.app"));
+        }
+        roots.push(PathBuf::from("/Applications/Pulsar.app"));
+    }
+
+    roots
+}
+
+fn normalize_path(path: &Path) -> PathBuf {
+    use std::path::Component;
+
+    let mut out = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                out.pop();
+            }
+            Component::RootDir | Component::Prefix(_) | Component::Normal(_) => {
+                out.push(component.as_os_str());
+            }
+        }
+    }
+    out
 }
