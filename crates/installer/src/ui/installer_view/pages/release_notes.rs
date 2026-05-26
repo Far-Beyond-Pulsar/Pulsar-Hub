@@ -2,7 +2,7 @@
 
 use gpui::{
     Context, FontWeight, IntoElement, InteractiveElement as _,
-    ParentElement, Styled, Window, px,
+    ParentElement, Styled, Window, px, StatefulInteractiveElement,
 };
 use gpui_component::{
     ActiveTheme,
