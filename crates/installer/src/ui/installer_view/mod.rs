@@ -277,7 +277,7 @@ impl InstallerView {
                                         .items_center()
                                         .justify_center()
                                         .when(is_done, |e| {
-                                            e.bg(cx.theme().secondary.opacity(0.2)).child(
+                                            e.bg(cx.theme().secondary).child(
                                                 Icon::new(IconName::Check)
                                                     .with_size(px(12.0))
                                                     .text_color(cx.theme().secondary),

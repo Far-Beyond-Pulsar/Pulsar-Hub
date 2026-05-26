@@ -238,7 +238,7 @@ impl RenderOnce for Alert {
                         .p_0p5()
                         .rounded(cx.theme().radius)
                         .hover(|this| this.bg(color.opacity(0.1)))
-                        .active(|this| this.bg(color.opacity(0.2)))
+                        .active(|this| this.bg(color))
                         .on_click(move |ev, window, cx| {
                             on_close(ev, window, cx);
                         })

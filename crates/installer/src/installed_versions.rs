@@ -92,16 +92,34 @@ fn try_load_from_dir(dir: &Path) -> Option<InstalledVersion> {
     let meta_path = dir.join(".pulsar-install.json");
     let metadata: PulsarInstallMetadata = if meta_path.exists() {
         let content = std::fs::read_to_string(&meta_path).ok()?;
-        serde_json::from_str(&content).ok()?
+        let parsed: PulsarInstallMetadata = serde_json::from_str(&content).ok()?;
+
+        // Ignore stray metadata files that are not attached to a real install directory.
+        if !looks_like_install_dir(dir) {
+            tracing::warn!(
+                "Ignoring install metadata at '{}' because directory does not look like an install",
+                dir.display()
+            );
+            return None;
+        }
+
+        // Keep scanner behavior deterministic: metadata path should point to this directory.
+        let dir_norm = canonical_or_same(dir);
+        let meta_norm = canonical_or_same(&parsed.install_path);
+        if dir_norm != meta_norm {
+            tracing::warn!(
+                "Ignoring install metadata at '{}' because install_path '{}' does not match directory",
+                dir.display(),
+                parsed.install_path.display()
+            );
+            return None;
+        }
+
+        parsed
     } else {
         // Infer minimal metadata only for legacy single-install layouts.
         // Do not treat container roots (e.g. a versions parent folder) as installs.
-        let looks_like_legacy_install =
-            dir.join("Contents").join("Info.plist").exists()
-                || dir.join("Contents").join("MacOS").exists()
-                || dir.join("pulsar").is_file()
-                || dir.join("pulsar.exe").is_file();
-        if !looks_like_legacy_install {
+        if !looks_like_install_dir(dir) {
             return None;
         }
 
@@ -121,6 +139,13 @@ fn try_load_from_dir(dir: &Path) -> Option<InstalledVersion> {
         disk_size_bytes,
         update_available: false,
     })
+}
+
+fn looks_like_install_dir(dir: &Path) -> bool {
+    dir.join("Contents").join("Info.plist").exists()
+        || dir.join("Contents").join("MacOS").exists()
+        || dir.join("pulsar").is_file()
+        || dir.join("pulsar.exe").is_file()
 }
 
 /// Return directories to check on each supported platform.

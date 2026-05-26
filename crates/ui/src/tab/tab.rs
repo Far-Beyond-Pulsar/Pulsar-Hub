@@ -224,7 +224,7 @@ impl TabVariant {
                 bg: if selected {
                     cx.theme().tab_active
                 } else {
-                    cx.theme().tab_active.opacity(0.2) // Subtle preview of active state
+                    cx.theme().tab_active // Subtle preview of active state
                 },
                 borders: Edges {
                     top: if selected { px(2.) } else { px(1.) },
@@ -260,7 +260,7 @@ impl TabVariant {
                 inner_bg: if selected {
                     cx.theme().background
                 } else {
-                    cx.theme().muted.opacity(0.2) // Subtle hover effect
+                    cx.theme().muted // Subtle hover effect
                 },
                 inner_radius: cx.theme().radius,
                 ..Default::default()

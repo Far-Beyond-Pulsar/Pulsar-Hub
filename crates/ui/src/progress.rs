@@ -40,7 +40,7 @@ impl RenderOnce for Progress {
             .relative()
             .h(px(self.height))
             .rounded(radius)
-            .bg(cx.theme().progress_bar.opacity(0.2))
+            .bg(cx.theme().progress_bar)
             .child(
                 div()
                     .absolute()

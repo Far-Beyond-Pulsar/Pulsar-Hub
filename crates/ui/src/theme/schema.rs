@@ -589,14 +589,14 @@ impl ThemeColor {
         );
         apply_color!(
             description_list_label,
-            fallback = self.background.blend(self.border.opacity(0.2))
+            fallback = self.background.blend(self.border)
         );
         apply_color!(
             description_list_label_foreground,
             fallback = self.secondary_foreground
         );
         apply_color!(drag_border, fallback = self.primary.opacity(0.65));
-        apply_color!(drop_target, fallback = self.primary.opacity(0.2));
+        apply_color!(drop_target, fallback = self.primary);
         apply_color!(input, fallback = self.border);
         apply_color!(link, fallback = self.primary);
         apply_color!(link_active, fallback = self.link);
