@@ -257,7 +257,7 @@ impl InstallerView {
                     return;
                 }
             };
-            let url = "https://raw.githubusercontent.com/Far-Beyond-Pulsar/Pulsar-Native/main/LICENSE";
+            let url = "https://raw.githubusercontent.com/Far-Beyond-Pulsar/Pulsar-Native/main/LICENSE.md";
             let request = match http::Request::builder()
                 .method("GET")
                 .uri(url)
@@ -741,14 +741,27 @@ impl InstallerView {
             .and_then(|n| n.to_str())
             .unwrap_or("");
 
-        if archive_name.ends_with(".app.zip") || archive_name.ends_with(".zip") {
+        let is_app_zip = archive_name.ends_with(".app.zip");
+
+        if is_app_zip || archive_name.ends_with(".zip") {
+            // For pre-built .app.zip bundles, extract into the *parent* directory so that
+            // the zip's top-level "Pulsar.app/" lands at the expected install_dir path,
+            // rather than being nested inside it.
+            let extract_root = if is_app_zip {
+                install_dir.parent()
+                    .map(|p| p.to_path_buf())
+                    .unwrap_or_else(|| install_dir.clone())
+            } else {
+                install_dir.clone()
+            };
+            fs::create_dir_all(&extract_root).map_err(crate::error::InstallerError::Io)?;
             let file = fs::File::open(archive_path).map_err(crate::error::InstallerError::Io)?;
             let mut archive = zip::ZipArchive::new(file)
                 .map_err(|e| crate::error::InstallerError::Other(e.to_string()))?;
             for i in 0..archive.len() {
                 let mut zf = archive.by_index(i)
                     .map_err(|e| crate::error::InstallerError::Other(e.to_string()))?;
-                let out = install_dir.join(zf.mangled_name());
+                let out = extract_root.join(zf.mangled_name());
                 if zf.name().ends_with('/') {
                     fs::create_dir_all(&out).map_err(crate::error::InstallerError::Io)?;
                 } else {
@@ -800,15 +813,31 @@ impl InstallerView {
 
         #[cfg(target_os = "macos")]
         {
-            use crate::platform::MacOSInstaller;
-            use crate::traits::{Progress as Prog, ProgressCallback};
-            let binary_name = "pulsar".to_string();
-            let source_binary = install_dir.join("Contents").join("MacOS").join(&binary_name);
-            let installer = MacOSInstaller::new(install_dir.clone(), version.to_string(), binary_name);
-            let progress: ProgressCallback = Box::new(|p: Prog| {
-                tracing::info!("[{}%] {}", p.current, p.message.unwrap_or(""));
-            });
-            installer.install(&source_binary, progress).await?;
+            // If the asset was a pre-built .app.zip the bundle is already complete;
+            // just ensure the binary is executable.
+            if is_app_zip {
+                use std::os::unix::fs::PermissionsExt;
+                // Walk Contents/MacOS/ and chmod +x every file there.
+                let macos_dir = install_dir.join("Contents").join("MacOS");
+                if let Ok(entries) = fs::read_dir(&macos_dir) {
+                    for entry in entries.flatten() {
+                        let p = entry.path();
+                        if p.is_file() {
+                            let _ = fs::set_permissions(&p, fs::Permissions::from_mode(0o755));
+                        }
+                    }
+                }
+            } else {
+                use crate::platform::MacOSInstaller;
+                use crate::traits::{Progress as Prog, ProgressCallback};
+                let binary_name = "pulsar".to_string();
+                let source_binary = install_dir.join("Contents").join("MacOS").join(&binary_name);
+                let installer = MacOSInstaller::new(install_dir.clone(), version.to_string(), binary_name);
+                let progress: ProgressCallback = Box::new(|p: Prog| {
+                    tracing::info!("[{}%] {}", p.current, p.message.unwrap_or(""));
+                });
+                installer.install(&source_binary, progress).await?;
+            }
         }
 
         #[cfg(target_os = "linux")]
