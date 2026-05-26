@@ -2715,7 +2715,7 @@ impl InstallerView {
 // ─── Page: Complete ───────────────────────────────────────────────────────────
 
 impl InstallerView {
-    fn render_complete(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render_complete(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         let success = !self.install_failed;
 
         v_flex()
@@ -2869,8 +2869,10 @@ impl InstallerView {
                         Button::new("finish-btn")
                             .primary()
                             .label("Finish")
-                            .on_click(cx.listener(|_, _, _, cx| {
-                                cx.quit();
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.current_page = Page::VersionsManager;
+                                this.load_installed_versions(cx);
+                                cx.notify();
                             })),
                     ),
             )
