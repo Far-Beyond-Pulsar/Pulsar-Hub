@@ -1,7 +1,7 @@
 //! Shared UI helpers reused across multiple pages.
 
 use gpui::{Context, FontWeight, IntoElement, ParentElement, Styled, px};
-use gpui_component::{ActiveTheme, Sizable as _, spinner::Spinner, h_flex, v_flex};
+use gpui_component::{ActiveTheme, spinner::Spinner, h_flex, v_flex};
 use gpui::prelude::FluentBuilder;
 use super::super::InstallerView;
 

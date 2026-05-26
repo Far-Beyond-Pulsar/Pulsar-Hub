@@ -1,6 +1,6 @@
 //! Welcome page — landing screen with "Install New" and "Manage Installed" cards.
 
-use gpui::{Context, FontWeight, IntoElement, InteractiveElement as _, ParentElement, Styled, px};
+use gpui::{Context, FontWeight, IntoElement, ParentElement, Styled, px};
 use gpui_component::{
     ActiveTheme, Sizable as _,
     button::{Button, ButtonVariants as _},
