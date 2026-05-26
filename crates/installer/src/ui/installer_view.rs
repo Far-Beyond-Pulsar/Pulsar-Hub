@@ -594,8 +594,19 @@ impl InstallerView {
         self.log_entries.clear();
         self.install_failed = false;
         self.installed_path = None;
-        let install_dir = self.install_config.install_path.clone();
         let prefer_app_bundle = self.macos_use_app_bundle;
+        // On macOS, binary mode uses a plain directory (no .app); strip the extension.
+        #[cfg(target_os = "macos")]
+        let install_dir = {
+            let base = self.install_config.install_path.clone();
+            if !prefer_app_bundle && base.extension() == Some(std::ffi::OsStr::new("app")) {
+                base.with_extension("")
+            } else {
+                base
+            }
+        };
+        #[cfg(not(target_os = "macos"))]
+        let install_dir = self.install_config.install_path.clone();
         cx.notify();
 
         cx.spawn(async move |this, cx| {
@@ -853,16 +864,31 @@ impl InstallerView {
                     }
                 }
             } else {
-                use crate::platform::MacOSInstaller;
-                use crate::traits::{Progress as Prog, ProgressCallback};
-                let binary_name = "pulsar".to_string();
-                // Use the downloaded archive directly as the binary source —
-                // MacOSInstaller will create the bundle structure and copy it in.
-                let installer = MacOSInstaller::new(install_dir.clone(), version.to_string(), binary_name);
-                let progress: ProgressCallback = Box::new(|p: Prog| {
-                    tracing::info!("[{}%] {}", p.current, p.message.unwrap_or(""));
-                });
-                installer.install(archive_path, progress).await?;
+                // Detect mode from path: .app extension → bundle (use MacOSInstaller),
+                // no .app extension → binary mode (plain copy + chmod).
+                let is_bundle_path = install_dir.extension() == Some(std::ffi::OsStr::new("app"));
+                if is_bundle_path {
+                    use crate::platform::MacOSInstaller;
+                    use crate::traits::{Progress as Prog, ProgressCallback};
+                    let binary_name = "pulsar".to_string();
+                    let installer = MacOSInstaller::new(install_dir.clone(), version.to_string(), binary_name);
+                    let progress: ProgressCallback = Box::new(|p: Prog| {
+                        tracing::info!("[{}%] {}", p.current, p.message.unwrap_or(""));
+                    });
+                    installer.install(archive_path, progress).await?;
+                } else {
+                    // Binary mode: install as a plain executable.
+                    use std::os::unix::fs::PermissionsExt;
+                    fs::create_dir_all(install_dir).map_err(crate::error::InstallerError::Io)?;
+                    let dest = install_dir.join("pulsar");
+                    fs::copy(archive_path, &dest).map_err(crate::error::InstallerError::Io)?;
+                    fs::set_permissions(&dest, fs::Permissions::from_mode(0o755))
+                        .map_err(crate::error::InstallerError::Io)?;
+                    // Strip quarantine attribute so macOS allows execution.
+                    let _ = std::process::Command::new("xattr")
+                        .args(["-d", "com.apple.quarantine", &dest.to_string_lossy().as_ref()])
+                        .output();
+                }
             }
         }
 
@@ -918,7 +944,13 @@ impl InstallerView {
             cx.spawn(async move |_, _| {
                 let _ = smol::unblock(move || {
                     #[cfg(target_os = "macos")]
-                    { let _ = std::process::Command::new("open").arg("-a").arg(&path).spawn(); }
+                    {
+                        if path.extension() == Some(std::ffi::OsStr::new("app")) {
+                            let _ = std::process::Command::new("open").arg("-a").arg(&path).spawn();
+                        } else {
+                            let _ = std::process::Command::new(path.join("pulsar")).spawn();
+                        }
+                    }
                     #[cfg(windows)]
                     { let _ = std::process::Command::new(path.join("pulsar.exe")).spawn(); }
                     #[cfg(target_os = "linux")]
@@ -932,7 +964,13 @@ impl InstallerView {
         cx.spawn(async move |_, _| {
             let _ = smol::unblock(move || {
                 #[cfg(target_os = "macos")]
-                { let _ = std::process::Command::new("open").arg("-a").arg(&path).spawn(); }
+                {
+                    if path.extension() == Some(std::ffi::OsStr::new("app")) {
+                        let _ = std::process::Command::new("open").arg("-a").arg(&path).spawn();
+                    } else {
+                        let _ = std::process::Command::new(path.join("pulsar")).spawn();
+                    }
+                }
                 #[cfg(windows)]
                 { let _ = std::process::Command::new(path.join("pulsar.exe")).spawn(); }
                 #[cfg(target_os = "linux")]
