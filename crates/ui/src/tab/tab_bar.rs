@@ -1,17 +1,23 @@
+use std::sync::Arc;
+
+use crate::button::{Button, ButtonVariants as _};
+use crate::popup_menu::PopupMenuExt as _;
+use crate::{h_flex, ActiveTheme, IconName, Selectable, Sizable, Size, StyledExt};
+use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    AnyElement, App, Corner, Div, Edges, ElementId, InteractiveElement, IntoElement, ParentElement,
+    div, Action, AnyElement, App, Corner, Div, Edges, ElementId, IntoElement, ParentElement,
     Pixels, RenderOnce, ScrollHandle, Stateful, StatefulInteractiveElement as _, StyleRefinement,
-    Styled, Window, div, prelude::FluentBuilder as _, px,
+    Styled, Window,
 };
+use gpui::{px, InteractiveElement};
 use smallvec::SmallVec;
-use std::rc::Rc;
 
 use super::{Tab, TabVariant};
-use crate::button::{Button, ButtonVariants as _};
-use crate::menu::{DropdownMenu as _, PopupMenuItem};
-use crate::{ActiveTheme, IconName, Selectable, Sizable, Size, StyledExt, h_flex};
 
-/// A TabBar element that contains multiple [`Tab`] items.
+#[derive(Action, Debug, Clone, Copy, PartialEq, Eq)]
+#[action(namespace = tab_bar, no_json)]
+pub struct SelectTab(usize);
+
 #[derive(IntoElement)]
 pub struct TabBar {
     base: Stateful<Div>,
@@ -25,7 +31,7 @@ pub struct TabBar {
     variant: TabVariant,
     size: Size,
     menu: bool,
-    on_click: Option<Rc<dyn Fn(&usize, &mut Window, &mut App) + 'static>>,
+    on_click: Option<Arc<dyn Fn(&usize, &mut Window, &mut App) + 'static>>,
     /// Special for internal TabPanel to remove the top border.
     tab_item_top_offset: Pixels,
 }
@@ -80,13 +86,13 @@ impl TabBar {
         self
     }
 
-    /// Set whether to show the menu button when tabs overflow, default is false.
-    pub fn menu(mut self, menu: bool) -> Self {
+    /// Enable or disable the popup menu for the TabBar
+    pub fn with_menu(mut self, menu: bool) -> Self {
         self.menu = menu;
         self
     }
 
-    /// Track the scroll of the TabBar.
+    /// Track the scroll of the TabBar
     pub fn track_scroll(mut self, scroll_handle: &ScrollHandle) -> Self {
         self.scroll_handle = Some(scroll_handle.clone());
         self
@@ -105,6 +111,7 @@ impl TabBar {
     }
 
     /// Add children of the TabBar, all children will inherit the variant.
+    ///
     pub fn children(mut self, children: impl IntoIterator<Item = impl Into<Tab>>) -> Self {
         self.children.extend(children.into_iter().map(Into::into));
         self
@@ -122,7 +129,7 @@ impl TabBar {
         self
     }
 
-    /// Set the last empty space element of the TabBar.
+    /// Set the last empty space element of the TabBar
     pub fn last_empty_space(mut self, last_empty_space: impl IntoElement) -> Self {
         self.last_empty_space = last_empty_space.into_any_element();
         self
@@ -131,11 +138,8 @@ impl TabBar {
     /// Set the on_click callback of the TabBar, the first parameter is the index of the clicked tab.
     ///
     /// When this is set, the children's on_click will be ignored.
-    pub fn on_click<F>(mut self, on_click: F) -> Self
-    where
-        F: Fn(&usize, &mut Window, &mut App) + 'static,
-    {
-        self.on_click = Some(Rc::new(on_click));
+    pub fn on_click(mut self, on_click: impl Fn(&usize, &mut Window, &mut App) + 'static) -> Self {
+        self.on_click = Some(Arc::new(on_click));
         self
     }
 
@@ -181,9 +185,9 @@ impl RenderOnce for TabBar {
             TabVariant::Segmented => {
                 let padding_x = match self.size {
                     Size::XSmall => px(2.),
-                    Size::Small => px(3.),
+                    Size::Small => px(2.),
                     Size::Large => px(6.),
-                    _ => px(4.),
+                    _ => px(5.),
                 };
                 let padding = Edges {
                     left: padding_x,
@@ -208,10 +212,17 @@ impl RenderOnce for TabBar {
 
         let mut item_labels = Vec::new();
         let selected_index = self.selected_index;
-        let on_click = self.on_click.clone();
 
         self.base
             .group("tab-bar")
+            .on_action({
+                let on_click = self.on_click.clone();
+                move |action: &SelectTab, window: &mut Window, cx: &mut App| {
+                    if let Some(on_click) = on_click.clone() {
+                        on_click(&action.0, window, cx);
+                    }
+                }
+            })
             .relative()
             .flex()
             .items_center()
@@ -232,7 +243,10 @@ impl RenderOnce for TabBar {
                     )
                 },
             )
-            .rounded(self.variant.tab_bar_radius(self.size, cx))
+            .when(
+                self.variant == TabVariant::Pill || self.variant == TabVariant::Segmented,
+                |this| this.rounded(cx.theme().radius),
+            )
             .paddings(paddings)
             .refine_style(&self.style)
             .when_some(self.prefix, |this, prefix| this.child(prefix))
@@ -247,10 +261,8 @@ impl RenderOnce for TabBar {
                     .gap(gap)
                     .children(self.children.into_iter().enumerate().map(|(ix, child)| {
                         item_labels.push((child.label.clone(), child.disabled));
-                        let tab_bar_prefix = child.tab_bar_prefix.unwrap_or(true);
                         child
-                            .ix(ix)
-                            .tab_bar_prefix(tab_bar_prefix)
+                            .id(ix)
                             .mt(self.tab_item_top_offset)
                             .with_variant(self.variant)
                             .with_size(self.size)
@@ -271,19 +283,15 @@ impl RenderOnce for TabBar {
                         .xsmall()
                         .ghost()
                         .icon(IconName::ChevronDown)
-                        .dropdown_menu(move |mut this, _, _| {
-                            this = this.scrollable(true);
+                        .popup_menu(move |mut this, _, _| {
+                            this = this.scrollable();
                             for (ix, (label, disabled)) in item_labels.iter().enumerate() {
-                                this = this.item(
-                                    PopupMenuItem::new(label.clone().unwrap_or_default())
-                                        .checked(selected_index == Some(ix))
-                                        .disabled(*disabled)
-                                        .when_some(on_click.clone(), |this, on_click| {
-                                            this.on_click(move |_, window, cx| {
-                                                on_click(&ix, window, cx)
-                                            })
-                                        }),
-                                )
+                                this = this.menu_with_check_and_disabled(
+                                    label.clone().unwrap_or_default(),
+                                    selected_index == Some(ix),
+                                    Box::new(SelectTab(ix)),
+                                    *disabled,
+                                );
                             }
 
                             this

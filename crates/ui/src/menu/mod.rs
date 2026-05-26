@@ -1,17 +1,22 @@
 use gpui::App;
 
-mod app_menu_bar;
-mod context_menu;
-mod dropdown_menu;
 mod menu_item;
-mod popup_menu;
 
-pub use app_menu_bar::AppMenuBar;
-pub use context_menu::{ContextMenu, ContextMenuExt, ContextMenuState};
-pub use dropdown_menu::DropdownMenu;
-pub use popup_menu::{PopupMenu, PopupMenuItem};
+pub mod app_menu_bar;
+pub use app_menu_bar::{AppMenuBar, AppMenusCache};
+pub mod context_menu;
+pub mod popup_menu;
+pub use popup_menu::{PopupMenu, PopupMenuExt as DropdownMenu, PopupMenuItem};
 
 pub(crate) fn init(cx: &mut App) {
     app_menu_bar::init(cx);
     popup_menu::init(cx);
 }
+
+struct MenuInit;
+impl crate::registry::UiComponentInit for MenuInit {
+    fn init(&self, cx: &mut App) {
+        init(cx);
+    }
+}
+crate::register_ui_component!(MenuInit);

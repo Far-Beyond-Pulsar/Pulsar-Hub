@@ -56,7 +56,7 @@ impl Text {
     }
 }
 
-impl<I> From<I> for PlotLabel
+impl<I> From<I> for Label
 where
     I: Iterator<Item = Text>,
 {
@@ -66,9 +66,9 @@ where
 }
 
 #[derive(Default)]
-pub struct PlotLabel(Vec<Text>);
+pub struct Label(Vec<Text>);
 
-impl PlotLabel {
+impl Label {
     pub fn new(items: Vec<Text>) -> Self {
         Self(items)
     }

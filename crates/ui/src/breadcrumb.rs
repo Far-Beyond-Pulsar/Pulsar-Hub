@@ -8,31 +8,28 @@ use gpui::{
 
 use crate::{h_flex, ActiveTheme, Icon, IconName, StyledExt};
 
-/// A breadcrumb navigation element.
 #[derive(IntoElement)]
 pub struct Breadcrumb {
     style: StyleRefinement,
     items: Vec<BreadcrumbItem>,
 }
 
-/// Item for the [`Breadcrumb`].
 #[derive(IntoElement)]
 pub struct BreadcrumbItem {
     id: ElementId,
     style: StyleRefinement,
-    label: SharedString,
+    text: SharedString,
     on_click: Option<Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>>,
     disabled: bool,
     is_last: bool,
 }
 
 impl BreadcrumbItem {
-    /// Create a new BreadcrumbItem with the given id and label.
-    pub fn new(label: impl Into<SharedString>) -> Self {
+    pub fn new(id: impl Into<ElementId>, text: impl Into<SharedString>) -> Self {
         Self {
-            id: ElementId::Integer(0),
+            id: id.into(),
             style: StyleRefinement::default(),
-            label: label.into(),
+            text: text.into(),
             on_click: None,
             disabled: false,
             is_last: false,
@@ -52,11 +49,6 @@ impl BreadcrumbItem {
         self
     }
 
-    fn id(mut self, id: impl Into<ElementId>) -> Self {
-        self.id = id.into();
-        self
-    }
-
     /// For internal use only.
     fn is_last(mut self, is_last: bool) -> Self {
         self.is_last = is_last;
@@ -70,29 +62,11 @@ impl Styled for BreadcrumbItem {
     }
 }
 
-impl From<&'static str> for BreadcrumbItem {
-    fn from(value: &'static str) -> Self {
-        Self::new(value)
-    }
-}
-
-impl From<String> for BreadcrumbItem {
-    fn from(value: String) -> Self {
-        Self::new(value)
-    }
-}
-
-impl From<SharedString> for BreadcrumbItem {
-    fn from(value: SharedString) -> Self {
-        Self::new(value)
-    }
-}
-
 impl RenderOnce for BreadcrumbItem {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         div()
             .id(self.id)
-            .child(self.label)
+            .child(self.text)
             .text_color(cx.theme().muted_foreground)
             .when(self.is_last, |this| this.text_color(cx.theme().foreground))
             .when(self.disabled, |this| {
@@ -110,7 +84,6 @@ impl RenderOnce for BreadcrumbItem {
 }
 
 impl Breadcrumb {
-    /// Create a new breadcrumb.
     pub fn new() -> Self {
         Self {
             items: Vec::new(),
@@ -118,15 +91,9 @@ impl Breadcrumb {
         }
     }
 
-    /// Add an [`BreadcrumbItem`] to the breadcrumb.
-    pub fn child(mut self, item: impl Into<BreadcrumbItem>) -> Self {
-        self.items.push(item.into());
-        self
-    }
-
-    /// Add multiple [`BreadcrumbItem`] items to the breadcrumb.
-    pub fn children(mut self, items: impl IntoIterator<Item = impl Into<BreadcrumbItem>>) -> Self {
-        self.items.extend(items.into_iter().map(Into::into));
+    /// Add an item to the breadcrumb.
+    pub fn item(mut self, item: BreadcrumbItem) -> Self {
+        self.items.push(item);
         self
     }
 }
@@ -156,7 +123,6 @@ impl RenderOnce for Breadcrumb {
         for (ix, item) in self.items.into_iter().enumerate() {
             let is_last = ix == items_count - 1;
 
-            let item = item.id(ix);
             children.push(item.is_last(is_last).into_any_element());
             if !is_last {
                 children.push(BreadcrumbSeparator.into_any_element());

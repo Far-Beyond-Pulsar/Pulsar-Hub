@@ -1,29 +1,28 @@
 use std::ops::Range;
 
 use gpui::{
-    App, Context, Div, InteractiveElement as _, IntoElement, ParentElement as _, Stateful,
-    Styled as _, Window, div,
+    div, App, Context, Div, InteractiveElement as _, IntoElement, ParentElement as _, Stateful,
+    Styled as _, Window,
 };
 
 use crate::{
-    ActiveTheme as _, Icon, IconName, Size, h_flex,
-    menu::PopupMenu,
-    table::{Column, ColumnSort, TableState, loading::Loading},
+    h_flex,
+    popup_menu::PopupMenu,
+    table::{loading::Loading, Column, ColumnSort, Table},
+    ActiveTheme as _, Icon, IconName, Size,
 };
 
-/// A delegate trait for providing data and rendering for a table.
 #[allow(unused)]
 pub trait TableDelegate: Sized + 'static {
     /// Return the number of columns in the table.
     fn columns_count(&self, cx: &App) -> usize;
-
     /// Return the number of rows in the table.
     fn rows_count(&self, cx: &App) -> usize;
 
     /// Returns the table column at the given index.
     ///
     /// This only call on Table prepare or refresh.
-    fn column(&self, col_ix: usize, cx: &App) -> Column;
+    fn column(&self, col_ix: usize, cx: &App) -> &Column;
 
     /// Perform sort on the column at the given index.
     fn perform_sort(
@@ -31,25 +30,16 @@ pub trait TableDelegate: Sized + 'static {
         col_ix: usize,
         sort: ColumnSort,
         window: &mut Window,
-        cx: &mut Context<TableState<Self>>,
+        cx: &mut Context<Table<Self>>,
     ) {
-    }
-
-    /// Render the table head row.
-    fn render_header(
-        &mut self,
-        window: &mut Window,
-        cx: &mut Context<TableState<Self>>,
-    ) -> Stateful<Div> {
-        div().id("header")
     }
 
     /// Render the header cell at the given column index, default to the column name.
     fn render_th(
-        &mut self,
+        &self,
         col_ix: usize,
         window: &mut Window,
-        cx: &mut Context<TableState<Self>>,
+        cx: &mut Context<Table<Self>>,
     ) -> impl IntoElement {
         div()
             .size_full()
@@ -57,35 +47,27 @@ pub trait TableDelegate: Sized + 'static {
     }
 
     /// Render the row at the given row and column.
-    ///
-    /// Not include the table head row.
     fn render_tr(
-        &mut self,
+        &self,
         row_ix: usize,
         window: &mut Window,
-        cx: &mut Context<TableState<Self>>,
+        cx: &mut Context<Table<Self>>,
     ) -> Stateful<Div> {
-        div().id(("row", row_ix))
+        h_flex().id(("row", row_ix))
     }
 
     /// Render the context menu for the row at the given row index.
-    fn context_menu(
-        &mut self,
-        row_ix: usize,
-        menu: PopupMenu,
-        window: &mut Window,
-        cx: &mut Context<TableState<Self>>,
-    ) -> PopupMenu {
+    fn context_menu(&self, row_ix: usize, menu: PopupMenu, window: &Window, cx: &App) -> PopupMenu {
         menu
     }
 
     /// Render cell at the given row and column.
     fn render_td(
-        &mut self,
+        &self,
         row_ix: usize,
         col_ix: usize,
         window: &mut Window,
-        cx: &mut Context<TableState<Self>>,
+        cx: &mut Context<Table<Self>>,
     ) -> impl IntoElement;
 
     /// Move the column at the given `col_ix` to insert before the column at the given `to_ix`.
@@ -94,22 +76,17 @@ pub trait TableDelegate: Sized + 'static {
         col_ix: usize,
         to_ix: usize,
         window: &mut Window,
-        cx: &mut Context<TableState<Self>>,
+        cx: &mut Context<Table<Self>>,
     ) {
     }
 
     /// Return a Element to show when table is empty.
     fn render_empty(
-        &mut self,
-        window: &mut Window,
-        cx: &mut Context<TableState<Self>>,
+        &self,
+        _window: &mut Window,
+        cx: &mut Context<Table<Self>>,
     ) -> impl IntoElement {
-        h_flex()
-            .size_full()
-            .justify_center()
-            .text_color(cx.theme().muted_foreground.opacity(0.6))
-            .child(Icon::new(IconName::Inbox).size_12())
-            .into_any_element()
+        crate::states::empty_state_placeholder(cx)
     }
 
     /// Return true to show the loading view.
@@ -121,19 +98,19 @@ pub trait TableDelegate: Sized + 'static {
     ///
     /// The size is the size of the Table.
     fn render_loading(
-        &mut self,
+        &self,
         size: Size,
         window: &mut Window,
-        cx: &mut Context<TableState<Self>>,
+        cx: &mut Context<Table<Self>>,
     ) -> impl IntoElement {
         Loading::new().size(size)
     }
 
     /// Return true to enable load more data when scrolling to the bottom.
     ///
-    /// Default: false
-    fn has_more(&self, cx: &App) -> bool {
-        false
+    /// Default: true
+    fn is_eof(&self, cx: &App) -> bool {
+        true
     }
 
     /// Returns a threshold value (n rows), of course, when scrolling to the bottom,
@@ -151,13 +128,13 @@ pub trait TableDelegate: Sized + 'static {
     ///
     /// This is always called when the table is near the bottom,
     /// so you must check if there is more data to load or lock the loading state.
-    fn load_more(&mut self, window: &mut Window, cx: &mut Context<TableState<Self>>) {}
+    fn load_more(&mut self, window: &mut Window, cx: &mut Context<Table<Self>>) {}
 
     /// Render the last empty column, default to empty.
     fn render_last_empty_col(
         &mut self,
         window: &mut Window,
-        cx: &mut Context<TableState<Self>>,
+        cx: &mut Context<Table<Self>>,
     ) -> impl IntoElement {
         h_flex().w_3().h_full().flex_shrink_0()
     }
@@ -172,7 +149,7 @@ pub trait TableDelegate: Sized + 'static {
         &mut self,
         visible_range: Range<usize>,
         window: &mut Window,
-        cx: &mut Context<TableState<Self>>,
+        cx: &mut Context<Table<Self>>,
     ) {
     }
 
@@ -186,7 +163,7 @@ pub trait TableDelegate: Sized + 'static {
         &mut self,
         visible_range: Range<usize>,
         window: &mut Window,
-        cx: &mut Context<TableState<Self>>,
+        cx: &mut Context<Table<Self>>,
     ) {
     }
 }

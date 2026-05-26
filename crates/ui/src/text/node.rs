@@ -1,200 +1,43 @@
 use std::{
-    collections::HashMap,
+    collections::{hash_map::DefaultHasher, HashMap},
+    hash::{Hash, Hasher},
     ops::Range,
-    sync::{Arc, Mutex},
+    sync::Arc,
+    time::Duration,
 };
 
 use gpui::{
-    AnyElement, App, DefiniteLength, Div, ElementId, FontStyle, FontWeight, Half, HighlightStyle,
-    InteractiveElement as _, IntoElement, Length, ObjectFit, ParentElement, SharedString,
-    SharedUri, StatefulInteractiveElement, Styled, StyledImage as _, Window, div, img,
-    prelude::FluentBuilder as _, px, relative, rems,
+    div, img, prelude::FluentBuilder as _, px, relative, rems, AnyElement, App, AppContext as _,
+    ClipboardItem, DefiniteLength, Div, ElementId, Entity, FontStyle, FontWeight, Half,
+    HighlightStyle, Image, ImageFormat, ImageSource, InteractiveElement as _, IntoElement, Length,
+    MouseButton, ObjectFit, ParentElement, RenderImage, SharedString, SharedUri,
+    StatefulInteractiveElement, Styled, StyledImage as _, Window,
 };
 use markdown::mdast;
+use once_cell::sync::Lazy;
+use regex;
+use resvg::{tiny_skia, usvg};
 use ropey::Rope;
+use std::sync::Mutex;
 
 use crate::{
-    ActiveTheme as _, Icon, IconName, StyledExt, h_flex,
+    h_flex,
     highlighter::{HighlightTheme, SyntaxHighlighter},
-    text::{
-        CodeBlockActionsFn,
-        document::NodeRenderOptions,
-        inline::{Inline, InlineState},
-    },
+    text::inline::{Inline, InlineState},
     tooltip::Tooltip,
-    v_flex,
+    v_flex, ActiveTheme as _, Icon, IconName, StyledExt,
 };
 
-use super::{TextViewStyle, utils::list_item_prefix};
+use super::{utils::list_item_prefix, TextViewStyle};
 
-/// The block-level nodes.
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) enum BlockNode {
-    /// Something like a Div container in HTML.
-    Root {
-        children: Vec<BlockNode>,
-        span: Option<Span>,
-    },
-    Paragraph(Paragraph),
-    Heading {
-        level: u8,
-        children: Paragraph,
-        span: Option<Span>,
-    },
-    Blockquote {
-        children: Vec<BlockNode>,
-        span: Option<Span>,
-    },
-    List {
-        /// Only contains ListItem, others will be ignored
-        children: Vec<BlockNode>,
-        ordered: bool,
-        span: Option<Span>,
-    },
-    ListItem {
-        children: Vec<BlockNode>,
-        spread: bool,
-        /// Whether the list item is checked, if None, it's not a checkbox
-        checked: Option<bool>,
-        span: Option<Span>,
-    },
-    CodeBlock(CodeBlock),
-    Table(Table),
-    Break {
-        html: bool,
-        span: Option<Span>,
-    },
-    Divider {
-        span: Option<Span>,
-    },
-    /// Use for to_markdown get raw definition
-    Definition {
-        identifier: SharedString,
-        url: SharedString,
-        title: Option<SharedString>,
-        span: Option<Span>,
-    },
-    Unknown,
-}
+static SVG_RENDER_CACHE: Lazy<Mutex<HashMap<(u64, u16), Arc<CachedSvgImage>>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
 
-impl BlockNode {
-    pub(super) fn is_list_item(&self) -> bool {
-        matches!(self, Self::ListItem { .. })
-    }
-
-    pub(super) fn is_break(&self) -> bool {
-        matches!(self, Self::Break { .. })
-    }
-
-    /// Combine all children, omitting the empt parent nodes.
-    pub(super) fn compact(self) -> BlockNode {
-        match self {
-            Self::Root { mut children, .. } if children.len() == 1 => children.remove(0).compact(),
-            _ => self,
-        }
-    }
-
-    /// Get the span of the node.
-    pub(super) fn span(&self) -> Option<Span> {
-        match self {
-            BlockNode::Root { span, .. } => *span,
-            BlockNode::Paragraph(paragraph) => paragraph.span,
-            BlockNode::Heading { span, .. } => *span,
-            BlockNode::Blockquote { span, .. } => *span,
-            BlockNode::List { span, .. } => *span,
-            BlockNode::ListItem { span, .. } => *span,
-            BlockNode::CodeBlock(code_block) => code_block.span,
-            BlockNode::Table(table) => table.span,
-            BlockNode::Break { span, .. } => *span,
-            BlockNode::Divider { span, .. } => *span,
-            BlockNode::Definition { span, .. } => *span,
-            BlockNode::Unknown { .. } => None,
-        }
-    }
-
-    pub(super) fn selected_text(&self) -> String {
-        let mut text = String::new();
-        match self {
-            BlockNode::Root { children, .. } => {
-                let mut block_text = String::new();
-                for c in children.iter() {
-                    block_text.push_str(&c.selected_text());
-                }
-                if !block_text.is_empty() {
-                    text.push_str(&block_text);
-                    text.push('\n');
-                }
-            }
-            BlockNode::Paragraph(paragraph) => {
-                let mut block_text = String::new();
-                block_text.push_str(&paragraph.selected_text());
-                if !block_text.is_empty() {
-                    text.push_str(&block_text);
-                    text.push('\n');
-                }
-            }
-            BlockNode::Heading { children, .. } => {
-                let mut block_text = String::new();
-                block_text.push_str(&children.selected_text());
-                if !block_text.is_empty() {
-                    text.push_str(&block_text);
-                    text.push('\n');
-                }
-            }
-            BlockNode::List { children, .. } => {
-                for c in children.iter() {
-                    text.push_str(&c.selected_text());
-                }
-            }
-            BlockNode::ListItem { children, .. } => {
-                for c in children.iter() {
-                    text.push_str(&c.selected_text());
-                }
-            }
-            BlockNode::Blockquote { children, .. } => {
-                let mut block_text = String::new();
-                for c in children.iter() {
-                    block_text.push_str(&c.selected_text());
-                }
-
-                if !block_text.is_empty() {
-                    text.push_str(&block_text);
-                    text.push('\n');
-                }
-            }
-            BlockNode::Table(table) => {
-                let mut block_text = String::new();
-                for row in table.children.iter() {
-                    let mut row_texts = vec![];
-                    for cell in row.children.iter() {
-                        row_texts.push(cell.children.selected_text());
-                    }
-                    if !row_texts.is_empty() {
-                        block_text.push_str(&row_texts.join(" "));
-                        block_text.push('\n');
-                    }
-                }
-
-                if !block_text.is_empty() {
-                    text.push_str(&block_text);
-                    text.push('\n');
-                }
-            }
-            BlockNode::CodeBlock(code_block) => {
-                let block_text = code_block.selected_text();
-                if !block_text.is_empty() {
-                    text.push_str(&block_text);
-                    text.push('\n');
-                }
-            }
-            BlockNode::Definition { .. }
-            | BlockNode::Break { .. }
-            | BlockNode::Divider { .. }
-            | BlockNode::Unknown { .. } => {}
-        }
-
-        text
-    }
+#[derive(Clone)]
+struct CachedSvgImage {
+    image: Arc<RenderImage>,
+    width_px: f32,
+    height_px: f32,
 }
 
 #[allow(unused)]
@@ -242,7 +85,6 @@ impl TextMark {
     }
 }
 
-/// The bytes
 #[derive(Debug, Default, Copy, Clone, PartialEq)]
 pub struct Span {
     pub start: usize,
@@ -262,6 +104,11 @@ pub struct ImageNode {
     pub link: Option<LinkMark>,
     pub title: Option<SharedString>,
     pub alt: Option<SharedString>,
+    pub math_tex: Option<SharedString>,
+    pub math_svg: Option<SharedString>,
+    pub math_display_mode: bool,
+    pub mermaid_code: Option<SharedString>,
+    pub mermaid_svg: Option<SharedString>,
     pub width: Option<DefiniteLength>,
     pub height: Option<DefiniteLength>,
 }
@@ -281,12 +128,17 @@ impl PartialEq for ImageNode {
             && self.link == other.link
             && self.title == other.title
             && self.alt == other.alt
+            && self.math_tex == other.math_tex
+            && self.math_svg == other.math_svg
+            && self.math_display_mode == other.math_display_mode
+            && self.mermaid_code == other.mermaid_code
+            && self.mermaid_svg == other.mermaid_svg
             && self.width == other.width
             && self.height == other.height
     }
 }
 
-#[derive(Default, Clone, Debug)]
+#[derive(Default, Debug)]
 pub(crate) struct InlineNode {
     /// The text content.
     pub(crate) text: SharedString,
@@ -294,7 +146,7 @@ pub(crate) struct InlineNode {
     /// The text styles, each tuple contains the range of the text and the style.
     pub(crate) marks: Vec<(Range<usize>, TextMark)>,
 
-    state: Arc<Mutex<InlineState>>,
+    state: Option<Entity<InlineState>>,
 }
 
 impl PartialEq for InlineNode {
@@ -309,7 +161,7 @@ impl InlineNode {
             text: text.into(),
             image: None,
             marks: vec![],
-            state: Arc::new(Mutex::new(InlineState::default())),
+            state: None,
         }
     }
 
@@ -329,7 +181,7 @@ impl InlineNode {
 ///
 /// Unlike other Element, this is cloneable, because it is used in the Node AST.
 /// We are keep the selection state inside this AST Nodes.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Default)]
 pub(crate) struct Paragraph {
     pub(super) span: Option<Span>,
     pub(super) children: Vec<InlineNode>,
@@ -338,7 +190,7 @@ pub(crate) struct Paragraph {
     /// The key is the identifier, the value is the url.
     pub(super) link_refs: HashMap<SharedString, SharedString>,
 
-    pub(crate) state: Arc<Mutex<InlineState>>,
+    pub(crate) state: Option<Entity<InlineState>>,
 }
 
 impl PartialEq for Paragraph {
@@ -355,36 +207,47 @@ impl Paragraph {
             span: None,
             children: vec![InlineNode::new(&text)],
             link_refs: HashMap::new(),
-            state: Arc::new(Mutex::new(InlineState::default())),
+            state: None,
         }
     }
 
-    pub(super) fn selected_text(&self) -> String {
+    pub(super) fn selected_text(&self, cx: &App) -> String {
         let mut text = String::new();
 
         for c in self.children.iter() {
-            let state = c.state.lock().unwrap();
-            if let Some(selection) = &state.selection {
-                let part_text = state.text.clone();
-                text.push_str(&part_text[selection.start..selection.end]);
+            if let Some(image) = &c.image {
+                if let Some(alt) = &image.alt {
+                    text.push_str(alt);
+                } else if let Some(title) = &image.title {
+                    text.push_str(title);
+                }
+            }
+
+            if let Some(state) = &c.state {
+                let state = state.read(cx);
+                if let Some(selection) = &state.selection {
+                    let part_text = state.text.clone();
+                    text.push_str(&part_text[selection.start..selection.end]);
+                }
             }
         }
 
-        let state = self.state.lock().unwrap();
-        if let Some(selection) = &state.selection {
-            let all_text = state.text.clone();
-            text.push_str(&all_text[selection.start..selection.end]);
+        if let Some(state) = &self.state {
+            let state = state.read(cx);
+            if let Some(selection) = &state.selection {
+                let all_text = state.text.clone();
+                text.push_str(&all_text[selection.start..selection.end]);
+            }
         }
 
         text
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Default, PartialEq)]
 pub(crate) struct Table {
-    pub(crate) children: Vec<TableRow>,
-    pub(crate) column_aligns: Vec<ColumnumnAlign>,
-    pub(crate) span: Option<Span>,
+    pub children: Vec<TableRow>,
+    pub column_aligns: Vec<ColumnumnAlign>,
 }
 
 impl Table {
@@ -412,12 +275,12 @@ impl From<mdast::AlignKind> for ColumnumnAlign {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Default, PartialEq)]
 pub(crate) struct TableRow {
     pub children: Vec<TableCell>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Default, PartialEq)]
 pub(crate) struct TableCell {
     pub children: Paragraph,
     pub width: Option<DefiniteLength>,
@@ -431,7 +294,7 @@ impl Paragraph {
                 span: None,
                 children: vec![],
                 link_refs: Default::default(),
-                state: Arc::new(Mutex::new(InlineState::default())),
+                state: None,
             },
         )
     }
@@ -480,35 +343,27 @@ impl Paragraph {
 }
 
 #[derive(Debug, Clone)]
-pub struct CodeBlock {
+pub(crate) struct CodeBlock {
     lang: Option<SharedString>,
     styles: Vec<(Range<usize>, HighlightStyle)>,
-    state: Arc<Mutex<InlineState>>,
-    pub span: Option<Span>,
+    code: SharedString,
+    code_font_family: SharedString,
 }
 
 impl PartialEq for CodeBlock {
     fn eq(&self, other: &Self) -> bool {
-        self.lang == other.lang && self.styles == other.styles
+        self.lang == other.lang
+            && self.styles == other.styles
+            && self.code_font_family == other.code_font_family
     }
 }
 
 impl CodeBlock {
-    /// Get the language of the code block.
-    pub fn lang(&self) -> Option<SharedString> {
-        self.lang.clone()
-    }
-
-    /// Get the code content of the code block.
-    pub fn code(&self) -> SharedString {
-        self.state.lock().unwrap().text.clone()
-    }
-
     pub(crate) fn new(
         code: SharedString,
         lang: Option<SharedString>,
+        style: &TextViewStyle,
         highlight_theme: &HighlightTheme,
-        span: Option<impl Into<Span>>,
     ) -> Self {
         let mut styles = vec![];
         if let Some(lang) = &lang {
@@ -517,80 +372,155 @@ impl CodeBlock {
             styles = highlighter.styles(&(0..code.len()), highlight_theme);
         };
 
-        let state = Arc::new(Mutex::new(InlineState::default()));
-        state.lock().unwrap().set_text(code);
-
         Self {
             lang,
             styles,
-            state,
-            span: span.map(|s| s.into()),
+            code,
+            code_font_family: style.code_font_family.clone(),
         }
+    }
+
+    fn code(&self) -> SharedString {
+        self.code.clone()
     }
 
     pub(super) fn selected_text(&self) -> String {
-        let mut text = String::new();
-        let state = self.state.lock().unwrap();
-        if let Some(selection) = &state.selection {
-            let part_text = state.text.clone();
-            text.push_str(&part_text[selection.start..selection.end]);
-        }
-        text
+        // Code block line selection is not tracked across renders.
+        String::new()
     }
 
-    fn render(
-        &self,
-        options: &NodeRenderOptions,
-        node_cx: &NodeContext,
-        window: &mut Window,
-        cx: &mut App,
-    ) -> AnyElement {
+    fn render(&self, node_cx: &NodeContext, window: &mut Window, cx: &mut App) -> AnyElement {
         let style = &node_cx.style;
+        let code = self.code();
+        let code_font_family = self.code_font_family.clone();
+        let copy_code = code.clone();
+        let view_id = window.current_view();
 
-        div()
-            .when(!options.is_last, |this| this.pb(style.paragraph_gap))
-            .child(
-                div()
-                    .id(("codeblock", options.ix))
-                    .p_3()
-                    .rounded(cx.theme().radius)
-                    .bg(cx.theme().muted)
-                    .font_family(cx.theme().mono_font_family.clone())
-                    .text_size(cx.theme().mono_font_size)
-                    .relative()
-                    .refine_style(&style.code_block)
-                    .child(Inline::new(
-                        "code",
-                        self.state.clone(),
-                        vec![],
-                        self.styles.clone(),
-                    ))
-                    .when_some(node_cx.code_block_actions.clone(), |this, actions| {
-                        this.child(
-                            div()
-                                .id("actions")
-                                .absolute()
-                                .top_2()
-                                .right_2()
-                                .bg(cx.theme().muted)
-                                .rounded(cx.theme().radius)
-                                .child(actions(&self, window, cx)),
-                        )
-                    }),
-            )
-            .into_any_element()
+        let mut hasher = DefaultHasher::new();
+        code.hash(&mut hasher);
+        self.lang.hash(&mut hasher);
+        let copy_state_id = SharedString::from(format!("md-code-copy-{}", hasher.finish()));
+        let copied_state = window.use_keyed_state(copy_state_id, cx, |_, _| false);
+        let copied = *copied_state.read(cx);
+
+        // Split code into lines to preserve line breaks (StyledText doesn't preserve \n)
+        let lines: Vec<&str> = code.as_str().lines().collect();
+
+        // Render each line as a separate Inline element to preserve line breaks
+        let mut line_elements = Vec::new();
+        let mut current_offset = 0;
+
+        for (line_idx, line) in lines.iter().enumerate() {
+            let line_len = line.len();
+            let line_end = current_offset + line_len;
+
+            let line_highlights: Vec<(Range<usize>, HighlightStyle)> = self
+                .styles
+                .iter()
+                .filter_map(|(range, style)| {
+                    if range.start < line_end && range.end > current_offset {
+                        let start = range.start.saturating_sub(current_offset).min(line_len);
+                        let end = (range.end - current_offset).min(line_len);
+                        if start < end {
+                            Some((start..end, *style))
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            let text: SharedString = line.to_string().into();
+            let line_entity = cx.new(|_| {
+                let mut s = InlineState::default();
+                s.set_text(text.clone());
+                s
+            });
+
+            line_elements.push(Inline::new(
+                ("code-line", line_idx),
+                text,
+                line_entity,
+                vec![],
+                line_highlights,
+            ));
+
+            // +1 for the newline character (except for the last line)
+            current_offset = line_end + 1;
+        }
+
+        let copy_button = div()
+            .absolute()
+            .top_2()
+            .right_2()
+            .px_2()
+            .py_1()
+            .rounded(px(6.0))
+            .border_1()
+            .border_color(cx.theme().border)
+            .bg(if copied {
+                cx.theme().primary.opacity(0.18)
+            } else {
+                cx.theme().background.opacity(0.95)
+            })
+            .text_xs()
+            .text_color(if copied {
+                cx.theme().primary
+            } else {
+                cx.theme().muted_foreground
+            })
+            .cursor_pointer()
+            .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                cx.stop_propagation();
+                cx.write_to_clipboard(ClipboardItem::new_string(copy_code.to_string()));
+                _ = copied_state.update(cx, |copied, _| *copied = true);
+                cx.notify(view_id);
+
+                cx.spawn({
+                    let copied_state = copied_state.clone();
+                    async move |cx| {
+                        cx.background_executor()
+                            .timer(Duration::from_millis(850))
+                            .await;
+                        _ = copied_state.update(cx, |copied, _| *copied = false);
+                        cx.update(|cx| cx.notify(view_id)).ok();
+                    }
+                })
+                .detach();
+            })
+            .child(if copied { "Copied" } else { "Copy" });
+
+        let code_box = v_flex()
+            .id("codeblock")
+            .mb(style.paragraph_gap)
+            .p_3()
+            .rounded(px(10.0))
+            .border_1()
+            .border_color(cx.theme().border)
+            .bg(cx.theme().secondary.opacity(0.85))
+            .font_family(code_font_family)
+            .text_size(rems(0.875))
+            .relative()
+            .refine_style(&style.code_block);
+
+        if line_elements.is_empty() {
+            code_box.child(copy_button).into_any_element()
+        } else {
+            code_box
+                .children(line_elements)
+                .child(copy_button)
+                .into_any_element()
+        }
     }
 }
 
 /// A context for rendering nodes, contains link references.
-#[derive(Default, Clone)]
+#[derive(Default, Clone, PartialEq)]
 pub(crate) struct NodeContext {
-    /// The byte offset of the node in the original markdown text.
-    /// Used for incremental updates.
-    pub(crate) offset: usize,
     pub(crate) link_refs: HashMap<SharedString, LinkMark>,
     pub(crate) style: TextViewStyle,
-    pub(crate) code_block_actions: Option<Arc<CodeBlockActionsFn>>,
 }
 
 impl NodeContext {
@@ -599,22 +529,233 @@ impl NodeContext {
     }
 }
 
-impl PartialEq for NodeContext {
-    fn eq(&self, other: &Self) -> bool {
-        self.link_refs == other.link_refs && self.style == other.style
-        // Note: code_block_buttons is intentionally not compared (closures can't be compared)
+/// The AST Node of the rich text.
+#[derive(Debug, PartialEq)]
+pub(crate) enum Node {
+    Root {
+        children: Vec<Node>,
+    },
+    Paragraph(Paragraph),
+    Heading {
+        level: u8,
+        children: Paragraph,
+    },
+    Blockquote {
+        children: Vec<Node>,
+    },
+    List {
+        /// Only contains ListItem, others will be ignored
+        children: Vec<Node>,
+        ordered: bool,
+    },
+    ListItem {
+        children: Vec<Node>,
+        spread: bool,
+        /// Whether the list item is checked, if None, it's not a checkbox
+        checked: Option<bool>,
+    },
+    CodeBlock(CodeBlock),
+    Table(Table),
+    Break {
+        html: bool,
+    },
+    Divider,
+    /// Use for to_markdown get raw definition
+    Definition {
+        identifier: SharedString,
+        url: SharedString,
+        title: Option<SharedString>,
+    },
+    Unknown,
+}
+
+impl Node {
+    pub(super) fn is_list_item(&self) -> bool {
+        matches!(self, Self::ListItem { .. })
+    }
+
+    pub(super) fn is_break(&self) -> bool {
+        matches!(self, Self::Break { .. })
+    }
+
+    /// Combine all children, omitting the empt parent nodes.
+    pub(super) fn compact(self) -> Node {
+        match self {
+            Self::Root { mut children } if children.len() == 1 => children.remove(0).compact(),
+            _ => self,
+        }
+    }
+
+    pub(super) fn selected_text(&self, cx: &App) -> String {
+        let mut text = String::new();
+        match self {
+            Node::Root { children } => {
+                let mut block_text = String::new();
+                for c in children.iter() {
+                    block_text.push_str(&c.selected_text(cx));
+                }
+                if !block_text.is_empty() {
+                    text.push_str(&block_text);
+                    text.push('\n');
+                }
+            }
+            Node::Paragraph(paragraph) => {
+                let mut block_text = String::new();
+                block_text.push_str(&paragraph.selected_text(cx));
+                if !block_text.is_empty() {
+                    text.push_str(&block_text);
+                    text.push('\n');
+                }
+            }
+            Node::Heading { children, .. } => {
+                let mut block_text = String::new();
+                block_text.push_str(&children.selected_text(cx));
+                if !block_text.is_empty() {
+                    text.push_str(&block_text);
+                    text.push('\n');
+                }
+            }
+            Node::List { children, .. } => {
+                for c in children.iter() {
+                    text.push_str(&c.selected_text(cx));
+                }
+            }
+            Node::ListItem { children, .. } => {
+                for c in children.iter() {
+                    text.push_str(&c.selected_text(cx));
+                }
+            }
+            Node::Blockquote { children } => {
+                let mut block_text = String::new();
+                for c in children.iter() {
+                    block_text.push_str(&c.selected_text(cx));
+                }
+
+                if !block_text.is_empty() {
+                    text.push_str(&block_text);
+                    text.push('\n');
+                }
+            }
+            Node::Table(table) => {
+                let mut block_text = String::new();
+                for row in table.children.iter() {
+                    let mut row_texts = vec![];
+                    for cell in row.children.iter() {
+                        row_texts.push(cell.children.selected_text(cx));
+                    }
+                    if !row_texts.is_empty() {
+                        block_text.push_str(&row_texts.join(" "));
+                        block_text.push('\n');
+                    }
+                }
+
+                if !block_text.is_empty() {
+                    text.push_str(&block_text);
+                    text.push('\n');
+                }
+            }
+            Node::CodeBlock(code_block) => {
+                let block_text = code_block.selected_text();
+                if !block_text.is_empty() {
+                    text.push_str(&block_text);
+                    text.push('\n');
+                }
+            }
+            Node::Definition { .. } | Node::Break { .. } | Node::Divider | Node::Unknown => {}
+        }
+
+        text
     }
 }
 
 impl Paragraph {
+    fn colorize_svg(svg: &str, text_color: gpui::Hsla) -> String {
+        let rgba: gpui::Rgba = text_color.into();
+        let r = (rgba.r * 255.0).round().clamp(0.0, 255.0) as u8;
+        let g = (rgba.g * 255.0).round().clamp(0.0, 255.0) as u8;
+        let b = (rgba.b * 255.0).round().clamp(0.0, 255.0) as u8;
+        let a = rgba.a.clamp(0.0, 1.0);
+        let css_color = format!("rgba({r}, {g}, {b}, {a:.3})");
+        svg.replace("currentColor", &css_color)
+    }
+
+    fn strip_background_from_svg(svg: &str) -> String {
+        // Remove background rectangles from Mermaid SVGs
+        // Match <rect ...> elements that appear to be backgrounds
+        let re = regex::Regex::new(r#"<rect[^>]*\s+(?:x="0"[^>]*y="0"|y="0"[^>]*x="0")[^>]*>"#)
+            .unwrap_or_else(|_| regex::Regex::new(r#"<rect[^>]*>"#).unwrap());
+        re.replace_all(svg, "").to_string()
+    }
+
+    fn render_cached_svg(
+        svg: &str,
+        text_color: gpui::Hsla,
+        raster_scale: f32,
+        colorize: bool,
+    ) -> Option<Arc<CachedSvgImage>> {
+        let mut svg_to_render = if colorize {
+            Self::colorize_svg(svg, text_color)
+        } else {
+            // Strip background from Mermaid diagrams
+            Self::strip_background_from_svg(svg)
+        };
+        let scale_key = (raster_scale * 100.0).round().clamp(1.0, u16::MAX as f32) as u16;
+
+        let mut hasher = DefaultHasher::new();
+        svg_to_render.hash(&mut hasher);
+        let svg_hash = hasher.finish();
+
+        if let Some(cached) = SVG_RENDER_CACHE
+            .lock()
+            .ok()?
+            .get(&(svg_hash, scale_key))
+            .cloned()
+        {
+            return Some(cached);
+        }
+
+        let options = usvg::Options::default();
+        let tree = usvg::Tree::from_str(&svg_to_render, &options).ok()?;
+        let logical_size = tree.size();
+        let width_px = logical_size.width();
+        let height_px = logical_size.height();
+        let raster_width = (width_px * raster_scale).ceil().max(1.0) as u32;
+        let raster_height = (height_px * raster_scale).ceil().max(1.0) as u32;
+
+        let mut pixmap = tiny_skia::Pixmap::new(raster_width, raster_height)?;
+        resvg::render(
+            &tree,
+            tiny_skia::Transform::from_scale(raster_scale, raster_scale),
+            &mut pixmap.as_mut(),
+        );
+
+        let png_bytes = pixmap.encode_png().ok()?;
+        let rgba = image::load_from_memory(&png_bytes).ok()?.into_rgba8();
+        let frame = image::Frame::new(rgba);
+        let cached = Arc::new(CachedSvgImage {
+            image: Arc::new(RenderImage::new(smallvec::smallvec![frame])),
+            width_px,
+            height_px,
+        });
+
+        if let Ok(mut cache) = SVG_RENDER_CACHE.lock() {
+            cache.insert((svg_hash, scale_key), cached.clone());
+        }
+
+        Some(cached)
+    }
+
     fn render(
-        &self,
+        &mut self,
         node_cx: &NodeContext,
-        _window: &mut Window,
+        window: &mut Window,
         cx: &mut App,
     ) -> impl IntoElement {
         let span = self.span;
-        let children = &self.children;
+        let text_color = window.text_style().color;
+        let text_size = window.text_style().font_size.to_pixels(window.rem_size());
+        let text_size_px: f32 = text_size.into();
+        let raster_scale = ((text_size_px / 16.0).max(1.0) * 2.0).clamp(2.0, 4.0);
 
         let mut child_nodes: Vec<AnyElement> = vec![];
 
@@ -624,46 +765,110 @@ impl Paragraph {
         let mut offset = 0;
 
         let mut ix = 0;
-        for inline_node in children {
+        for inline_node in self.children.iter_mut() {
             let text_len = inline_node.text.len();
             text.push_str(&inline_node.text);
 
             if let Some(image) = &inline_node.image {
                 if text.len() > 0 {
-                    inline_node
-                        .state
-                        .lock()
-                        .unwrap()
-                        .set_text(text.clone().into());
+                    if inline_node.state.is_none() {
+                        inline_node.state = Some(cx.new(|_| InlineState::default()));
+                    }
+                    let entity = inline_node.state.as_ref().unwrap();
+                    entity.update(cx, |s, _| s.set_text(text.clone().into()));
+                    let entity = entity.clone();
                     child_nodes.push(
                         Inline::new(
                             ix,
-                            inline_node.state.clone(),
+                            text.clone().into(),
+                            entity,
                             links.clone(),
                             highlights.clone(),
                         )
                         .into_any_element(),
                     );
                 }
-                child_nodes.push(
-                    img(image.url.clone())
+                let image_node = image;
+                let image_element = if let Some(svg) = image_node
+                    .math_svg
+                    .as_ref()
+                    .or(image_node.mermaid_svg.as_ref())
+                {
+                    let is_math = image_node.math_svg.is_some();
+                    let colored_svg = if is_math {
+                        Self::colorize_svg(svg, text_color)
+                    } else {
+                        svg.to_string()
+                    };
+
+                    if let Some(rendered) =
+                        Self::render_cached_svg(svg, text_color, raster_scale, is_math)
+                    {
+                        img(ImageSource::Render(rendered.image.clone()))
+                            .id(ix)
+                            .object_fit(ObjectFit::Contain)
+                            .w(px(rendered.width_px))
+                            .h(px(rendered.height_px))
+                            .when_some(image_node.width, |this, width| this.w(width))
+                            .when_some(image_node.height, |this, height| this.h(height))
+                            .when_some(image_node.link.clone(), |this, link| {
+                                let title = image_node.title();
+                                this.cursor_pointer()
+                                    .tooltip(move |window, cx| {
+                                        Tooltip::new(title.clone()).build(window, cx)
+                                    })
+                                    .on_click(move |_, _, cx| {
+                                        cx.stop_propagation();
+                                        crate::open_external_url(&link.url);
+                                    })
+                            })
+                            .into_any_element()
+                    } else {
+                        // Fallback to GPUI SVG decoding if rasterization fails.
+                        let image = std::sync::Arc::new(Image::from_bytes(
+                            ImageFormat::Svg,
+                            colored_svg.as_bytes().to_vec(),
+                        ));
+
+                        img(image)
+                            .id(ix)
+                            .object_fit(ObjectFit::Contain)
+                            .when_some(image_node.width, |this, width| this.w(width))
+                            .when_some(image_node.height, |this, height| this.h(height))
+                            .when_some(image_node.link.clone(), |this, link| {
+                                let title = image_node.title();
+                                this.cursor_pointer()
+                                    .tooltip(move |window, cx| {
+                                        Tooltip::new(title.clone()).build(window, cx)
+                                    })
+                                    .on_click(move |_, _, cx| {
+                                        cx.stop_propagation();
+                                        crate::open_external_url(&link.url);
+                                    })
+                            })
+                            .into_any_element()
+                    }
+                } else {
+                    img(image_node.url.as_ref())
                         .id(ix)
                         .object_fit(ObjectFit::Contain)
-                        .max_w(relative(1.))
-                        .when_some(image.width, |this, width| this.w(width))
-                        .when_some(image.link.clone(), |this, link| {
-                            let title = image.title();
+                        .w_full()
+                        .when_some(image_node.width, |this, width| this.w(width))
+                        .when_some(image_node.height, |this, height| this.h(height))
+                        .when_some(image_node.link.clone(), |this, link| {
+                            let title = image_node.title();
                             this.cursor_pointer()
                                 .tooltip(move |window, cx| {
                                     Tooltip::new(title.clone()).build(window, cx)
                                 })
                                 .on_click(move |_, _, cx| {
                                     cx.stop_propagation();
-                                    cx.open_url(&link.url);
+                                    crate::open_external_url(&link.url);
                                 })
                         })
-                        .into_any_element(),
-                );
+                        .into_any_element()
+                };
+                child_nodes.push(image_element);
 
                 text.clear();
                 links.clear();
@@ -719,12 +924,359 @@ impl Paragraph {
 
         // Add the last text node
         if text.len() > 0 {
-            self.state.lock().unwrap().set_text(text.into());
+            if self.state.is_none() {
+                self.state = Some(cx.new(|_| InlineState::default()));
+            }
+            let entity = self.state.as_ref().unwrap();
+            entity.update(cx, |s, _| s.set_text(text.clone().into()));
+            let entity = entity.clone();
             child_nodes
-                .push(Inline::new(ix, self.state.clone(), links, highlights).into_any_element());
+                .push(Inline::new(ix, text.into(), entity, links, highlights).into_any_element());
         }
 
         div().id(span.unwrap_or_default()).children(child_nodes)
+    }
+}
+
+#[derive(Default)]
+pub(crate) struct ListState {
+    todo: bool,
+    ordered: bool,
+    depth: usize,
+}
+
+impl Node {
+    fn render_list_item(
+        item: &mut Node,
+        ix: usize,
+        state: ListState,
+        node_cx: &NodeContext,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> impl IntoElement {
+        match item {
+            Node::ListItem {
+                children,
+                spread,
+                checked,
+            } => v_flex()
+                .id("li")
+                .when(*spread, |this| this.child(div()))
+                .children({
+                    let mut items: Vec<Div> = Vec::with_capacity(children.len());
+
+                    // Pre-compute last_not_list flags to avoid borrow conflict with iter_mut.
+                    let last_not_list_flags: Vec<bool> = (0..children.len())
+                        .map(|i| i > 0 && !matches!(children[i - 1], Node::List { .. }))
+                        .collect();
+
+                    for (child_ix, child) in children.iter_mut().enumerate() {
+                        match child {
+                            Node::Paragraph(_) => {
+                                let last_not_list = last_not_list_flags[child_ix];
+
+                                let text = child.render(
+                                    Some(ListState {
+                                        depth: state.depth + 1,
+                                        ordered: state.ordered,
+                                        todo: checked.is_some(),
+                                    }),
+                                    false,
+                                    true,
+                                    node_cx,
+                                    window,
+                                    cx,
+                                );
+
+                                // merge content into last item.
+                                if last_not_list {
+                                    if let Some(item_item) = items.last_mut() {
+                                        item_item.extend(vec![div()
+                                            .overflow_hidden()
+                                            .child(text)
+                                            .into_any_element()]);
+                                        continue;
+                                    }
+                                }
+
+                                items.push(
+                                    h_flex()
+                                        .flex_1()
+                                        .relative()
+                                        .items_start()
+                                        .content_start()
+                                        .when(!state.todo && checked.is_none(), |this| {
+                                            this.child(list_item_prefix(
+                                                ix,
+                                                state.ordered,
+                                                state.depth,
+                                            ))
+                                        })
+                                        .when_some(*checked, |this, checked| {
+                                            // Todo list checkbox
+                                            this.child(
+                                                div()
+                                                    .flex()
+                                                    .mt(rems(0.4))
+                                                    .mr_1p5()
+                                                    .size(rems(0.875))
+                                                    .items_center()
+                                                    .justify_center()
+                                                    .rounded(cx.theme().radius.half())
+                                                    .border_1()
+                                                    .border_color(cx.theme().primary)
+                                                    .text_color(cx.theme().primary_foreground)
+                                                    .when(checked, |this| {
+                                                        this.bg(cx.theme().primary).child(
+                                                            Icon::new(IconName::Check)
+                                                                .size_2()
+                                                                .text_xs(),
+                                                        )
+                                                    }),
+                                            )
+                                        })
+                                        .child(div().overflow_hidden().child(text)),
+                                );
+                            }
+                            Node::List { .. } => {
+                                items.push(div().ml(rems(1.)).child(child.render(
+                                    Some(ListState {
+                                        depth: state.depth + 1,
+                                        ordered: state.ordered,
+                                        todo: checked.is_some(),
+                                    }),
+                                    true,
+                                    true,
+                                    node_cx,
+                                    window,
+                                    cx,
+                                )));
+                            }
+                            _ => {}
+                        }
+                    }
+                    items
+                })
+                .into_any_element(),
+            _ => div().into_any_element(),
+        }
+    }
+
+    fn render_table(
+        item: &mut Node,
+        node_cx: &NodeContext,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> impl IntoElement {
+        const DEFAULT_LENGTH: usize = 5;
+        const MAX_LENGTH: usize = 150;
+        let (col_lens, col_aligns, rows_len) = match item {
+            Node::Table(table) => {
+                let mut col_lens = vec![];
+                for row in table.children.iter() {
+                    for (ix, cell) in row.children.iter().enumerate() {
+                        if col_lens.len() <= ix {
+                            col_lens.push(DEFAULT_LENGTH);
+                        }
+
+                        let len = cell.children.text_len();
+                        if len > col_lens[ix] {
+                            col_lens[ix] = len;
+                        }
+                    }
+                }
+                let col_aligns: Vec<ColumnumnAlign> =
+                    (0..col_lens.len()).map(|i| table.column_align(i)).collect();
+                let rows_len = table.children.len();
+                (col_lens, col_aligns, rows_len)
+            }
+            _ => (vec![], vec![], 0),
+        };
+
+        match item {
+            Node::Table(table) => div()
+                .id("table")
+                .mb(rems(1.))
+                .w_full()
+                .border_1()
+                .border_color(cx.theme().border)
+                .rounded(cx.theme().radius)
+                .children({
+                    let mut rows = Vec::with_capacity(table.children.len());
+                    for (row_ix, row) in table.children.iter_mut().enumerate() {
+                        let cells_len = row.children.len();
+                        rows.push(
+                            div()
+                                .id("row")
+                                .w_full()
+                                .when(row_ix < rows_len - 1, |this| this.border_b_1())
+                                .border_color(cx.theme().border)
+                                .flex()
+                                .flex_row()
+                                .children({
+                                    let mut cells = Vec::with_capacity(cells_len);
+                                    for (ix, cell) in row.children.iter_mut().enumerate() {
+                                        let align = col_aligns.get(ix).copied().unwrap_or_default();
+                                        let is_last_col = ix == cells_len - 1;
+                                        let len = col_lens
+                                            .get(ix)
+                                            .copied()
+                                            .unwrap_or(MAX_LENGTH)
+                                            .min(MAX_LENGTH);
+
+                                        cells.push(
+                                            div()
+                                                .id("cell")
+                                                .flex()
+                                                .when(align == ColumnumnAlign::Center, |this| {
+                                                    this.justify_center()
+                                                })
+                                                .when(align == ColumnumnAlign::Right, |this| {
+                                                    this.justify_end()
+                                                })
+                                                .w(Length::Definite(relative(len as f32)))
+                                                .px_2()
+                                                .py_1()
+                                                .when(!is_last_col, |this| {
+                                                    this.border_r_1()
+                                                        .border_color(cx.theme().border)
+                                                })
+                                                .truncate()
+                                                .child(cell.children.render(node_cx, window, cx)),
+                                        )
+                                    }
+                                    cells
+                                }),
+                        )
+                    }
+                    rows
+                })
+                .into_any_element(),
+            _ => div().into_any_element(),
+        }
+    }
+
+    pub(crate) fn render(
+        &mut self,
+        list_state: Option<ListState>,
+        is_root: bool,
+        is_last_child: bool,
+        node_cx: &NodeContext,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> impl IntoElement {
+        let in_list = list_state.is_some();
+        let mb = if in_list || is_last_child {
+            rems(0.)
+        } else {
+            node_cx.style.paragraph_gap
+        };
+
+        match self {
+            Node::Root { children } => div()
+                .id("div")
+                .children({
+                    let children_len = children.len();
+                    children.iter_mut().enumerate().map(move |(index, c)| {
+                        let is_last_child = is_root && index == children_len - 1;
+                        c.render(None, false, is_last_child, node_cx, window, cx)
+                    })
+                })
+                .into_any_element(),
+            Node::Paragraph(paragraph) => div()
+                .id("p")
+                .mb(mb)
+                .child(paragraph.render(node_cx, window, cx))
+                .into_any_element(),
+            Node::Heading { level, children } => {
+                let (text_size, font_weight) = match level {
+                    1 => (rems(2.), FontWeight::BOLD),
+                    2 => (rems(1.5), FontWeight::SEMIBOLD),
+                    3 => (rems(1.25), FontWeight::SEMIBOLD),
+                    4 => (rems(1.125), FontWeight::SEMIBOLD),
+                    5 => (rems(1.), FontWeight::SEMIBOLD),
+                    6 => (rems(1.), FontWeight::MEDIUM),
+                    _ => (rems(1.), FontWeight::NORMAL),
+                };
+
+                let mut text_size = text_size.to_pixels(node_cx.style.heading_base_font_size);
+                if let Some(f) = node_cx.style.heading_font_size.as_ref() {
+                    text_size = (f)(*level, node_cx.style.heading_base_font_size);
+                }
+
+                h_flex()
+                    .id(("h", *level as usize))
+                    .mb(rems(0.3))
+                    .whitespace_normal()
+                    .text_size(text_size)
+                    .font_weight(font_weight)
+                    .child(children.render(node_cx, window, cx))
+                    .into_any_element()
+            }
+            Node::Blockquote { children } => div()
+                .id("blockquote")
+                .w_full()
+                .mb(mb)
+                .text_color(cx.theme().muted_foreground)
+                .border_l_3()
+                .border_color(cx.theme().secondary_active)
+                .px_4()
+                .children({
+                    let children_len = children.len();
+                    children.iter_mut().enumerate().map(move |(index, c)| {
+                        let is_last_child = is_root && index == children_len - 1;
+                        c.render(None, false, is_last_child, node_cx, window, cx)
+                    })
+                })
+                .into_any_element(),
+            Node::List { children, ordered } => v_flex()
+                .id(if *ordered { "ol" } else { "ul" })
+                .mb(mb)
+                .children({
+                    let mut items = Vec::with_capacity(children.len());
+                    let list_state = list_state.unwrap_or_default();
+                    let mut ix = 0;
+                    for item in children.iter_mut() {
+                        let is_item = item.is_list_item();
+
+                        items.push(Self::render_list_item(
+                            item,
+                            ix,
+                            ListState {
+                                ordered: *ordered,
+                                todo: list_state.todo,
+                                depth: list_state.depth,
+                            },
+                            node_cx,
+                            window,
+                            cx,
+                        ));
+
+                        if is_item {
+                            ix += 1;
+                        }
+                    }
+                    items
+                })
+                .into_any_element(),
+            Node::CodeBlock(code_block) => code_block.render(node_cx, window, cx),
+            Node::Table { .. } => Self::render_table(self, node_cx, window, cx).into_any_element(),
+            Node::Divider => div()
+                .id("divider")
+                .bg(cx.theme().border)
+                .h(px(2.))
+                .mb(mb)
+                .into_any_element(),
+            Node::Break { .. } => div().id("break").into_any_element(),
+            Node::Unknown | Node::Definition { .. } => div().into_any_element(),
+            _ => {
+                if cfg!(debug_assertions) {
+                    tracing::warn!("unknown implementation: {:?}", self);
+                }
+
+                div().into_any_element()
+            }
+        }
     }
 }
 
@@ -754,12 +1306,22 @@ impl Paragraph {
                 }
 
                 if let Some(image) = &text_node.image {
-                    let alt = image.alt.clone().unwrap_or_default();
-                    let title = image
-                        .title
-                        .clone()
-                        .map_or(String::new(), |t| format!(" \"{}\"", t));
-                    text.push_str(&format!("![{}]({}{})", alt, image.url, title))
+                    if let Some(math_tex) = &image.math_tex {
+                        if image.math_display_mode {
+                            text.push_str(&format!("$$\n{}\n$$", math_tex));
+                        } else {
+                            text.push_str(&format!("${}$", math_tex));
+                        }
+                    } else if let Some(mermaid_code) = &image.mermaid_code {
+                        text.push_str(&format!("```mermaid\n{}\n```", mermaid_code));
+                    } else {
+                        let alt = image.alt.clone().unwrap_or_default();
+                        let title = image
+                            .title
+                            .clone()
+                            .map_or(String::new(), |t| format!(" \"{}\"", t));
+                        text.push_str(&format!("![{}]({}{})", alt, image.url, title))
+                    }
                 }
 
                 text
@@ -772,26 +1334,24 @@ impl Paragraph {
     }
 }
 
-impl BlockNode {
+impl Node {
     /// Converts the node to markdown format.
     ///
     /// This is used to generate markdown for test.
     #[allow(dead_code)]
     pub(crate) fn to_markdown(&self) -> String {
         match self {
-            BlockNode::Root { children, .. } => children
+            Node::Root { children } => children
                 .iter()
                 .map(|child| child.to_markdown())
                 .collect::<Vec<_>>()
                 .join("\n\n"),
-            BlockNode::Paragraph(paragraph) => paragraph.to_markdown(),
-            BlockNode::Heading {
-                level, children, ..
-            } => {
+            Node::Paragraph(paragraph) => paragraph.to_markdown(),
+            Node::Heading { level, children } => {
                 let hashes = "#".repeat(*level as usize);
                 format!("{} {}", hashes, children.to_markdown())
             }
-            BlockNode::Blockquote { children, .. } => {
+            Node::Blockquote { children } => {
                 let content = children
                     .iter()
                     .map(|child| child.to_markdown())
@@ -804,9 +1364,7 @@ impl BlockNode {
                     .collect::<Vec<_>>()
                     .join("\n")
             }
-            BlockNode::List {
-                children, ordered, ..
-            } => children
+            Node::List { children, ordered } => children
                 .iter()
                 .enumerate()
                 .map(|(i, child)| {
@@ -819,11 +1377,15 @@ impl BlockNode {
                 })
                 .collect::<Vec<_>>()
                 .join("\n"),
-            BlockNode::ListItem {
+            Node::ListItem {
                 children, checked, ..
             } => {
                 let checkbox = if let Some(checked) = checked {
-                    if *checked { "[x] " } else { "[ ] " }
+                    if *checked {
+                        "[x] "
+                    } else {
+                        "[ ] "
+                    }
                 } else {
                     ""
                 };
@@ -837,14 +1399,14 @@ impl BlockNode {
                         .join("\n")
                 )
             }
-            BlockNode::CodeBlock(code_block) => {
+            Node::CodeBlock(code_block) => {
                 format!(
                     "```{}\n{}\n```",
                     code_block.lang.clone().unwrap_or_default(),
                     code_block.code()
                 )
             }
-            BlockNode::Table(table) => {
+            Node::Table(table) => {
                 let header = table
                     .children
                     .first()
@@ -884,19 +1446,18 @@ impl BlockNode {
                     .join("\n");
                 format!("{}\n{}\n{}", header, alignments, rows)
             }
-            BlockNode::Break { html, .. } => {
+            Node::Break { html } => {
                 if *html {
                     "<br>".to_string()
                 } else {
                     "\n".to_string()
                 }
             }
-            BlockNode::Divider { .. } => "---".to_string(),
-            BlockNode::Definition {
+            Node::Divider => "---".to_string(),
+            Node::Definition {
                 identifier,
                 url,
                 title,
-                ..
             } => {
                 if let Some(title) = title {
                     format!("[{}]: {} \"{}\"", identifier, url, title)
@@ -904,347 +1465,9 @@ impl BlockNode {
                     format!("[{}]: {}", identifier, url)
                 }
             }
-            BlockNode::Unknown { .. } => "".to_string(),
+            Node::Unknown => "".to_string(),
         }
         .trim()
         .to_string()
-    }
-}
-
-impl BlockNode {
-    fn render_list_item(
-        item: &BlockNode,
-        ix: usize,
-        options: NodeRenderOptions,
-        node_cx: &NodeContext,
-        window: &mut Window,
-        cx: &mut App,
-    ) -> AnyElement {
-        match item {
-            BlockNode::ListItem {
-                children,
-                spread,
-                checked,
-                ..
-            } => v_flex()
-                .id(("li", options.ix))
-                .when(*spread, |this| this.child(div()))
-                .children({
-                    let mut items: Vec<Div> = Vec::with_capacity(children.len());
-
-                    for (child_ix, child) in children.iter().enumerate() {
-                        match child {
-                            BlockNode::Paragraph { .. } => {
-                                let last_not_list = child_ix > 0
-                                    && !matches!(children[child_ix - 1], BlockNode::List { .. });
-
-                                let text = child.render_block(
-                                    NodeRenderOptions {
-                                        depth: options.depth + 1,
-                                        todo: checked.is_some(),
-                                        is_last: true,
-                                        ..options
-                                    },
-                                    node_cx,
-                                    window,
-                                    cx,
-                                );
-
-                                // merge content into last item.
-                                if last_not_list {
-                                    if let Some(item_item) = items.last_mut() {
-                                        item_item.extend(vec![
-                                            div().overflow_hidden().child(text).into_any_element(),
-                                        ]);
-                                        continue;
-                                    }
-                                }
-
-                                items.push(
-                                    h_flex()
-                                        .flex_1()
-                                        .relative()
-                                        .items_start()
-                                        .content_start()
-                                        .when(!options.todo && checked.is_none(), |this| {
-                                            this.child(list_item_prefix(
-                                                ix,
-                                                options.ordered,
-                                                options.depth,
-                                            ))
-                                        })
-                                        .when_some(*checked, |this, checked| {
-                                            // Todo list checkbox
-                                            this.child(
-                                                div()
-                                                    .flex()
-                                                    .mt(rems(0.4))
-                                                    .mr_1p5()
-                                                    .size(rems(0.875))
-                                                    .items_center()
-                                                    .justify_center()
-                                                    .rounded(cx.theme().radius.half())
-                                                    .border_1()
-                                                    .border_color(cx.theme().primary)
-                                                    .text_color(cx.theme().primary_foreground)
-                                                    .when(checked, |this| {
-                                                        this.bg(cx.theme().primary).child(
-                                                            Icon::new(IconName::Check)
-                                                                .size_2()
-                                                                .text_xs(),
-                                                        )
-                                                    }),
-                                            )
-                                        })
-                                        .child(div().overflow_hidden().child(text)),
-                                );
-                            }
-                            BlockNode::List { .. } => {
-                                items.push(div().ml(rems(1.)).child(child.render_block(
-                                    NodeRenderOptions {
-                                        depth: options.depth + 1,
-                                        todo: checked.is_some(),
-                                        is_last: true,
-                                        ..options
-                                    },
-                                    node_cx,
-                                    window,
-                                    cx,
-                                )));
-                            }
-                            _ => {}
-                        }
-                    }
-                    items
-                })
-                .into_any_element(),
-            _ => div().into_any_element(),
-        }
-    }
-
-    fn render_table(
-        item: &BlockNode,
-        options: &NodeRenderOptions,
-        node_cx: &NodeContext,
-        window: &mut Window,
-        cx: &mut App,
-    ) -> impl IntoElement {
-        const DEFAULT_LENGTH: usize = 5;
-        const MAX_LENGTH: usize = 150;
-        let col_lens = match item {
-            BlockNode::Table(table) => {
-                let mut col_lens = vec![];
-                for row in table.children.iter() {
-                    for (ix, cell) in row.children.iter().enumerate() {
-                        if col_lens.len() <= ix {
-                            col_lens.push(DEFAULT_LENGTH);
-                        }
-
-                        let len = cell.children.text_len();
-                        if len > col_lens[ix] {
-                            col_lens[ix] = len;
-                        }
-                    }
-                }
-                col_lens
-            }
-            _ => vec![],
-        };
-
-        match item {
-            BlockNode::Table(table) => div()
-                .pb(rems(1.))
-                .w_full()
-                .child(
-                    div()
-                        .id(("table", options.ix))
-                        .w_full()
-                        .border_1()
-                        .border_color(cx.theme().border)
-                        .rounded(cx.theme().radius)
-                        .children({
-                            let mut rows = Vec::with_capacity(table.children.len());
-                            for (row_ix, row) in table.children.iter().enumerate() {
-                                rows.push(
-                                    div()
-                                        .id("row")
-                                        .w_full()
-                                        .when(row_ix < table.children.len() - 1, |this| {
-                                            this.border_b_1()
-                                        })
-                                        .border_color(cx.theme().border)
-                                        .flex()
-                                        .flex_row()
-                                        .children({
-                                            let mut cells = Vec::with_capacity(row.children.len());
-                                            for (ix, cell) in row.children.iter().enumerate() {
-                                                let align = table.column_align(ix);
-                                                let is_last_col = ix == row.children.len() - 1;
-                                                let len = col_lens
-                                                    .get(ix)
-                                                    .copied()
-                                                    .unwrap_or(MAX_LENGTH)
-                                                    .min(MAX_LENGTH);
-
-                                                cells.push(
-                                                    div()
-                                                        .id("cell")
-                                                        .flex()
-                                                        .when(
-                                                            align == ColumnumnAlign::Center,
-                                                            |this| this.justify_center(),
-                                                        )
-                                                        .when(
-                                                            align == ColumnumnAlign::Right,
-                                                            |this| this.justify_end(),
-                                                        )
-                                                        .w(Length::Definite(relative(len as f32)))
-                                                        .px_2()
-                                                        .py_1()
-                                                        .when(!is_last_col, |this| {
-                                                            this.border_r_1()
-                                                                .border_color(cx.theme().border)
-                                                        })
-                                                        .truncate()
-                                                        .child(
-                                                            cell.children
-                                                                .render(node_cx, window, cx),
-                                                        ),
-                                                )
-                                            }
-                                            cells
-                                        }),
-                                )
-                            }
-                            rows
-                        }),
-                )
-                .into_any_element(),
-            _ => div().into_any_element(),
-        }
-    }
-
-    pub(crate) fn render_block(
-        &self,
-        options: NodeRenderOptions,
-        node_cx: &NodeContext,
-        window: &mut Window,
-        cx: &mut App,
-    ) -> AnyElement {
-        let ix = options.ix;
-        let mb = if options.in_list || options.is_last {
-            rems(0.)
-        } else {
-            node_cx.style.paragraph_gap
-        };
-
-        match self {
-            BlockNode::Root { children, .. } => div()
-                .id(("div", ix))
-                .children(children.into_iter().enumerate().map(move |(ix, node)| {
-                    node.render_block(NodeRenderOptions { ix, ..options }, node_cx, window, cx)
-                }))
-                .into_any_element(),
-            BlockNode::Paragraph(paragraph) => div()
-                .id(("p", ix))
-                .pb(mb)
-                .child(paragraph.render(node_cx, window, cx))
-                .into_any_element(),
-            BlockNode::Heading {
-                level, children, ..
-            } => {
-                let (text_size, font_weight) = match level {
-                    1 => (rems(2.), FontWeight::BOLD),
-                    2 => (rems(1.5), FontWeight::SEMIBOLD),
-                    3 => (rems(1.25), FontWeight::SEMIBOLD),
-                    4 => (rems(1.125), FontWeight::SEMIBOLD),
-                    5 => (rems(1.), FontWeight::SEMIBOLD),
-                    6 => (rems(1.), FontWeight::MEDIUM),
-                    _ => (rems(1.), FontWeight::NORMAL),
-                };
-
-                let mut text_size = text_size.to_pixels(node_cx.style.heading_base_font_size);
-                if let Some(f) = node_cx.style.heading_font_size.as_ref() {
-                    text_size = (f)(*level, node_cx.style.heading_base_font_size);
-                }
-
-                h_flex()
-                    .id(SharedString::from(format!("h{}-{}", level, ix)))
-                    .pb(rems(0.3))
-                    .whitespace_normal()
-                    .text_size(text_size)
-                    .font_weight(font_weight)
-                    .child(children.render(node_cx, window, cx))
-                    .into_any_element()
-            }
-            BlockNode::Blockquote { children, .. } => div()
-                .w_full()
-                .pb(mb)
-                .child(
-                    div()
-                        .id(("blockquote", ix))
-                        .w_full()
-                        .text_color(cx.theme().muted_foreground)
-                        .border_l_3()
-                        .border_color(cx.theme().secondary_active)
-                        .px_4()
-                        .children({
-                            let children_len = children.len();
-                            children.into_iter().enumerate().map(move |(index, c)| {
-                                let is_last = index == children_len - 1;
-                                c.render_block(options.is_last(is_last), node_cx, window, cx)
-                            })
-                        }),
-                )
-                .into_any_element(),
-            BlockNode::List {
-                children, ordered, ..
-            } => v_flex()
-                .id((if *ordered { "ol" } else { "ul" }, ix))
-                .pb(mb)
-                .children({
-                    let mut items = Vec::with_capacity(children.len());
-                    let mut item_index = 0;
-                    for (ix, item) in children.into_iter().enumerate() {
-                        let is_item = item.is_list_item();
-
-                        items.push(Self::render_list_item(
-                            item,
-                            item_index,
-                            NodeRenderOptions {
-                                ix,
-                                ordered: *ordered,
-                                ..options
-                            },
-                            node_cx,
-                            window,
-                            cx,
-                        ));
-
-                        if is_item {
-                            item_index += 1;
-                        }
-                    }
-                    items
-                })
-                .into_any_element(),
-            BlockNode::CodeBlock(code_block) => code_block.render(&options, node_cx, window, cx),
-            BlockNode::Table { .. } => {
-                Self::render_table(self, &options, node_cx, window, cx).into_any_element()
-            }
-            BlockNode::Divider { .. } => div()
-                .pb(mb)
-                .child(div().id("divider").bg(cx.theme().border).h(px(2.)))
-                .into_any_element(),
-            BlockNode::Break { .. } => div().id("break").into_any_element(),
-            BlockNode::Unknown { .. } | BlockNode::Definition { .. } => div().into_any_element(),
-            _ => {
-                if cfg!(debug_assertions) {
-                    tracing::warn!("unknown implementation: {:?}", self);
-                }
-
-                div().into_any_element()
-            }
-        }
     }
 }

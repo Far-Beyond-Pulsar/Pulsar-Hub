@@ -1,30 +1,16 @@
 use anyhow::Result;
-use gpui::{Context, EntityInputHandler, Task, Window};
-use lsp_types::{
-    CompletionContext, CompletionItem, CompletionResponse, InlineCompletionContext,
-    InlineCompletionItem, InlineCompletionResponse, InlineCompletionTriggerKind,
-    request::Completion,
-};
+use gpui::{Context, Entity, EntityInputHandler, Task, Window};
+use lsp_types::{request::Completion, CompletionContext, CompletionItem, CompletionResponse};
 use ropey::Rope;
-use std::{cell::RefCell, ops::Range, rc::Rc, time::Duration};
+use std::{cell::RefCell, ops::Range, rc::Rc};
 
 use crate::input::{
-    InputState,
     popovers::{CompletionMenu, ContextMenu},
+    InputState, RopeExt,
 };
-
-/// Default debounce duration for inline completions.
-const DEFAULT_INLINE_COMPLETION_DEBOUNCE: Duration = Duration::from_millis(300);
 
 /// A trait for providing code completions based on the current input state and context.
 pub trait CompletionProvider {
-    /// Fetches completions based on the given byte offset.
-    ///
-    /// - The `offset` is in bytes of current cursor.
-    ///
-    /// textDocument/completion
-    ///
-    /// https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_completion
     fn completions(
         &self,
         text: &Rope,
@@ -33,39 +19,6 @@ pub trait CompletionProvider {
         window: &mut Window,
         cx: &mut Context<InputState>,
     ) -> Task<Result<CompletionResponse>>;
-
-    /// Fetches an inline completion suggestion for the given position.
-    ///
-    /// This is called after a debounce period when the user stops typing.
-    /// The provider can analyze the text and cursor position to determine
-    /// what inline completion suggestion to show.
-    ///
-    ///
-    /// # Arguments
-    /// * `rope` - The current text content
-    /// * `offset` - The cursor position in bytes
-    ///
-    /// textDocument/inlineCompletion
-    ///
-    /// https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification/#textDocument_inlineCompletion
-    fn inline_completion(
-        &self,
-        _rope: &Rope,
-        _offset: usize,
-        _trigger: InlineCompletionContext,
-        _window: &mut Window,
-        _cx: &mut Context<InputState>,
-    ) -> Task<Result<InlineCompletionResponse>> {
-        Task::ready(Ok(InlineCompletionResponse::Array(vec![])))
-    }
-
-    /// Returns the debounce duration for inline completions.
-    ///
-    /// Default: 300ms
-    #[inline]
-    fn inline_completion_debounce(&self) -> Duration {
-        DEFAULT_INLINE_COMPLETION_DEBOUNCE
-    }
 
     fn resolve_completions(
         &self,
@@ -76,31 +29,12 @@ pub trait CompletionProvider {
         Task::ready(Ok(false))
     }
 
-    /// Determines if the completion should be triggered based on the given byte offset.
-    ///
-    /// This is called on the main thread.
     fn is_completion_trigger(
         &self,
         offset: usize,
         new_text: &str,
         cx: &mut Context<InputState>,
     ) -> bool;
-}
-
-pub(crate) struct InlineCompletion {
-    /// Completion item to display as an inline completion suggestion
-    pub(crate) item: Option<InlineCompletionItem>,
-    /// Task for debouncing inline completion requests
-    pub(crate) task: Task<Result<InlineCompletionResponse>>,
-}
-
-impl Default for InlineCompletion {
-    fn default() -> Self {
-        Self {
-            item: None,
-            task: Task::ready(Ok(InlineCompletionResponse::Array(vec![]))),
-        }
-    }
 }
 
 impl InputState {
@@ -119,80 +53,161 @@ impl InputState {
             return;
         };
 
-        // Always schedule inline completion (debounced).
-        // It will check if menu is open before showing the suggestion.
-        self.schedule_inline_completion(window, cx);
-
         let start = range.end;
         let new_offset = self.cursor();
 
-        if !provider.is_completion_trigger(start, new_text, cx) {
-            return;
-        }
-
-        let menu = match self.context_menu.as_ref() {
-            Some(ContextMenu::Completion(menu)) => Some(menu),
+        let existing_menu = match self.context_menu.as_ref() {
+            Some(ContextMenu::Completion(menu)) => Some(menu.clone()),
             _ => None,
         };
 
-        // To create or get the existing completion menu.
-        let menu = match menu {
-            Some(menu) => menu.clone(),
-            None => {
-                let menu = CompletionMenu::new(cx.entity(), window, cx);
-                self.context_menu = Some(ContextMenu::Completion(menu.clone()));
-                menu
-            }
-        };
-
-        let start_offset = menu.read(cx).trigger_start_offset.unwrap_or(start);
-        if new_offset < start_offset {
+        // Backspace / deletion (new_text is empty): only update an already-open menu.
+        // Never open a fresh menu from a deletion event.
+        let menu_is_open = existing_menu
+            .as_ref()
+            .map_or(false, |m| m.read(cx).is_open());
+        if new_text.is_empty() && !menu_is_open {
             return;
         }
 
-        let query = self
-            .text_for_range(
-                self.range_to_utf16(&(start_offset..new_offset)),
-                &mut None,
-                window,
-                cx,
-            )
-            .map(|s| s.trim().to_string())
-            .unwrap_or_default();
-        _ = menu.update(cx, |menu, _| {
-            menu.update_query(start_offset, query.clone());
+        let menu = existing_menu.clone().unwrap_or_else(|| {
+            let new_menu = CompletionMenu::new(cx.entity(), window, cx);
+            self.context_menu = Some(ContextMenu::Completion(new_menu.clone()));
+            new_menu
+        });
+
+        // Build the prefix the user has typed so far (walk back from cursor to word start).
+        // word_at/word_range spans the whole word; we only want chars LEFT of the cursor.
+        let (word_start, query) = {
+            let mut q = String::new();
+            for c in self.text.chars_at(new_offset).reversed() {
+                if c.is_alphanumeric() || c == '_' {
+                    q.insert(0, c);
+                } else {
+                    break;
+                }
+            }
+            let ws = new_offset.saturating_sub(q.len());
+            (ws, q)
+        };
+        tracing::debug!("[FILTER] handle_completion_trigger: cursor={}, word_start={}, query='{}', text.len()={}",
+            new_offset, word_start, query, self.text.len());
+        tracing::info!(
+            "🎯 handle_completion_trigger: cursor={}, word_start={}, query='{}', text.len()={}",
+            new_offset,
+            word_start,
+            query,
+            self.text.len()
+        );
+        // Instantly re-filter whatever items the menu already has.
+        menu.update(cx, |menu, cx| {
+            tracing::info!(
+                "📢 Calling menu.apply_query with query='{}', trigger_start={}",
+                query,
+                word_start
+            );
+            menu.apply_query(word_start, &query, cx);
+        });
+
+        self.request_completions_now(
+            new_offset,
+            start,
+            new_text,
+            provider,
+            self.text.clone(),
+            Some(menu),
+            window,
+            cx,
+        );
+    }
+
+    fn request_completions_now(
+        &mut self,
+        new_offset: usize,
+        start: usize,
+        new_text: &str,
+        provider: Rc<dyn CompletionProvider>,
+        text: Rope,
+        existing_menu: Option<Entity<CompletionMenu>>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let menu = existing_menu.unwrap_or_else(|| {
+            let new_menu = CompletionMenu::new(cx.entity(), window, cx);
+            self.context_menu = Some(ContextMenu::Completion(new_menu.clone()));
+            new_menu
+        });
+
+        // Mark as loading (keeps existing filtered items visible).
+        menu.update(cx, |menu, cx| {
+            menu.show_loading(new_offset, cx);
         });
 
         let completion_context = CompletionContext {
-            trigger_kind: lsp_types::CompletionTriggerKind::TRIGGER_CHARACTER,
-            trigger_character: Some(query),
+            trigger_kind: lsp_types::CompletionTriggerKind::INVOKED,
+            trigger_character: None,
         };
 
+        let request_id = self.completion_request_id.wrapping_add(1);
+        self.completion_request_id = request_id;
+
         let provider_responses =
-            provider.completions(&self.text, new_offset, completion_context, window, cx);
+            provider.completions(&text, new_offset, completion_context, window, cx);
+
         self._context_menu_task = cx.spawn_in(window, async move |editor, cx| {
-            let mut completions: Vec<CompletionItem> = vec![];
-            if let Some(provider_responses) = provider_responses.await.ok() {
-                match provider_responses {
-                    CompletionResponse::Array(items) => completions.extend(items),
-                    CompletionResponse::List(list) => completions.extend(list.items),
-                }
-            }
-
-            if completions.is_empty() {
-                _ = menu.update(cx, |menu, cx| {
-                    menu.hide(cx);
-                    cx.notify();
-                });
-
-                return Ok(());
-            }
+            let response = provider_responses.await;
 
             editor
                 .update_in(cx, |editor, window, cx| {
+                    if editor.completion_request_id != request_id {
+                        tracing::debug!(
+                            "Ignoring stale completion response: request_id={} current={}",
+                            request_id,
+                            editor.completion_request_id
+                        );
+                        return;
+                    }
+
                     if !editor.focus_handle.is_focused(window) {
                         return;
                     }
+
+                    let mut completions: Vec<CompletionItem> = vec![];
+
+                    match response {
+                        Ok(provider_responses) => match provider_responses {
+                            CompletionResponse::Array(items) => {
+                                tracing::info!("📦 Received {} completions (Array)", items.len());
+                                completions.extend(items);
+                            }
+                            CompletionResponse::List(list) => {
+                                tracing::info!(
+                                    "📦 Received {} completions (isIncomplete: {})",
+                                    list.items.len(),
+                                    list.is_incomplete
+                                );
+                                completions.extend(list.items);
+                            }
+                        },
+                        Err(e) => {
+                            tracing::error!("❌ Error getting completions: {:?}", e);
+                            _ = menu.update(cx, |menu, cx| {
+                                menu.hide(cx);
+                            });
+                            return;
+                        }
+                    }
+
+                    if completions.is_empty() {
+                        tracing::warn!("❌ No completions - hiding menu");
+                        _ = menu.update(cx, |menu, cx| {
+                            menu.hide(cx);
+                            cx.notify();
+                        });
+                        return;
+                    }
+
+                    tracing::info!("✅ Showing {} completions from server", completions.len());
 
                     _ = menu.update(cx, |menu, cx| {
                         menu.show(new_offset, completions, window, cx);
@@ -204,106 +219,5 @@ impl InputState {
 
             Ok(())
         });
-    }
-
-    /// Schedule an inline completion request after debouncing.
-    pub(crate) fn schedule_inline_completion(
-        &mut self,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        // Clear any existing inline completion on text change
-        self.clear_inline_completion(cx);
-
-        let Some(provider) = self.lsp.completion_provider.clone() else {
-            return;
-        };
-
-        let offset = self.cursor();
-        let text = self.text.clone();
-        let debounce = provider.inline_completion_debounce();
-
-        self.inline_completion.task = cx.spawn_in(window, async move |editor, cx| {
-            // Debounce: wait before fetching to avoid unnecessary requests while typing
-            smol::Timer::after(debounce).await;
-
-            // Now fetch the inline completion after the debounce period
-            let task = editor.update_in(cx, |editor, window, cx| {
-                // Check if cursor has moved during debounce
-                if editor.cursor() != offset {
-                    return None;
-                }
-
-                // Don't fetch if completion menu is open
-                if editor.is_context_menu_open(cx) {
-                    return None;
-                }
-
-                let trigger = InlineCompletionContext {
-                    trigger_kind: InlineCompletionTriggerKind::Automatic,
-                    selected_completion_info: None,
-                };
-
-                Some(provider.inline_completion(&text, offset, trigger, window, cx))
-            })?;
-
-            let Some(task) = task else {
-                return Ok(InlineCompletionResponse::Array(vec![]));
-            };
-
-            let response = task.await?;
-
-            editor.update_in(cx, |editor, _window, cx| {
-                // Only apply if cursor still hasn't moved
-                if editor.cursor() != offset {
-                    return;
-                }
-
-                // Don't show if completion menu opened while we were fetching
-                if editor.is_context_menu_open(cx) {
-                    return;
-                }
-
-                if let Some(item) = match response.clone() {
-                    InlineCompletionResponse::Array(items) => items.into_iter().next(),
-                    InlineCompletionResponse::List(comp_list) => comp_list.items.into_iter().next(),
-                } {
-                    editor.inline_completion.item = Some(item);
-                    cx.notify();
-                }
-            })?;
-
-            Ok(response)
-        });
-    }
-
-    /// Check if an inline completion suggestion is currently displayed.
-    #[inline]
-    pub(crate) fn has_inline_completion(&self) -> bool {
-        self.inline_completion.item.is_some()
-    }
-
-    /// Clear the inline completion suggestion.
-    pub(crate) fn clear_inline_completion(&mut self, cx: &mut Context<Self>) {
-        self.inline_completion = InlineCompletion::default();
-        cx.notify();
-    }
-
-    /// Accept the inline completion, inserting it at the cursor position.
-    /// Returns true if a completion was accepted, false if there was none.
-    pub(crate) fn accept_inline_completion(
-        &mut self,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> bool {
-        let Some(completion_item) = self.inline_completion.item.take() else {
-            return false;
-        };
-
-        let cursor = self.cursor();
-        let range_utf16 = self.range_to_utf16(&(cursor..cursor));
-        let completion_text = completion_item.insert_text;
-        self.replace_text_in_range_silent(Some(range_utf16), &completion_text, window, cx);
-        true
     }
 }

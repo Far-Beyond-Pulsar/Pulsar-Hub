@@ -3,7 +3,7 @@ use gpui::{
     Window,
 };
 
-use super::{label::PlotLabel, label::Text, label::TEXT_GAP, label::TEXT_SIZE, origin_point};
+use super::{label::Label, label::Text, label::TEXT_GAP, label::TEXT_SIZE, origin_point};
 
 pub const AXIS_GAP: f32 = 18.;
 
@@ -38,17 +38,17 @@ impl AxisText {
 }
 
 #[derive(Default)]
-pub struct PlotAxis {
+pub struct Axis {
     x: Option<Pixels>,
-    x_label: PlotLabel,
+    x_label: Label,
     show_x_axis: bool,
     y: Option<Pixels>,
-    y_label: PlotLabel,
+    y_label: Label,
     show_y_axis: bool,
     stroke: Hsla,
 }
 
-impl PlotAxis {
+impl Axis {
     pub fn new() -> Self {
         Self {
             show_x_axis: true,

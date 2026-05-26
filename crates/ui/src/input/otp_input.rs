@@ -1,12 +1,12 @@
 use gpui::{
-    AnyElement, App, AppContext as _, Context, Empty, Entity, EventEmitter, FocusHandle, Focusable,
-    InteractiveElement, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, ParentElement as _,
-    Render, RenderOnce, SharedString, Styled as _, Subscription, Window, div,
-    prelude::FluentBuilder, px,
+    div, prelude::FluentBuilder, px, AnyElement, App, AppContext as _, Context, Empty, Entity,
+    EventEmitter, FocusHandle, Focusable, InteractiveElement, IntoElement, KeyDownEvent,
+    MouseButton, MouseDownEvent, ParentElement as _, Render, RenderOnce, SharedString, Styled as _,
+    Subscription, Window,
 };
 
-use super::{InputEvent, blink_cursor::BlinkCursor};
-use crate::{ActiveTheme, Disableable, Icon, IconName, Sizable, Size, h_flex, v_flex};
+use super::{blink_cursor::BlinkCursor, InputEvent};
+use crate::{h_flex, v_flex, ActiveTheme, Disableable, Icon, IconName, Sizable, Size};
 
 pub struct OtpState {
     focus_handle: FocusHandle,
@@ -18,7 +18,6 @@ pub struct OtpState {
 }
 
 impl OtpState {
-    /// Create a new [`OtpState`] with the specified length.
     pub fn new(length: usize, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let focus_handle = cx.focus_handle();
         let blink_cursor = cx.new(|_| BlinkCursor::new());
@@ -85,18 +84,17 @@ impl OtpState {
         cx.notify();
     }
 
-    /// Focus the OTP Input.
-    pub fn focus(&self, window: &mut Window, cx: &mut Context<Self>) {
-        self.focus_handle.focus(window, cx);
+    pub fn focus(&self, window: &mut Window, _: &mut Context<Self>) {
+        self.focus_handle.focus(window);
     }
 
     fn on_input_mouse_down(
         &mut self,
         _: &MouseDownEvent,
         window: &mut Window,
-        cx: &mut Context<Self>,
+        _: &mut Context<Self>,
     ) {
-        window.focus(&self.focus_handle, cx);
+        window.focus(&self.focus_handle);
     }
 
     fn on_key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
@@ -299,7 +297,7 @@ impl RenderOnce for OtpInput {
                                     .h_4()
                                     .w_0()
                                     .border_l_3()
-                                    .border_color(cx.theme().caret),
+                                    .border_color(crate::blue_500()),
                             )
                         }),
                     })

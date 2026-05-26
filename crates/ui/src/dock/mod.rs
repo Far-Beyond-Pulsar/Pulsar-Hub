@@ -3,31 +3,59 @@ mod invalid_panel;
 mod panel;
 mod stack_panel;
 mod state;
-mod tab_panel;
+pub mod tab_drag;
+pub mod tab_panel;
 mod tiles;
 
 use anyhow::Result;
 use gpui::{
-    AnyElement, AnyView, App, AppContext, Axis, Bounds, Context, Edges, Entity, EntityId,
-    EventEmitter, InteractiveElement as _, IntoElement, ParentElement as _, Pixels, Render,
-    SharedString, Styled, Subscription, WeakEntity, Window, actions, div, prelude::FluentBuilder,
+    actions, canvas, div, prelude::FluentBuilder, AnyElement, AnyView, AnyWindowHandle, App,
+    AppContext, Axis, Bounds, Context, Edges, Entity, EntityId, EventEmitter,
+    InteractiveElement as _, IntoElement, ParentElement as _, Pixels, ReadGlobal, Render,
+    SharedString, Styled, Subscription, UpdateGlobal, WeakEntity, Window,
 };
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 pub use dock::*;
 pub use panel::*;
 pub use stack_panel::*;
 pub use state::*;
+pub use tab_drag::{
+    deposit_panel_into_window, drag_screen_position, find_target_window, register_dock_window,
+    set_drag_screen_position, unregister_dock_window, DockWindowRegistry,
+};
 pub use tab_panel::*;
 pub use tiles::*;
 
-use crate::ElementExt;
+/// Information about where a panel was popped out from
+#[derive(Clone)]
+pub struct PanelSource {
+    /// The TabPanel the panel came from
+    pub tab_panel: WeakEntity<TabPanel>,
+    /// The parent window handle
+    pub parent_window: AnyWindowHandle,
+    /// The index position in the original tab panel (for restoring order)
+    pub tab_index: Option<usize>,
+}
 
 pub(crate) fn init(cx: &mut App) {
     PanelRegistry::init(cx);
 }
 
 actions!(dock, [ToggleZoom, ClosePanel]);
+
+#[derive(Debug)]
+pub enum DockError {
+    InvalidPanelType(&'static str),
+}
+
+impl std::fmt::Display for DockError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DockError::InvalidPanelType(msg) => write!(f, "Invalid panel type: {}", msg),
+        }
+    }
+}
 
 pub enum DockEvent {
     /// The layout of the dock has changed, subscribers this to save the layout.
@@ -38,6 +66,9 @@ pub enum DockEvent {
 
     /// The drag item drop event.
     DragDrop(AnyDrag),
+
+    /// A panel should be moved to a new window
+    MoveToNewWindow(Arc<dyn PanelView>, gpui::Point<Pixels>),
 }
 
 /// The main area of the dock.
@@ -70,6 +101,9 @@ pub struct DockArea {
     /// The panel style, default is [`PanelStyle::Default`](PanelStyle::Default).
     pub(crate) panel_style: PanelStyle,
 
+    /// Dock channel - isolates this DockArea from others
+    channel: tab_panel::DockChannel,
+
     _subscriptions: Vec<Subscription>,
 }
 
@@ -79,31 +113,20 @@ pub enum DockItem {
     /// Split layout
     Split {
         axis: Axis,
-        /// Self size, only used for build split panels
-        size: Option<Pixels>,
         items: Vec<DockItem>,
-        /// Items sizes
         sizes: Vec<Option<Pixels>>,
         view: Entity<StackPanel>,
     },
     /// Tab layout
     Tabs {
-        /// Self size, only used for build split panels
-        size: Option<Pixels>,
         items: Vec<Arc<dyn PanelView>>,
         active_ix: usize,
         view: Entity<TabPanel>,
     },
     /// Panel layout
-    Panel {
-        /// Self size, only used for build split panels
-        size: Option<Pixels>,
-        view: Arc<dyn PanelView>,
-    },
+    Panel { view: Arc<dyn PanelView> },
     /// Tiles layout
     Tiles {
-        /// Self size, only used for build split panels
-        size: Option<Pixels>,
         items: Vec<TileItem>,
         view: Entity<Tiles>,
     },
@@ -134,50 +157,7 @@ impl std::fmt::Debug for DockItem {
 }
 
 impl DockItem {
-    /// Get the size of the DockItem.
-    fn get_size(&self) -> Option<Pixels> {
-        match self {
-            Self::Split { size, .. } => *size,
-            Self::Tabs { size, .. } => *size,
-            Self::Panel { size, .. } => *size,
-            Self::Tiles { size, .. } => *size,
-        }
-    }
-
-    /// Set size for the DockItem.
-    pub fn size(mut self, new_size: impl Into<Pixels>) -> Self {
-        let new_size: Option<Pixels> = Some(new_size.into());
-        match self {
-            Self::Split { ref mut size, .. } => *size = new_size,
-            Self::Tabs { ref mut size, .. } => *size = new_size,
-            Self::Tiles { ref mut size, .. } => *size = new_size,
-            Self::Panel { ref mut size, .. } => *size = new_size,
-        }
-        self
-    }
-
-    /// Set active index for the DockItem, only valid for [`DockItem::Tabs`].
-    pub fn active_index(mut self, new_active_ix: usize, cx: &mut App) -> Self {
-        debug_assert!(
-            matches!(self, Self::Tabs { .. }),
-            "active_ix can only be set for DockItem::Tabs"
-        );
-
-        if let Self::Tabs {
-            ref mut active_ix,
-            ref mut view,
-            ..
-        } = self
-        {
-            *active_ix = new_active_ix;
-            view.update(cx, |tab_panel, _| {
-                tab_panel.active_ix = new_active_ix;
-            });
-        }
-        self
-    }
-
-    /// Create DockItem::Split with given split layout.
+    /// Create DockItem with split layout, each item of panel have equal size.
     pub fn split(
         axis: Axis,
         items: Vec<DockItem>,
@@ -185,28 +165,8 @@ impl DockItem {
         window: &mut Window,
         cx: &mut App,
     ) -> Self {
-        let sizes = items.iter().map(|item| item.get_size()).collect();
+        let sizes = vec![None; items.len()];
         Self::split_with_sizes(axis, items, sizes, dock_area, window, cx)
-    }
-
-    /// Create DockItem with vertical split layout.
-    pub fn v_split(
-        items: Vec<DockItem>,
-        dock_area: &WeakEntity<DockArea>,
-        window: &mut Window,
-        cx: &mut App,
-    ) -> Self {
-        Self::split(Axis::Vertical, items, dock_area, window, cx)
-    }
-
-    /// Create DockItem with horizontal split layout.
-    pub fn h_split(
-        items: Vec<DockItem>,
-        dock_area: &WeakEntity<DockArea>,
-        window: &mut Window,
-        cx: &mut App,
-    ) -> Self {
-        Self::split(Axis::Horizontal, items, dock_area, window, cx)
     }
 
     /// Create DockItem with split layout, each item of panel have specified size.
@@ -251,7 +211,6 @@ impl DockItem {
 
         Self::Split {
             axis,
-            size: None,
             items,
             sizes,
             view: stack_panel,
@@ -260,10 +219,7 @@ impl DockItem {
 
     /// Create DockItem with panel layout
     pub fn panel(panel: Arc<dyn PanelView>) -> Self {
-        Self::Panel {
-            size: None,
-            view: panel,
-        }
+        Self::Panel { view: panel }
     }
 
     /// Create DockItem with tiles layout
@@ -286,13 +242,17 @@ impl DockItem {
                         let meta: TileMeta = metas[ix].into();
                         let tile_item =
                             TileItem::new(Arc::new(view), meta.bounds).z_index(meta.z_index);
-                        tiles.add_item(tile_item, dock_area, window, cx);
+                        if let Err(e) = tiles.add_item(tile_item, dock_area, window, cx) {
+                            tracing::warn!("Failed to add tile item: {}", e);
+                        }
                     }
-                    DockItem::Panel { view, .. } => {
+                    DockItem::Panel { view } => {
                         let meta: TileMeta = metas[ix].into();
                         let tile_item =
                             TileItem::new(view.clone(), meta.bounds).z_index(meta.z_index);
-                        tiles.add_item(tile_item, dock_area, window, cx);
+                        if let Err(e) = tiles.add_item(tile_item, dock_area, window, cx) {
+                            tracing::warn!("Failed to add tile item: {}", e);
+                        }
                     }
                     _ => {
                         // Ignore non-tabs items
@@ -314,7 +274,6 @@ impl DockItem {
         });
 
         Self::Tiles {
-            size: None,
             items: tile_panel.read(cx).panels.clone(),
             view: tile_panel,
         }
@@ -325,6 +284,7 @@ impl DockItem {
     /// The `active_ix` is the index of the active tab, if `None` the first tab is active.
     pub fn tabs(
         items: Vec<Arc<dyn PanelView>>,
+        active_ix: Option<usize>,
         dock_area: &WeakEntity<DockArea>,
         window: &mut Window,
         cx: &mut App,
@@ -333,7 +293,7 @@ impl DockItem {
         for item in items.into_iter() {
             new_items.push(item)
         }
-        Self::new_tabs(new_items, None, dock_area, window, cx)
+        Self::new_tabs(new_items, active_ix, dock_area, window, cx)
     }
 
     pub fn tab<P: Panel>(
@@ -354,7 +314,11 @@ impl DockItem {
     ) -> Self {
         let active_ix = active_ix.unwrap_or(0);
         let tab_panel = cx.new(|cx| {
-            let mut tab_panel = TabPanel::new(None, dock_area.clone(), window, cx);
+            let channel = dock_area
+                .upgrade()
+                .map(|d| d.read(cx).channel)
+                .unwrap_or_default();
+            let mut tab_panel = TabPanel::new(None, dock_area.clone(), channel, window, cx);
             for item in items.iter() {
                 tab_panel.add_panel(item.clone(), window, cx)
             }
@@ -363,7 +327,6 @@ impl DockItem {
         });
 
         Self::Tabs {
-            size: None,
             items,
             active_ix,
             view: tab_panel,
@@ -387,7 +350,7 @@ impl DockItem {
                 items.iter().find_map(|item| item.find_panel(panel.clone()))
             }
             Self::Tabs { items, .. } => items.iter().find(|item| *item == &panel).cloned(),
-            Self::Panel { view, .. } => Some(view.clone()),
+            Self::Panel { view } => Some(view.clone()),
             Self::Tiles { items, .. } => items.iter().find_map(|item| {
                 if &item.panel == &panel {
                     Some(item.panel.clone())
@@ -426,16 +389,21 @@ impl DockItem {
                 }
 
                 // Unable to find tabs, create new tabs
-                let new_item = Self::tabs(vec![panel.clone()], dock_area, window, cx);
+                let new_item = Self::tabs(vec![panel.clone()], None, dock_area, window, cx);
                 items.push(new_item.clone());
                 view.update(cx, |stack_panel, cx| {
                     stack_panel.add_panel(new_item.view(), None, dock_area.clone(), window, cx);
                 });
             }
-            Self::Tiles { view, items, .. } => {
+            Self::Tiles { view, items } => {
                 let tile_item = TileItem::new(
                     Arc::new(cx.new(|cx| {
-                        let mut tab_panel = TabPanel::new(None, dock_area.clone(), window, cx);
+                        let channel = dock_area
+                            .upgrade()
+                            .map(|d| d.read(cx).channel)
+                            .unwrap_or_default();
+                        let mut tab_panel =
+                            TabPanel::new(None, dock_area.clone(), channel, window, cx);
                         tab_panel.add_panel(panel.clone(), window, cx);
                         tab_panel
                     })),
@@ -444,7 +412,9 @@ impl DockItem {
 
                 items.push(tile_item.clone());
                 view.update(cx, |tiles, cx| {
-                    tiles.add_item(tile_item, dock_area, window, cx);
+                    if let Err(e) = tiles.add_item(tile_item, dock_area, window, cx) {
+                        tracing::warn!("Failed to add tile item: {}", e);
+                    }
                 });
             }
             Self::Panel { .. } => {}
@@ -491,12 +461,12 @@ impl DockItem {
                 }
             }
             DockItem::Tiles { .. } => {}
-            DockItem::Panel { view, .. } => view.set_active(!collapsed, window, cx),
+            DockItem::Panel { view } => view.set_active(!collapsed, window, cx),
         }
     }
 
     /// Recursively traverses to find the left-most and top-most TabPanel.
-    pub(crate) fn left_top_tab_panel(&self, cx: &App) -> Option<Entity<TabPanel>> {
+    pub fn left_top_tab_panel(&self, cx: &App) -> Option<Entity<TabPanel>> {
         match self {
             DockItem::Tabs { view, .. } => Some(view.clone()),
             DockItem::Split { view, .. } => view.read(cx).left_top_tab_panel(true, cx),
@@ -523,11 +493,20 @@ impl DockArea {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
+        Self::new_with_channel(id, version, tab_panel::DockChannel::default(), window, cx)
+    }
+
+    pub fn new_with_channel(
+        id: impl Into<SharedString>,
+        version: Option<usize>,
+        channel: tab_panel::DockChannel,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let stack_panel = cx.new(|cx| StackPanel::new(Axis::Horizontal, window, cx));
 
         let dock_item = DockItem::Split {
             axis: Axis::Horizontal,
-            size: None,
             items: vec![],
             sizes: vec![],
             view: stack_panel.clone(),
@@ -545,11 +524,17 @@ impl DockArea {
             right_dock: None,
             bottom_dock: None,
             locked: false,
-            panel_style: PanelStyle::default(),
+            panel_style: PanelStyle::Default,
+            channel,
             _subscriptions: vec![],
         };
 
         this.subscribe_panel(&stack_panel, window, cx);
+
+        // Register with the global window registry so cross-window drags work.
+        let weak_self = cx.entity().downgrade();
+        let window_handle = window.window_handle();
+        tab_drag::register_dock_window(window_handle, weak_self, channel, cx);
 
         this
     }
@@ -590,20 +575,37 @@ impl DockArea {
         cx.notify();
     }
 
-    // FIXME: Remove this method after 2025-01-01
-    #[deprecated(note = "Use `set_center` instead")]
-    pub fn set_root(&mut self, item: DockItem, window: &mut Window, cx: &mut Context<Self>) {
-        self.set_center(item, window, cx);
-    }
-
     /// The the DockItem as the center of the dock area.
     ///
     /// This is used to render at the Center of the DockArea.
     pub fn set_center(&mut self, item: DockItem, window: &mut Window, cx: &mut Context<Self>) {
         self.subscribe_item(&item, window, cx);
         self.items = item;
-        self.update_toggle_button_tab_panels(window, cx);
         cx.notify();
+    }
+
+    /// Add `panel` to the centre TabPanel of this DockArea.
+    ///
+    /// Used by the cross-window drop system: when a tab is dragged from window A
+    /// and released over window B, we call this on window B's DockArea.
+    pub fn add_panel_to_center(
+        &mut self,
+        panel: Arc<dyn PanelView>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match &self.items {
+            DockItem::Tabs { view, .. } => {
+                let view = view.clone();
+                view.update(cx, |tp, cx| tp.add_panel(panel, window, cx));
+            }
+            DockItem::Split { .. } => {
+                if let Some(tab_panel) = self.items.left_top_tab_panel(cx) {
+                    tab_panel.update(cx, |tp, cx| tp.add_panel(panel, window, cx));
+                }
+            }
+            _ => {}
+        }
     }
 
     pub fn set_left_dock(
@@ -616,8 +618,9 @@ impl DockArea {
     ) {
         self.subscribe_item(&panel, window, cx);
         let weak_self = cx.entity().downgrade();
+        let channel = self.channel;
         self.left_dock = Some(cx.new(|cx| {
-            let mut dock = Dock::left(weak_self.clone(), window, cx);
+            let mut dock = Dock::left(weak_self.clone(), channel, window, cx);
             if let Some(size) = size {
                 dock.set_size(size, window, cx);
             }
@@ -625,7 +628,6 @@ impl DockArea {
             dock.set_open(open, window, cx);
             dock
         }));
-        self.update_toggle_button_tab_panels(window, cx);
     }
 
     pub fn set_bottom_dock(
@@ -638,8 +640,9 @@ impl DockArea {
     ) {
         self.subscribe_item(&panel, window, cx);
         let weak_self = cx.entity().downgrade();
+        let channel = self.channel;
         self.bottom_dock = Some(cx.new(|cx| {
-            let mut dock = Dock::bottom(weak_self.clone(), window, cx);
+            let mut dock = Dock::bottom(weak_self.clone(), channel, window, cx);
             if let Some(size) = size {
                 dock.set_size(size, window, cx);
             }
@@ -647,7 +650,6 @@ impl DockArea {
             dock.set_open(open, window, cx);
             dock
         }));
-        self.update_toggle_button_tab_panels(window, cx);
     }
 
     pub fn set_right_dock(
@@ -659,9 +661,10 @@ impl DockArea {
         cx: &mut Context<Self>,
     ) {
         self.subscribe_item(&panel, window, cx);
+        let channel = self.channel;
         let weak_self = cx.entity().downgrade();
         self.right_dock = Some(cx.new(|cx| {
-            let mut dock = Dock::right(weak_self.clone(), window, cx);
+            let mut dock = Dock::right(weak_self.clone(), channel, window, cx);
             if let Some(size) = size {
                 dock.set_size(size, window, cx);
             }
@@ -669,7 +672,6 @@ impl DockArea {
             dock.set_open(open, window, cx);
             dock
         }));
-        self.update_toggle_button_tab_panels(window, cx);
     }
 
     /// Set locked state of the dock area, if locked, the dock area cannot be split or move, but allows to resize panels.
@@ -791,6 +793,11 @@ impl DockArea {
         self.toggle_button_visible = visible;
     }
 
+    /// Get mutable access to the root items DockItem
+    pub fn items_mut(&mut self) -> &mut DockItem {
+        &mut self.items
+    }
+
     /// Add a panel item to the dock area at the given placement.
     pub fn add_panel(
         &mut self,
@@ -807,7 +814,7 @@ impl DockArea {
                     dock.update(cx, |dock, cx| dock.add_panel(panel, window, cx))
                 } else {
                     self.set_left_dock(
-                        DockItem::tabs(vec![panel], &weak_self, window, cx),
+                        DockItem::tabs(vec![panel], None, &weak_self, window, cx),
                         None,
                         true,
                         window,
@@ -820,7 +827,7 @@ impl DockArea {
                     dock.update(cx, |dock, cx| dock.add_panel(panel, window, cx))
                 } else {
                     self.set_bottom_dock(
-                        DockItem::tabs(vec![panel], &weak_self, window, cx),
+                        DockItem::tabs(vec![panel], None, &weak_self, window, cx),
                         None,
                         true,
                         window,
@@ -833,7 +840,7 @@ impl DockArea {
                     dock.update(cx, |dock, cx| dock.add_panel(panel, window, cx))
                 } else {
                     self.set_right_dock(
-                        DockItem::tabs(vec![panel], &weak_self, window, cx),
+                        DockItem::tabs(vec![panel], None, &weak_self, window, cx),
                         None,
                         true,
                         window,
@@ -923,7 +930,6 @@ impl DockArea {
         }
 
         self.items = state.center.to_item(weak_self, window, cx);
-        self.update_toggle_button_tab_panels(window, cx);
         Ok(())
     }
 
@@ -970,20 +976,16 @@ impl DockArea {
                     window,
                     move |_, _, event, window, cx| match event {
                         PanelEvent::LayoutChanged => {
-                            cx.spawn_in(window, async move |view, window| {
-                                _ = view.update_in(window, |view, window, cx| {
-                                    view.update_toggle_button_tab_panels(window, cx)
-                                });
-                            })
-                            .detach();
                             cx.emit(DockEvent::LayoutChanged);
                         }
                         _ => {}
                     },
                 ));
             }
-            DockItem::Tabs { .. } => {
-                // We subscribe to the tab panel event in StackPanel's insert_panel
+            DockItem::Tabs { view, .. } => {
+                // Root-level Tabs items aren't inside a StackPanel, so we subscribe directly
+                // here.  This is what makes the pop-out button work for centre dock items.
+                self.subscribe_panel(view, window, cx);
             }
             DockItem::Tiles { .. } => {
                 // We subscribe to the tab panel event in Tiles's [`add_item`](Tiles::add_item)
@@ -1024,13 +1026,61 @@ impl DockArea {
                         })
                         .detach(),
                     PanelEvent::LayoutChanged => {
-                        cx.spawn_in(window, async move |view, window| {
-                            _ = view.update_in(window, |view, window, cx| {
-                                view.update_toggle_button_tab_panels(window, cx)
-                            });
-                        })
-                        .detach();
                         cx.emit(DockEvent::LayoutChanged);
+                    }
+                    PanelEvent::TabClosed(_) => {
+                        // Do nothing for TabClosed
+                    }
+                    PanelEvent::MoveToNewWindow {
+                        panel,
+                        position,
+                        source_tab_panel,
+                        source_index,
+                    } => {
+                        tracing::trace!("[DOCK_AREA] Received MoveToNewWindow from TabPanel");
+                        tracing::trace!("[DOCK_AREA] Source index: {}", source_index);
+                        let parent_window_handle = window.window_handle();
+
+                        let source = PanelSource {
+                            tab_panel: source_tab_panel.clone(),
+                            parent_window: parent_window_handle.into(),
+                            tab_index: Some(*source_index),
+                        };
+
+                        // Detach first, then create the popout window. Rendering the same panel
+                        // in two tab trees at once can fail in practice.
+                        let popout_panel = panel.clone();
+                        let popout_position = *position;
+                        let popout_source = source.clone();
+
+                        if let Some(source_panel) = source_tab_panel.upgrade() {
+                            let panel_to_detach = panel.clone();
+                            window.defer(cx, move |window, cx| {
+                                _ = source_panel.update(cx, |view, cx| {
+                                    tracing::trace!("[DOCK_AREA] Detaching panel from source before popout creation");
+                                    view.detach_panel(panel_to_detach.clone(), window, cx);
+                                    view.remove_self_if_empty(window, cx);
+                                });
+
+                                Self::create_popout_window(
+                                    popout_panel.clone(),
+                                    popout_position,
+                                    Some(popout_source.clone()),
+                                    cx,
+                                );
+                            });
+                        } else {
+                            tracing::warn!("[DOCK_AREA] Source tab panel missing during popout; creating detached window directly");
+                            Self::create_popout_window(
+                                popout_panel,
+                                popout_position,
+                                Some(popout_source),
+                                cx,
+                            );
+                        }
+                    }
+                    PanelEvent::TabChanged { active_index: _ } => {
+                        // Do nothing for TabChanged
                     }
                 },
             );
@@ -1087,18 +1137,200 @@ impl DockArea {
             .and_then(|dock| dock.read(cx).panel.left_top_tab_panel(cx))
             .map(|view| view.entity_id());
     }
+
+    /// Create a popout window with the given panel
+    fn create_popout_window(
+        panel: Arc<dyn PanelView>,
+        position: gpui::Point<Pixels>,
+        source: Option<PanelSource>,
+        cx: &mut App,
+    ) {
+        use gpui::{px, size, Bounds, Point, WindowBounds, WindowKind, WindowOptions};
+
+        let window_size = size(px(800.), px(600.));
+        let title_bar_height = px(36.0);
+
+        let window_bounds = Bounds::new(
+            Point {
+                x: position.x - px(100.0),
+                y: position.y - title_bar_height - px(4.0),
+            },
+            window_size,
+        );
+
+        let window_options = WindowOptions {
+            window_bounds: Some(WindowBounds::Windowed(window_bounds)),
+            titlebar: None,
+            window_min_size: Some(gpui::Size {
+                width: px(400.),
+                height: px(300.),
+            }),
+            kind: WindowKind::Normal,
+            is_resizable: true,
+            window_decorations: Some(gpui::WindowDecorations::Client),
+            ..Default::default()
+        };
+
+        let _ = cx.open_window(window_options, move |window: &mut gpui::Window, cx: &mut gpui::App| {
+                    tracing::trace!("[DOCK_AREA] Inside window creation callback");
+
+                    // Create a minimal new dock area for this detached window
+                    let new_dock_area =
+                        cx.new(|cx| DockArea::new("detached-dock", Some(1), window, cx));
+                    let weak_new_dock = new_dock_area.downgrade();
+
+                    // Create a tab panel with just the one panel
+                    let new_tab_panel = cx.new(|cx| {
+                        let channel = weak_new_dock
+                            .upgrade()
+                            .map(|d| d.read(cx).channel)
+                            .unwrap_or_default();
+                        let mut tab_panel =
+                            TabPanel::new(None, weak_new_dock.clone(), channel, window, cx);
+                        tab_panel.closable = true;
+                        tab_panel
+                    });
+
+                    new_tab_panel.update(cx, |view: &mut TabPanel, cx: &mut Context<TabPanel>| {
+                        view.add_panel(panel.clone(), window, cx);
+                    });
+
+                    // Set up the dock area with just this panel
+                    new_dock_area.update(cx, |dock: &mut DockArea, cx: &mut Context<DockArea>| {
+                        let dock_item = DockItem::Tabs {
+                            view: new_tab_panel.clone(),
+                            active_ix: 0,
+                            items: vec![panel.clone()],
+                        };
+                        dock.set_center(dock_item, window, cx);
+                    });
+
+                    tracing::trace!("[DOCK_AREA] Popout window created successfully");
+                    let popout_window = cx.new(|cx| {
+                        PopoutDockWindow::new(new_dock_area, panel.clone(), source, window, cx)
+                    });
+                    cx.new(|cx| crate::Root::new(popout_window.into(), window, cx))
+        });
+    }
 }
+
+/// Wrapper window for popped-out dock areas - includes a titlebar
+struct PopoutDockWindow {
+    dock_area: Entity<DockArea>,
+    original_panel: Arc<dyn PanelView>,
+    source: Option<PanelSource>,
+}
+
+impl PopoutDockWindow {
+    fn new(
+        dock_area: Entity<DockArea>,
+        original_panel: Arc<dyn PanelView>,
+        source: Option<PanelSource>,
+        _window: &mut Window,
+        _cx: &mut Context<Self>,
+    ) -> Self {
+        Self {
+            dock_area,
+            original_panel,
+            source,
+        }
+    }
+}
+
+impl Render for PopoutDockWindow {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        use crate::{v_flex, ActiveTheme, TitleBar};
+        let theme = cx.theme();
+
+        let panel = self.original_panel.clone();
+        let source = self.source.clone();
+
+        let mut title_bar = TitleBar::new();
+
+        // Add close handler to restore panel to its original location
+        if let Some(source_info) = source {
+            title_bar = title_bar.on_close_window(move |_, window, cx| {
+                tracing::trace!(
+                    "[POPOUT] Close button clicked, restoring panel to original location"
+                );
+
+                let panel_to_restore = panel.clone();
+                let tab_index = source_info.tab_index;
+
+                let _ = cx.update_window(source_info.parent_window, |_root, window, cx| {
+                    if let Some(source_tab_panel) = source_info.tab_panel.upgrade() {
+                        cx.update_entity(&source_tab_panel, |tab_panel, cx| {
+                            tracing::trace!(
+                                "[POPOUT] Adding panel back to original tab panel at index {:?}",
+                                tab_index
+                            );
+
+                            if let Some(idx) = tab_index {
+                                // Restore to the specific index
+                                tab_panel.insert_panel_at(
+                                    panel_to_restore.clone(),
+                                    idx,
+                                    window,
+                                    cx,
+                                );
+                            } else {
+                                // Add at the end
+                                tab_panel.add_panel(panel_to_restore.clone(), window, cx);
+                            }
+                        });
+                    } else {
+                        tracing::trace!(
+                            "[POPOUT] Warning: source tab panel was dropped, cannot restore"
+                        );
+                    }
+                });
+
+                // Close this window
+                window.remove_window();
+            });
+        } else {
+            tracing::trace!("[POPOUT] Warning: no source information available for restoration");
+        }
+
+        v_flex()
+            .size_full()
+            .bg(theme.background)
+            .child(title_bar)
+            .child(
+                div()
+                    .flex_1()
+                    .overflow_hidden()
+                    .child(self.dock_area.clone()),
+            )
+    }
+}
+
 impl EventEmitter<DockEvent> for DockArea {}
 impl Render for DockArea {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let view = cx.entity().clone();
+        // Store bounds directly - we already have mutable access via &mut self
+        let bounds_setter = cx.entity().downgrade();
 
         div()
             .id("dock-area")
             .relative()
             .size_full()
             .overflow_hidden()
-            .on_prepaint(move |bounds, _, cx| view.update(cx, |r, _| r.bounds = bounds))
+            .child(
+                canvas(
+                    move |bounds, _, cx| {
+                        // Defer bounds update to avoid nested entity access
+                        if let Some(view) = bounds_setter.upgrade() {
+                            cx.defer(move |cx| {
+                                _ = view.update(cx, |r, _| r.bounds = bounds);
+                            });
+                        }
+                    },
+                    |_, _, _, _| {},
+                )
+                .absolute()
+                .size_full(),
+            )
             .map(|this| {
                 if let Some(zoom_view) = self.zoom_view.clone() {
                     this.child(zoom_view)

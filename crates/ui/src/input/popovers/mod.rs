@@ -11,13 +11,13 @@ pub(crate) use diagnostic_popover::*;
 pub(crate) use hover_popover::*;
 
 use gpui::{
-    App, Div, ElementId, Entity, InteractiveElement as _, IntoElement, SharedString, Stateful,
-    StyleRefinement, Styled as _, Window, div, px, rems,
+    div, px, rems, App, Div, ElementId, Entity, InteractiveElement as _, IntoElement, SharedString,
+    Stateful, StyleRefinement, Styled as _, Window,
 };
 
 use crate::{
-    ActiveTheme, StyledExt as _,
     text::{TextView, TextViewStyle},
+    ActiveTheme, StyledExt as _,
 };
 
 pub(crate) enum ContextMenu {
@@ -47,10 +47,10 @@ impl ContextMenu {
 pub(super) fn render_markdown(
     id: impl Into<ElementId>,
     markdown: impl Into<SharedString>,
-    _: &mut Window,
+    window: &mut Window,
     cx: &mut App,
-) -> TextView {
-    TextView::markdown(id, markdown)
+) -> impl IntoElement {
+    TextView::markdown(id, markdown, window, cx)
         .style(
             TextViewStyle::default()
                 .paragraph_gap(rems(0.5))
@@ -66,7 +66,7 @@ pub(super) fn render_markdown(
                         .text_size(px(11.)),
                 ),
         )
-        .selectable(true)
+        .selectable()
 }
 
 pub(super) fn editor_popover(id: impl Into<ElementId>, cx: &App) -> Stateful<Div> {

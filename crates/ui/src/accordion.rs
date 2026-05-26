@@ -8,7 +8,7 @@ use gpui::{
 
 use crate::{h_flex, v_flex, ActiveTheme as _, Icon, IconName, Sizable, Size};
 
-/// Accordion element.
+/// An AccordionGroup is a container for multiple Accordion elements.
 #[derive(IntoElement)]
 pub struct Accordion {
     id: ElementId,
@@ -21,7 +21,6 @@ pub struct Accordion {
 }
 
 impl Accordion {
-    /// Create a new Accordion with the given ID.
     pub fn new(id: impl Into<ElementId>) -> Self {
         Self {
             id: id.into(),
@@ -34,25 +33,21 @@ impl Accordion {
         }
     }
 
-    /// Set whether multiple accordion items can be opened simultaneously, default: false
     pub fn multiple(mut self, multiple: bool) -> Self {
         self.multiple = multiple;
         self
     }
 
-    /// Set whether the accordion items have borders, default: true
     pub fn bordered(mut self, bordered: bool) -> Self {
         self.bordered = bordered;
         self
     }
 
-    /// Set whether the accordion is disabled, default: false
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.disabled = disabled;
         self
     }
 
-    /// Adds an AccordionItem to the Accordion.
     pub fn item<F>(mut self, child: F) -> Self
     where
         F: FnOnce(AccordionItem) -> AccordionItem,
@@ -140,7 +135,7 @@ pub struct AccordionItem {
     index: usize,
     icon: Option<Icon>,
     title: AnyElement,
-    children: Vec<AnyElement>,
+    content: AnyElement,
     open: bool,
     size: Size,
     bordered: bool,
@@ -149,13 +144,12 @@ pub struct AccordionItem {
 }
 
 impl AccordionItem {
-    /// Create a new AccordionItem.
     pub fn new() -> Self {
         Self {
             index: 0,
             icon: None,
             title: SharedString::default().into_any_element(),
-            children: Vec::new(),
+            content: SharedString::default().into_any_element(),
             open: false,
             disabled: false,
             on_toggle_click: None,
@@ -164,15 +158,23 @@ impl AccordionItem {
         }
     }
 
-    /// Set the icon for the accordion item.
+    fn index(mut self, index: usize) -> Self {
+        self.index = index;
+        self
+    }
+
     pub fn icon(mut self, icon: impl Into<Icon>) -> Self {
         self.icon = Some(icon.into());
         self
     }
 
-    /// Set the title for the accordion item.
     pub fn title(mut self, title: impl IntoElement) -> Self {
         self.title = title.into_any_element();
+        self
+    }
+
+    pub fn content(mut self, content: impl IntoElement) -> Self {
+        self.content = content.into_any_element();
         self
     }
 
@@ -191,23 +193,12 @@ impl AccordionItem {
         self
     }
 
-    fn index(mut self, index: usize) -> Self {
-        self.index = index;
-        self
-    }
-
     fn on_toggle_click(
         mut self,
         on_toggle_click: impl Fn(&bool, &mut Window, &mut App) + 'static,
     ) -> Self {
         self.on_toggle_click = Some(Arc::new(on_toggle_click));
         self
-    }
-}
-
-impl ParentElement for AccordionItem {
-    fn extend(&mut self, elements: impl IntoIterator<Item = AnyElement>) {
-        self.children.extend(elements);
     }
 }
 
@@ -303,9 +294,137 @@ impl RenderOnce for AccordionItem {
                                 Size::Large => this.p_4(),
                                 _ => this.p_3(),
                             })
-                            .children(self.children),
+                            .child(self.content),
                     )
                 }),
         )
+    }
+}
+
+/// A simple collapsible section component for property panels and settings.
+///
+/// This is a simplified version of AccordionItem for use in contexts where
+/// you want a single collapsible section without the full Accordion container.
+///
+/// # Example
+///
+/// ```ignore
+/// CollapsibleSection::new("Section Title")
+///     .icon(IconName::Settings)
+///     .open(is_collapsed)
+///     .on_toggle(cx.listener(|this, _, _, cx| this.toggle_section(cx)))
+///     .child(div().child("Content here"))
+/// ```
+#[derive(IntoElement)]
+pub struct CollapsibleSection {
+    title: SharedString,
+    icon: Option<IconName>,
+    is_open: bool,
+    content: AnyElement,
+    on_toggle: Option<Arc<dyn Fn(&gpui::MouseDownEvent, &mut Window, &mut App)>>,
+}
+
+impl CollapsibleSection {
+    pub fn new(title: impl Into<SharedString>) -> Self {
+        Self {
+            title: title.into(),
+            icon: None,
+            is_open: false,
+            content: div().into_any_element(),
+            on_toggle: None,
+        }
+    }
+
+    pub fn icon(mut self, icon: IconName) -> Self {
+        self.icon = Some(icon);
+        self
+    }
+
+    pub fn open(mut self, is_open: bool) -> Self {
+        self.is_open = is_open;
+        self
+    }
+
+    pub fn on_toggle(
+        mut self,
+        on_toggle: impl Fn(&gpui::MouseDownEvent, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_toggle = Some(Arc::new(on_toggle));
+        self
+    }
+}
+
+impl ParentElement for CollapsibleSection {
+    fn extend(&mut self, elements: impl IntoIterator<Item = AnyElement>) {
+        let mut content_div = div();
+        content_div.extend(elements);
+        self.content = content_div.into_any_element();
+    }
+}
+
+impl RenderOnce for CollapsibleSection {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        use crate::ActiveTheme as _;
+        use gpui::{InteractiveElement as _, MouseButton};
+
+        let theme = cx.theme();
+
+        v_flex()
+            .w_full()
+            .rounded(gpui::px(8.0))
+            .border_1()
+            .border_color(theme.border)
+            .overflow_hidden()
+            .child(
+                h_flex()
+                    .w_full()
+                    .px_3()
+                    .py_2()
+                    .gap_2()
+                    .items_center()
+                    .bg(theme.sidebar)
+                    .cursor_pointer()
+                    .hover(|s| {
+                        s.bg(gpui::hsla(
+                            theme.sidebar.h,
+                            theme.sidebar.s,
+                            theme.sidebar.l,
+                            0.8,
+                        ))
+                    })
+                    .when_some(self.on_toggle, |this, on_toggle| {
+                        this.on_mouse_down(MouseButton::Left, move |event, window, cx| {
+                            on_toggle(event, window, cx);
+                        })
+                    })
+                    .child(
+                        Icon::new(if self.is_open {
+                            IconName::ChevronDown
+                        } else {
+                            IconName::ChevronRight
+                        })
+                        .xsmall()
+                        .text_color(theme.muted_foreground),
+                    )
+                    .when_some(self.icon, |this, icon| {
+                        this.child(Icon::new(icon).xsmall().text_color(theme.muted_foreground))
+                    })
+                    .child(
+                        div()
+                            .text_sm()
+                            .font_weight(gpui::FontWeight::MEDIUM)
+                            .text_color(theme.foreground)
+                            .child(self.title),
+                    ),
+            )
+            .when(self.is_open, |this| {
+                this.child(
+                    div()
+                        .w_full()
+                        .p_3()
+                        .bg(theme.background)
+                        .child(self.content),
+                )
+            })
     }
 }

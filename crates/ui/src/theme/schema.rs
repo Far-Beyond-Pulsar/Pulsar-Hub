@@ -1,14 +1,54 @@
 use std::{rc::Rc, sync::Arc};
 
-use gpui::{SharedString, px};
+use anyhow::Result;
+use gpui::{Hsla, SharedString, WindowBackgroundAppearance};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    Colorize, Theme, ThemeColor, ThemeMode,
     highlighter::{HighlightTheme, HighlightThemeStyle},
-    try_parse_color,
+    Colorize, Theme, ThemeColor, ThemeMode,
 };
+
+/// Controls the background appearance of the window.
+///
+/// This is an optional theme-level setting that allows a theme to suggest
+/// whether the application window should be opaque, transparent, or use a
+/// frosted-glass blur effect. When omitted the application defaults to `opaque`.
+///
+/// Support varies by platform:
+/// - `blurred` requires a compositor that supports backdrop blur (most
+///   modern desktop environments on Linux/Windows/macOS).
+/// - `mica_backdrop` / `mica_alt_backdrop` are Windows 11 exclusive.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ThemeWindowBackground {
+    /// Fully opaque window (default). The compositor does not need to render
+    /// anything behind this window.
+    #[default]
+    Opaque,
+    /// Plain alpha transparency — content behind the window shows through.
+    Transparent,
+    /// Frosted-glass effect: transparent with a blur applied to the content
+    /// behind the window.
+    Blurred,
+    /// The Mica backdrop material (Windows 11 only).
+    MicaBackdrop,
+    /// The Mica Alt backdrop material (Windows 11 only).
+    MicaAltBackdrop,
+}
+
+impl From<ThemeWindowBackground> for WindowBackgroundAppearance {
+    fn from(value: ThemeWindowBackground) -> Self {
+        match value {
+            ThemeWindowBackground::Opaque => WindowBackgroundAppearance::Opaque,
+            ThemeWindowBackground::Transparent => WindowBackgroundAppearance::Transparent,
+            ThemeWindowBackground::Blurred => WindowBackgroundAppearance::Blurred,
+            ThemeWindowBackground::MicaBackdrop => WindowBackgroundAppearance::MicaBackdrop,
+            ThemeWindowBackground::MicaAltBackdrop => WindowBackgroundAppearance::MicaAltBackdrop,
+        }
+    }
+}
 
 /// Represents a theme configuration.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
@@ -20,7 +60,11 @@ pub struct ThemeSet {
     pub author: Option<SharedString>,
     /// The URL of the theme.
     pub url: Option<SharedString>,
-    /// The theme list of the theme set.
+
+    /// The base font size, default is 14.
+    #[serde(rename = "font.size")]
+    pub font_size: Option<f32>,
+
     #[serde(rename = "themes")]
     pub themes: Vec<ThemeConfig>,
 }
@@ -34,39 +78,31 @@ pub struct ThemeConfig {
     pub name: SharedString,
     /// The mode of the theme, default is light.
     pub mode: ThemeMode,
-
-    /// The base font size, default is 16.
-    #[serde(rename = "font.size")]
-    pub font_size: Option<f32>,
-    /// The base font family, default is system font: `.SystemUIFont`.
-    #[serde(rename = "font.family")]
-    pub font_family: Option<SharedString>,
-    /// The monospace font family, default is platform specific:
-    /// - macOS: `Menlo`
-    /// - Windows: `Consolas`
-    /// - Linux: `DejaVu Sans Mono`
-    #[serde(rename = "mono_font.family")]
-    pub mono_font_family: Option<SharedString>,
-    /// The monospace font size, default is 13.
-    #[serde(rename = "mono_font.size")]
-    pub mono_font_size: Option<f32>,
-
-    /// The border radius for general elements, default is 6.
-    #[serde(rename = "radius")]
-    pub radius: Option<usize>,
-    /// The border radius for large elements like Dialogs and Notifications, default is 8.
-    #[serde(rename = "radius.lg")]
-    pub radius_lg: Option<usize>,
-    /// Set shadows in the theme, for example the Input and Button, default is true.
-    #[serde(rename = "shadow")]
-    pub shadow: Option<bool>,
-
     /// The colors of the theme.
     pub colors: ThemeConfigColors,
     /// The highlight theme, this part is combilbility with `style` section in Zed theme.
     ///
     /// https://github.com/zed-industries/zed/blob/f50041779dcfd7a76c8aec293361c60c53f02d51/assets/themes/ayu/ayu.json#L9
     pub highlight: Option<HighlightThemeStyle>,
+    /// Optional window background appearance override.
+    ///
+    /// Allows a theme to request a specific window background mode — opaque,
+    /// transparent, or a frosted-glass blur. When absent the application default
+    /// (`opaque`) is used, keeping full backwards compatibility with existing
+    /// theme JSON files that don't include this field.
+    #[serde(rename = "window.background", skip_serializing_if = "Option::is_none")]
+    pub window_background: Option<ThemeWindowBackground>,
+    /// When `true` the window stays transparent even when unfocused.
+    ///
+    /// Set this alongside `window.background: transparent` or `blurred` to
+    /// prevent the OS from reverting to an opaque fallback when the window
+    /// loses focus (e.g. Windows Acrylic going solid on deactivation).
+    /// Defaults to `false` for full backward compatibility.
+    #[serde(
+        rename = "window.always_transparent",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub window_always_transparent: Option<bool>,
 }
 
 #[derive(Debug, Default, Clone, JsonSchema, Serialize, Deserialize)]
@@ -155,7 +191,7 @@ pub struct ThemeConfigColors {
     /// Info hover background color.
     #[serde(rename = "info.hover.background")]
     pub info_hover: Option<SharedString>,
-    /// Border color for inputs such as Input, Select, etc.
+    /// Border color for inputs such as Input, Dropdown, etc.
     #[serde(rename = "input.border")]
     pub input: Option<SharedString>,
     /// Link text color.
@@ -281,18 +317,9 @@ pub struct ThemeConfigColors {
     /// Success active background color.
     #[serde(rename = "success.active.background")]
     pub success_active: Option<SharedString>,
-    /// Bullish color for candlestick charts (upward price movement).
-    #[serde(rename = "bullish.background")]
-    pub bullish: Option<SharedString>,
-    /// Bearish color for candlestick charts (downward price movement).
-    #[serde(rename = "bearish.background")]
-    pub bearish: Option<SharedString>,
     /// Switch background color.
     #[serde(rename = "switch.background")]
     pub switch: Option<SharedString>,
-    /// Switch thumb background color.
-    #[serde(rename = "switch.thumb.background")]
-    pub switch_thumb: Option<SharedString>,
     /// Tab background color.
     #[serde(rename = "tab.background")]
     pub tab: Option<SharedString>,
@@ -404,6 +431,12 @@ pub struct ThemeConfigColors {
     yellow_light: Option<String>,
 }
 
+/// Try to parse HEX color, `#RRGGBB` or `#RRGGBBAA`
+fn try_parse_color(color: &str) -> Result<Hsla> {
+    let rgba = gpui::Rgba::try_from(color)?;
+    Ok(rgba.into())
+}
+
 impl ThemeColor {
     /// Create a new `ThemeColor` from a `ThemeConfig`.
     pub(crate) fn apply_config(&mut self, config: &ThemeConfig, default_theme: &ThemeColor) {
@@ -508,8 +541,6 @@ impl ThemeColor {
             success_active,
             fallback = self.success.darken(active_darken)
         );
-        apply_color!(bullish, fallback = self.green);
-        apply_color!(bearish, fallback = self.red);
         apply_color!(info, fallback = self.cyan);
         apply_color!(info_foreground, fallback = self.primary_foreground);
         apply_color!(
@@ -530,7 +561,7 @@ impl ThemeColor {
 
         // Other colors
         apply_color!(accent, fallback = self.secondary);
-        apply_color!(accent_foreground, fallback = self.foreground);
+        apply_color!(accent_foreground, fallback = self.secondary_foreground);
         apply_color!(accordion, fallback = self.background);
         apply_color!(accordion_hover, fallback = self.accent.opacity(0.8));
         apply_color!(
@@ -542,7 +573,7 @@ impl ThemeColor {
                         .opacity(if config.mode.is_dark() { 0.3 } else { 0.4 })
                 )
         );
-        apply_color!(group_box_foreground, fallback = self.foreground);
+        apply_color!(group_box_foreground, fallback = self.secondary_foreground);
         apply_color!(caret, fallback = self.primary);
         apply_color!(chart_1, fallback = self.blue.lighten(0.4));
         apply_color!(chart_2, fallback = self.blue.lighten(0.2));
@@ -562,7 +593,7 @@ impl ThemeColor {
         );
         apply_color!(
             description_list_label_foreground,
-            fallback = self.muted_foreground
+            fallback = self.secondary_foreground
         );
         apply_color!(drag_border, fallback = self.primary.opacity(0.65));
         apply_color!(drop_target, fallback = self.primary.opacity(0.2));
@@ -581,7 +612,7 @@ impl ThemeColor {
         );
         apply_color!(list_even, fallback = self.list);
         apply_color!(list_head, fallback = self.list);
-        apply_color!(list_hover, fallback = self.accent.opacity(0.6));
+        apply_color!(list_hover, fallback = self.secondary_hover);
         apply_color!(popover, fallback = self.background);
         apply_color!(popover_foreground, fallback = self.foreground);
         apply_color!(progress_bar, fallback = self.primary);
@@ -590,10 +621,7 @@ impl ThemeColor {
         apply_color!(scrollbar_thumb, fallback = self.accent);
         apply_color!(scrollbar_thumb_hover, fallback = self.scrollbar_thumb);
         apply_color!(selection, fallback = self.primary);
-        apply_color!(
-            sidebar,
-            fallback = self.background.blend(self.border.opacity(0.15))
-        );
+        apply_color!(sidebar, fallback = self.background);
         apply_color!(sidebar_accent, fallback = self.accent);
         apply_color!(sidebar_accent_foreground, fallback = self.accent_foreground);
         apply_color!(sidebar_border, fallback = self.border);
@@ -606,14 +634,13 @@ impl ThemeColor {
         apply_color!(skeleton, fallback = self.secondary);
         apply_color!(slider_bar, fallback = self.primary);
         apply_color!(slider_thumb, fallback = self.primary_foreground);
-        apply_color!(switch, fallback = self.secondary_active);
-        apply_color!(switch_thumb, fallback = self.background);
+        apply_color!(switch, fallback = self.secondary);
         apply_color!(tab, fallback = self.background);
         apply_color!(tab_active, fallback = self.background);
         apply_color!(tab_active_foreground, fallback = self.foreground);
         apply_color!(tab_bar, fallback = self.background);
         apply_color!(tab_bar_segmented, fallback = self.secondary);
-        apply_color!(tab_foreground, fallback = self.foreground);
+        apply_color!(tab_foreground, fallback = self.secondary_foreground);
         apply_color!(table, fallback = self.list);
         apply_color!(table_active, fallback = self.list_active);
         apply_color!(table_active_border, fallback = self.list_active_border);
@@ -631,9 +658,9 @@ impl ThemeColor {
         // TODO: Apply default fallback colors to highlight.
 
         // Ensure opacity for list_active, table_active
-        self.list_active = self.list_active.alpha(self.list_active.a.min(0.2));
-        self.table_active = self.table_active.alpha(self.table_active.a.min(0.2));
-        self.selection = self.selection.alpha(self.selection.a.min(0.3));
+        self.list_active = self.list_active.alpha(0.2);
+        self.table_active = self.table_active.alpha(0.2);
+        self.selection = self.selection.alpha(0.3);
     }
 }
 
@@ -655,48 +682,40 @@ impl Theme {
         }
 
         let default_theme = if config.mode.is_dark() {
-            Self::from(ThemeColor::dark().as_ref())
+            ThemeColor::dark()
         } else {
-            Self::from(ThemeColor::light().as_ref())
+            ThemeColor::light()
         };
 
-        if let Some(font_size) = config.font_size {
-            self.font_size = px(font_size);
-        } else {
-            self.font_size = default_theme.font_size;
-        }
-        if let Some(font_family) = &config.font_family {
-            self.font_family = font_family.clone();
-        } else {
-            self.font_family = default_theme.font_family.clone();
-        }
-        if let Some(mono_font_family) = &config.mono_font_family {
-            self.mono_font_family = mono_font_family.clone();
-        } else {
-            self.mono_font_family = default_theme.mono_font_family.clone();
-        }
-        if let Some(mono_font_size) = config.mono_font_size {
-            self.mono_font_size = px(mono_font_size);
-        } else {
-            self.mono_font_size = default_theme.mono_font_size;
-        }
-        if let Some(radius) = config.radius {
-            self.radius = px(radius as f32);
-        } else {
-            self.radius = default_theme.radius;
-        }
-        if let Some(radius_lg) = config.radius_lg {
-            self.radius_lg = px(radius_lg as f32);
-        } else {
-            self.radius_lg = default_theme.radius_lg;
-        }
-        if let Some(shadow) = config.shadow {
-            self.shadow = shadow;
-        } else {
-            self.shadow = default_theme.shadow;
-        }
-
-        self.colors.apply_config(&config, &default_theme.colors);
+        self.colors.apply_config(&config, &default_theme);
         self.mode = config.mode;
+
+        // Apply window background appearance from the theme, defaulting to opaque
+        // so that switching away from a theme with a custom background resets it.
+        self.window_background = config
+            .window_background
+            .unwrap_or(ThemeWindowBackground::Opaque);
+
+        // Apply always-transparent flag from the theme, defaulting to false so
+        // existing themes that don't set it are unaffected.
+        self.always_transparent = config.window_always_transparent.unwrap_or(false);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::try_parse_color;
+    use gpui::hsla;
+
+    #[test]
+    fn test_try_parse_color() {
+        assert_eq!(
+            try_parse_color("#F2F200").ok(),
+            Some(hsla(0.16666667, 1., 0.4745098, 1.0))
+        );
+        assert_eq!(
+            try_parse_color("#00f21888").ok(),
+            Some(hsla(0.34986225, 1.0, 0.4745098, 0.53333336))
+        );
     }
 }

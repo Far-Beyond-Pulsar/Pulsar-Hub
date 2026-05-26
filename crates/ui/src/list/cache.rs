@@ -105,9 +105,8 @@ impl RowsCache {
     }
 
     /// Return prev row, if the row is the first in the first section, goes to the last row.
-    pub(crate) fn prev(&self, path: Option<IndexPath>) -> IndexPath {
-        let mut path = path.unwrap_or_default();
-
+    pub(crate) fn prev(&self, path: IndexPath) -> IndexPath {
+        let mut path = path;
         if path.section == 0 && path.row == 0 {
             path.section = self.sections_count().saturating_sub(1);
             path.row = self.rows_count(path.section).saturating_sub(1);
@@ -124,11 +123,8 @@ impl RowsCache {
     }
 
     /// Returns the next row, if the row is the last in the last section, goes to the first row.
-    pub(crate) fn next(&self, path: Option<IndexPath>) -> IndexPath {
-        let Some(mut path) = path else {
-            return IndexPath::default();
-        };
-
+    pub(crate) fn next(&self, path: IndexPath) -> IndexPath {
+        let mut path = path;
         if path.section + 1 == self.sections_count()
             && path.row + 1 == self.rows_count(path.section)
         {
@@ -145,6 +141,10 @@ impl RowsCache {
         }
 
         path
+    }
+
+    pub(crate) fn measured_size(&self) -> MeasuredEntrySize {
+        self.measured_size
     }
 
     pub(crate) fn prepare_if_needed<F>(
@@ -203,7 +203,7 @@ impl RowsCache {
 mod tests {
     use std::rc::Rc;
 
-    use crate::{IndexPath, list::cache::RowsCache};
+    use crate::{list::cache::RowsCache, IndexPath};
 
     #[test]
     fn test_prev_next() {
@@ -223,56 +223,56 @@ mod tests {
         row_cache.sections = Rc::new(vec![2, 4, 3]);
 
         assert_eq!(
-            row_cache.next(Some(IndexPath::new(0).section(0))),
+            row_cache.next(IndexPath::new(0).section(0)),
             IndexPath::new(1).section(0)
         );
         assert_eq!(
-            row_cache.next(Some(IndexPath::new(1).section(0))),
+            row_cache.next(IndexPath::new(1).section(0)),
             IndexPath::new(0).section(1)
         );
         assert_eq!(
-            row_cache.next(Some(IndexPath::new(0).section(1))),
+            row_cache.next(IndexPath::new(0).section(1)),
             IndexPath::new(1).section(1)
         );
         assert_eq!(
-            row_cache.next(Some(IndexPath::new(3).section(1))),
+            row_cache.next(IndexPath::new(3).section(1)),
             IndexPath::new(0).section(2)
         );
         assert_eq!(
-            row_cache.next(Some(IndexPath::new(0).section(2))),
+            row_cache.next(IndexPath::new(0).section(2)),
             IndexPath::new(1).section(2)
         );
         assert_eq!(
-            row_cache.next(Some(IndexPath::new(1).section(2))),
+            row_cache.next(IndexPath::new(1).section(2)),
             IndexPath::new(2).section(2)
         );
         assert_eq!(
-            row_cache.next(Some(IndexPath::new(2).section(2))),
+            row_cache.next(IndexPath::new(2).section(2)),
             IndexPath::new(0).section(0)
         );
 
         assert_eq!(
-            row_cache.prev(Some(IndexPath::new(0).section(0))),
+            row_cache.prev(IndexPath::new(0).section(0)),
             IndexPath::new(2).section(2)
         );
         assert_eq!(
-            row_cache.prev(Some(IndexPath::new(1).section(0))),
+            row_cache.prev(IndexPath::new(1).section(0)),
             IndexPath::new(0).section(0)
         );
         assert_eq!(
-            row_cache.prev(Some(IndexPath::new(0).section(1))),
+            row_cache.prev(IndexPath::new(0).section(1)),
             IndexPath::new(1).section(0)
         );
         assert_eq!(
-            row_cache.prev(Some(IndexPath::new(1).section(1))),
+            row_cache.prev(IndexPath::new(1).section(1)),
             IndexPath::new(0).section(1)
         );
         assert_eq!(
-            row_cache.prev(Some(IndexPath::new(3).section(1))),
+            row_cache.prev(IndexPath::new(3).section(1)),
             IndexPath::new(2).section(1)
         );
         assert_eq!(
-            row_cache.prev(Some(IndexPath::new(0).section(2))),
+            row_cache.prev(IndexPath::new(0).section(2)),
             IndexPath::new(3).section(1)
         );
     }

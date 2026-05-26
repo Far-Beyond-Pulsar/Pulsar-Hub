@@ -10,8 +10,8 @@ use std::{
     sync::{Arc, LazyLock},
 };
 
-const DEFAULT_THEME: &str = include_str!("./default-theme.json");
-pub(crate) static DEFAULT_THEME_COLORS: LazyLock<
+const DEFAULT_THEME: &str = include_str!("../../../../themes/default.json");
+pub(crate) const DEFAULT_THEME_COLORS: LazyLock<
     HashMap<ThemeMode, (Arc<ThemeColor>, Arc<HighlightTheme>)>,
 > = LazyLock::new(|| {
     let mut colors = HashMap::new();
@@ -66,7 +66,7 @@ pub(super) fn init(cx: &mut App) {
             light_theme
         };
 
-        tracing::info!("Reload active theme: {:?}...", theme_name);
+        tracing::debug!("Reload active theme: {:?}...", theme_name);
         Theme::change(mode, None, cx);
         cx.refresh_windows();
     })
@@ -101,15 +101,16 @@ impl ThemeRegistry {
     {
         Self::global_mut(cx).themes_dir = themes_dir.clone();
 
-        // Load theme in the background.
+        // Reload themes synchronously
+        Self::reload_themes(cx);
+        on_load(cx);
+
+        // Then watch for changes
         cx.spawn(async move |cx| {
             _ = cx.update(|cx| {
                 if let Err(err) = Self::_watch_themes_dir(themes_dir, cx) {
                     tracing::error!("Failed to watch themes directory: {}", err);
                 }
-
-                Self::reload_themes(cx);
-                on_load(cx);
             });
         })
         .detach();
@@ -148,6 +149,7 @@ impl ThemeRegistry {
     }
 
     fn init_default_themes(&mut self) {
+        tracing::info!("Loading default themes");
         let default_themes: Vec<ThemeConfig> = serde_json::from_str::<ThemeSet>(DEFAULT_THEME)
             .expect("failed to parse default theme.")
             .themes;
@@ -166,6 +168,7 @@ impl ThemeRegistry {
                 (name, Rc::clone(theme))
             })
             .collect();
+        tracing::info!("Loaded {} default themes", self.themes.len());
     }
 
     fn _watch_themes_dir(themes_dir: PathBuf, cx: &mut App) -> anyhow::Result<()> {
@@ -196,7 +199,7 @@ impl ThemeRegistry {
             }
 
             while (rx.recv().await).is_ok() {
-                tracing::info!("Reloading themes...");
+                tracing::debug!("Reloading themes...");
                 _ = cx.update(Self::reload_themes);
             }
         })
@@ -209,7 +212,7 @@ impl ThemeRegistry {
         let registry = Self::global_mut(cx);
         match registry.reload() {
             Ok(_) => {
-                tracing::info!("Themes reloaded successfully.");
+                tracing::debug!("Themes reloaded successfully.");
             }
             Err(e) => tracing::error!("Failed to reload themes: {:?}", e),
         }
@@ -217,9 +220,11 @@ impl ThemeRegistry {
 
     /// Reload themes from the `themes_dir`.
     fn reload(&mut self) -> Result<()> {
+        tracing::info!("Reloading themes from {}", self.themes_dir.display());
         let mut themes = vec![];
 
         if self.themes_dir.exists() {
+            tracing::info!("Themes dir exists");
             for entry in fs::read_dir(&self.themes_dir)? {
                 let entry = entry?;
                 let path = entry.path();
@@ -231,6 +236,7 @@ impl ThemeRegistry {
                             themes.extend(theme_set.themes);
                         }
                         Err(e) => {
+                            tracing::error!("Failed to parse {}: {}", path.display(), e);
                             tracing::error!(
                                 "ignored invalid theme file: {}, {}",
                                 path.display(),
@@ -240,14 +246,11 @@ impl ThemeRegistry {
                     }
                 }
             }
+        } else {
+            tracing::warn!("Themes dir does not exist");
         }
 
         self.themes.clear();
-        for theme in self.default_themes.values() {
-            self.themes
-                .insert(theme.name.clone(), Rc::new((**theme).clone()));
-        }
-
         for theme in themes.iter() {
             if self.themes.contains_key(&theme.name) {
                 continue;
@@ -263,6 +266,7 @@ impl ThemeRegistry {
                 .insert(theme.name.clone(), Rc::new(theme.clone()));
         }
 
+        tracing::info!("Total themes loaded: {}", self.themes.len());
         Ok(())
     }
 }

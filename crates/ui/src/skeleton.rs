@@ -5,7 +5,6 @@ use gpui::{
 };
 use std::time::Duration;
 
-/// A skeleton loading placeholder element.
 #[derive(IntoElement)]
 pub struct Skeleton {
     style: StyleRefinement,
@@ -13,7 +12,6 @@ pub struct Skeleton {
 }
 
 impl Skeleton {
-    /// Create a new Skeleton element.
     pub fn new() -> Self {
         Self {
             style: StyleRefinement::default(),
@@ -22,8 +20,8 @@ impl Skeleton {
     }
 
     /// Set use secondary color.
-    pub fn secondary(mut self) -> Self {
-        self.secondary = true;
+    pub fn secondary(mut self, secondary: bool) -> Self {
+        self.secondary = secondary;
         self
     }
 }

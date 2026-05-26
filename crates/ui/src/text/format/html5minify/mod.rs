@@ -6,8 +6,9 @@
 use std::{cell::RefCell, io, rc::Rc, str};
 
 use html5ever::{
-    Attribute, ParseOpts, QualName, parse_document,
-    tendril::{Tendril, TendrilSink, fmt::UTF8},
+    parse_document,
+    tendril::{fmt::UTF8, Tendril, TendrilSink},
+    Attribute, ParseOpts, QualName,
 };
 use markup5ever_rcdom::{Node, NodeData, RcDom};
 
@@ -696,7 +697,7 @@ fn is_block_element_name(name: &str) -> bool {
 
 fn is_block_element(node: &Node) -> bool {
     match &node.data {
-        NodeData::Element { name, .. } => is_block_element_name(name.local.as_ref()),
+        NodeData::Element { ref name, .. } => is_block_element_name(name.local.as_ref()),
         NodeData::Document => true,
         _ => false,
     }
@@ -876,24 +877,19 @@ mod tests {
                 true,
             ),
             // Retain end tag if touching inline element
-            (
-                "<p>Some text</p><button></button>",
-                "<p>Some text</p><button></button>",
-                false,
-                false,
-            ),
+            ("<p>Some text</p><button></button>", "<p>Some text</p><button></button>", false, false),
         ] {
-            let mut w = vec![];
-            let mut minifier = Minifier::new(&mut w);
-            minifier
-                .omit_doctype(true)
-                .collapse_whitespace(collapse_whitespace)
-                .preserve_comments(preserve_comments);
-            minifier.minify(&mut input.as_bytes()).unwrap();
+                let mut w = vec![];
+                let mut minifier = Minifier::new(&mut w);
+                minifier
+                    .omit_doctype(true)
+                    .collapse_whitespace(collapse_whitespace)
+                    .preserve_comments(preserve_comments);
+                minifier.minify(&mut input.as_bytes()).unwrap();
 
-            let s = str::from_utf8(&w).unwrap();
+                let s = str::from_utf8(&w).unwrap();
 
-            assert_eq!(expected, s);
-        }
+                assert_eq!(expected, s);
+            }
     }
 }

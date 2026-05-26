@@ -1,21 +1,41 @@
-use gpui::{App, SharedString};
-use std::ops::Deref;
+#![allow(warnings)]
 
-mod element_ext;
+// Engine core types (used by UI components)
+pub mod assets;
+
+pub mod diagnostics;
+pub mod graph;
+pub mod settings;
+pub mod themes;
+
 mod event;
-mod geometry;
 mod global_state;
 mod icon;
 mod index_path;
 #[cfg(any(feature = "inspector", debug_assertions))]
 mod inspector;
+mod kbd;
+pub mod menu;
 mod root;
+pub mod states;
 mod styled;
 mod time;
 mod title_bar;
+pub mod utils;
+
+// Compatibility types for legacy GPUI APIs that were removed upstream.
+pub mod gpu_compat;
+
+// Re-export compatibility types at crate root so other crates can import them
+// using `ui::GpuTextureHandle`/`ui::GpuCanvasSource` just like before.
+pub use gpu_compat::{gpu_canvas as gpu_canvas_element, GpuCanvasSource, GpuTextureHandle};
+pub mod component; // Component-based UI architecture
+pub mod registry;
+pub mod selection;
+pub mod setting;
 mod virtual_list;
 mod window_border;
-mod window_ext;
+mod window_wrapper;
 
 pub(crate) mod actions;
 
@@ -29,39 +49,45 @@ pub mod button;
 pub mod chart;
 pub mod checkbox;
 pub mod clipboard;
-pub mod collapsible;
+pub mod code_editor; // Studio-quality virtualized code editor
 pub mod color_picker;
 pub mod description_list;
-pub mod dialog;
 pub mod divider;
 pub mod dock;
+pub mod download_item;
+pub mod download_manager;
+pub mod draggable;
+pub mod draggable_tabs;
+pub mod drawer;
+pub mod drop_area;
+pub mod dropdown;
 pub mod form;
 pub mod group_box;
+pub mod hierarchical_tree;
+pub mod hierarchical_list_view;
 pub mod highlighter;
 pub mod history;
+pub mod indicator;
 pub mod input;
-pub mod kbd;
+pub mod json_ui;
 pub mod label;
 pub mod link;
 pub mod list;
-pub mod menu;
+pub mod minimap;
+pub mod modal;
 pub mod notification;
-pub mod pagination;
 pub mod plot;
 pub mod popover;
 pub mod progress;
 pub mod radio;
-pub mod rating;
+pub mod replication; // Multi-user editing and state replication
 pub mod resizable;
 pub mod scroll;
-pub mod select;
-pub mod setting;
-pub mod sheet;
 pub mod sidebar;
 pub mod skeleton;
 pub mod slider;
+pub mod speed_graph;
 pub mod spinner;
-pub mod stepper;
 pub mod switch;
 pub mod tab;
 pub mod table;
@@ -69,50 +95,100 @@ pub mod tag;
 pub mod text;
 pub mod theme;
 pub mod tooltip;
-pub mod tree;
+#[cfg(feature = "webview")]
+pub mod webview;
+pub mod workspace;
+
+use gpui::{App, SharedString};
+// re-export
+#[cfg(feature = "webview")]
+pub use wry;
 
 pub use crate::Disableable;
-pub use element_ext::ElementExt;
 pub use event::InteractiveElementExt;
-pub use geometry::*;
-pub use icon::*;
 pub use index_path::IndexPath;
-pub use input::{Rope, RopeExt, RopeLines};
 #[cfg(any(feature = "inspector", debug_assertions))]
 pub use inspector::*;
-pub use root::Root;
+pub use menu::{context_menu, popup_menu, AppMenusCache};
+pub use root::{ContextModal, Root};
+pub use selection::{IndexPathSelection, IndexSelection, Selection};
 pub use styled::*;
-pub use theme::*;
-pub use time::{calendar, date_picker};
+pub use time::*;
 pub use title_bar::*;
-pub use virtual_list::{VirtualList, VirtualListScrollHandle, h_virtual_list, v_virtual_list};
-pub use window_border::{WindowBorder, window_border, window_paddings};
-pub use window_ext::WindowExt;
+pub use virtual_list::{h_virtual_list, v_virtual_list, VirtualList, VirtualListScrollHandle};
+pub use window_border::{window_border, window_paddings, WindowBorder};
+pub use window_wrapper::{drawer_window, drawer_window_entity, drawer_window_view};
+
+// Re-export common form components
+pub use form::{SettingCard, SettingRow};
+
+pub use accordion::{Accordion, AccordionItem, CollapsibleSection};
+pub use component::*;
+pub use hierarchical_tree::{
+    render_tree_category, render_tree_folder, render_tree_item, tree_colors,
+};
+pub use hierarchical_list_view::{
+    HierarchicalTreeView, HierarchyConfig, HierarchyItem, HierarchyLayout,
+};
+pub use icon::*;
+pub use kbd::*;
+pub use theme::*;
+
+// Re-export engine types for UI crates
+pub use assets::Assets;
+pub use setting::*;
+pub use settings::*;
+pub use themes::*;
+
+// Download manager components
+pub use download_item::{reveal_in_file_manager, DownloadItem, DownloadItemStatus};
+pub use download_manager::{DownloadEntry, DownloadManagerDrawer};
+pub use speed_graph::{fmt_bytes, fmt_speed, SpeedGraph};
+pub use states::empty_state_placeholder;
+
+// Engine constants (will be set by engine binary)
+pub const ENGINE_NAME: &str = "Pulsar Engine";
+pub const ENGINE_VERSION: &str = "0.1.45";
+pub const ENGINE_LICENSE: &str = "MIT/Apache-2.0";
+pub const ENGINE_AUTHORS: &str = "Pulsar Contributors";
+
+// Common actions
+gpui::actions!(ui, [OpenSettings]);
+
+use std::{
+    ops::Deref,
+    time::{Duration, Instant},
+};
+
+use once_cell::sync::Lazy;
+use parking_lot::Mutex;
 
 rust_i18n::i18n!("locales", fallback = "en");
+
+static LAST_OPENED_URL: Lazy<Mutex<Option<(String, Instant)>>> = Lazy::new(|| Mutex::new(None));
+
+// Re-export translation function for use by other ui crates
+/// Translate a key to the current locale
+#[inline]
+pub fn translate(key: &str) -> String {
+    rust_i18n::t!(key).to_string()
+}
 
 /// Initialize the components.
 ///
 /// You must initialize the components at your application's entry point.
 pub fn init(cx: &mut App) {
+    // Ordering-sensitive: these must run before auto-registered components.
     theme::init(cx);
     global_state::init(cx);
+    replication::init(cx);
     #[cfg(any(feature = "inspector", debug_assertions))]
     inspector::init(cx);
     root::init(cx);
-    color_picker::init(cx);
-    date_picker::init(cx);
     dock::init(cx);
-    sheet::init(cx);
-    select::init(cx);
     input::init(cx);
-    list::init(cx);
-    dialog::init(cx);
-    popover::init(cx);
-    menu::init(cx);
-    table::init(cx);
-    text::init(cx);
-    tree::init(cx);
+    // All components registered via `register_ui_component!` are initialized here.
+    registry::init_all_components(cx);
 }
 
 #[inline]
@@ -123,6 +199,20 @@ pub fn locale() -> impl Deref<Target = str> {
 #[inline]
 pub fn set_locale(locale: &str) {
     rust_i18n::set_locale(locale)
+}
+
+#[inline]
+pub fn open_external_url(url: &str) {
+    let mut last_opened = LAST_OPENED_URL.lock();
+    let now = Instant::now();
+    if let Some((last_url, last_time)) = last_opened.as_ref() {
+        if last_url == url && now.duration_since(*last_time) <= Duration::from_millis(500) {
+            return;
+        }
+    }
+
+    *last_opened = Some((url.to_string(), now));
+    let _ = open::that(url);
 }
 
 #[inline]

@@ -19,7 +19,7 @@ use crate::{
     clipboard::Clipboard,
     description_list::DescriptionList,
     h_flex,
-    input::{CompletionProvider, Input, InputEvent, InputState, RopeExt, TabSize},
+    input::{CompletionProvider, InputEvent, InputState, RopeExt, TabSize, TextInput},
     link::Link,
     v_flex, ActiveTheme, IconName, Selectable, Sizable, TITLE_BAR_HEIGHT,
 };
@@ -284,14 +284,10 @@ impl StyleMethods {
     fn get() -> &'static Self {
         static STYLE_METHODS: OnceLock<StyleMethods> = OnceLock::new();
         STYLE_METHODS.get_or_init(|| {
-            let table: Vec<_> = [
-                crate::styled_ext_reflection::methods::<StyleRefinement>(),
-                gpui::styled_reflection::methods::<StyleRefinement>(),
-            ]
-            .into_iter()
-            .flatten()
-            .map(|method| (Box::new(method.invoke(StyleRefinement::default())), method))
-            .collect();
+            let table: Vec<_> = gpui::styled_reflection::methods::<StyleRefinement>()
+                .into_iter()
+                .map(|method| (Box::new(method.invoke(StyleRefinement::default())), method))
+                .collect();
             let map = table
                 .iter()
                 .map(|(_, method)| (method.name, method.clone()))
@@ -410,9 +406,9 @@ impl Render for DivInspector {
                         .columns(1)
                         .label_width(px(110.))
                         .bordered(false)
-                        .item("Origin", format!("{}", state.bounds.origin), 1)
-                        .item("Size", format!("{}", state.bounds.size), 1)
-                        .item("Content Size", format!("{}", state.content_size), 1),
+                        .child("Origin", format!("{}", state.bounds.origin), 1)
+                        .child("Size", format!("{}", state.bounds.size), 1)
+                        .child("Content Size", format!("{}", state.content_size), 1),
                 )
                 .child(
                     v_flex()
@@ -434,9 +430,9 @@ impl Render for DivInspector {
                             v_flex()
                                 .flex_1()
                                 .gap_y_1()
-                                .font_family(cx.theme().mono_font_family.clone())
-                                .text_size(cx.theme().mono_font_size)
-                                .child(Input::new(&self.rust_state.state).h_full())
+                                .font_family("JetBrainsMono-Regular")
+                                .text_size(px(12.))
+                                .child(TextInput::new(&self.rust_state.state).h_full())
                                 .when_some(self.rust_state.error.clone(), |this, err| {
                                     this.child(Alert::error("rust-error", err).text_xs())
                                 }),
@@ -462,9 +458,9 @@ impl Render for DivInspector {
                             v_flex()
                                 .flex_1()
                                 .gap_y_1()
-                                .font_family(cx.theme().mono_font_family.clone())
-                                .text_size(cx.theme().mono_font_size)
-                                .child(Input::new(&self.json_state.state).h_full())
+                                .font_family("JetBrainsMono-Regular")
+                                .text_size(px(12.))
+                                .child(TextInput::new(&self.json_state.state).h_full())
                                 .when_some(self.json_state.error.clone(), |this, err| {
                                     this.child(Alert::error("json-error", err).text_xs())
                                 }),
@@ -487,7 +483,7 @@ fn render_inspector(
 
     v_flex()
         .id("inspector")
-        .font_family(cx.theme().font_family.clone())
+        .font_family(".SystemUIFont")
         .size_full()
         .bg(cx.theme().background)
         .border_l_1()

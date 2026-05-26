@@ -1,11 +1,12 @@
 use gpui::{
-    App, Context, Corner, Corners, Edges, ElementId, InteractiveElement as _, IntoElement,
-    ParentElement, RenderOnce, StyleRefinement, Styled, Window, div, prelude::FluentBuilder,
+    div, prelude::FluentBuilder, App, Context, Corner, Corners, Edges, ElementId,
+    InteractiveElement as _, IntoElement, ParentElement, RenderOnce, StyleRefinement, Styled,
+    Window,
 };
 
 use crate::{
-    Disableable, IconName, Selectable, Sizable, Size, StyledExt as _,
-    menu::{DropdownMenu, PopupMenu},
+    popup_menu::{PopupMenu, PopupMenuExt},
+    IconName, Selectable, Sizable, Size, StyledExt as _,
 };
 
 use super::{Button, ButtonRounded, ButtonVariant, ButtonVariants};
@@ -15,98 +16,58 @@ pub struct DropdownButton {
     id: ElementId,
     style: StyleRefinement,
     button: Option<Button>,
-    menu:
+    popup_menu:
         Option<Box<dyn Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu + 'static>>,
     selected: bool,
-    disabled: bool,
     // The button props
-    compact: bool,
-    outline: bool,
-    loading: bool,
-    variant: ButtonVariant,
-    size: Size,
+    compact: Option<bool>,
+    outline: Option<bool>,
+    variant: Option<ButtonVariant>,
+    size: Option<Size>,
     rounded: ButtonRounded,
-    anchor: Corner,
 }
 
 impl DropdownButton {
-    /// Create a new DropdownButton.
     pub fn new(id: impl Into<ElementId>) -> Self {
         Self {
             id: id.into(),
             style: StyleRefinement::default(),
             button: None,
-            menu: None,
+            popup_menu: None,
             selected: false,
-            disabled: false,
-            compact: false,
-            outline: false,
-            loading: false,
-            variant: ButtonVariant::default(),
-            size: Size::default(),
+            compact: None,
+            outline: None,
+            variant: None,
+            size: None,
             rounded: ButtonRounded::default(),
-            anchor: Corner::TopRight,
         }
     }
 
-    /// Set the left button of the dropdown button.
     pub fn button(mut self, button: Button) -> Self {
         self.button = Some(button);
         self
     }
 
-    /// Set the dropdown menu of the button.
-    pub fn dropdown_menu(
+    pub fn popup_menu(
         mut self,
-        menu: impl Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu + 'static,
+        popup_menu: impl Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu + 'static,
     ) -> Self {
-        self.menu = Some(Box::new(menu));
+        self.popup_menu = Some(Box::new(popup_menu));
         self
     }
 
-    /// Set the dropdown menu of the button with anchor corner.
-    pub fn dropdown_menu_with_anchor(
-        mut self,
-        anchor: impl Into<Corner>,
-        menu: impl Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu + 'static,
-    ) -> Self {
-        self.menu = Some(Box::new(menu));
-        self.anchor = anchor.into();
-        self
-    }
-
-    /// Set the rounded style of the button.
     pub fn rounded(mut self, rounded: impl Into<ButtonRounded>) -> Self {
         self.rounded = rounded.into();
         self
     }
 
-    /// Set the button to compact style.
-    ///
-    /// See also: [`Button::compact`]
     pub fn compact(mut self) -> Self {
-        self.compact = true;
+        self.compact = Some(true);
         self
     }
 
-    /// Set the button to outline style.
-    ///
-    /// See also: [`Button::outline`]
     pub fn outline(mut self) -> Self {
-        self.outline = true;
-        self
-    }
-
-    /// Set the button to loading state.
-    pub fn loading(mut self, loading: bool) -> Self {
-        self.loading = loading;
-        self
-    }
-}
-
-impl Disableable for DropdownButton {
-    fn disabled(mut self, disabled: bool) -> Self {
-        self.disabled = disabled;
+        self.outline = Some(true);
         self
     }
 }
@@ -119,14 +80,14 @@ impl Styled for DropdownButton {
 
 impl Sizable for DropdownButton {
     fn with_size(mut self, size: impl Into<Size>) -> Self {
-        self.size = size.into();
+        self.size = Some(size.into());
         self
     }
 }
 
 impl ButtonVariants for DropdownButton {
     fn with_variant(mut self, variant: ButtonVariant) -> Self {
-        self.variant = variant;
+        self.variant = Some(variant);
         self
     }
 }
@@ -144,7 +105,10 @@ impl Selectable for DropdownButton {
 
 impl RenderOnce for DropdownButton {
     fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
-        let rounded = self.variant.is_ghost() && !self.selected;
+        let rounded = self
+            .variant
+            .map(|variant| variant.is_ghost() && !self.selected)
+            .unwrap_or(false);
 
         div()
             .id(self.id)
@@ -166,15 +130,13 @@ impl RenderOnce for DropdownButton {
                             right: true,
                             bottom: true,
                         })
-                        .loading(self.loading)
                         .selected(self.selected)
-                        .disabled(self.disabled || self.loading)
-                        .when(self.compact, |this| this.compact())
-                        .when(self.outline, |this| this.outline())
-                        .with_size(self.size)
-                        .with_variant(self.variant),
+                        .when_some(self.compact, |this, _| this.compact())
+                        .when_some(self.outline, |this, _| this.outline())
+                        .when_some(self.size, |this, size| this.with_size(size))
+                        .when_some(self.variant, |this, variant| this.with_variant(variant)),
                 )
-                .when_some(self.menu, |this, menu| {
+                .when_some(self.popup_menu, |this, popup_menu| {
                     this.child(
                         Button::new("popup")
                             .icon(IconName::ChevronDown)
@@ -192,12 +154,13 @@ impl RenderOnce for DropdownButton {
                                 bottom_right: true,
                             })
                             .selected(self.selected)
-                            .disabled(self.disabled || self.loading)
-                            .when(self.compact, |this| this.compact())
-                            .when(self.outline, |this| this.outline())
-                            .with_size(self.size)
-                            .with_variant(self.variant)
-                            .dropdown_menu_with_anchor(self.anchor, menu),
+                            .when_some(self.compact, |this, _| this.compact())
+                            .when_some(self.outline, |this, _| this.outline())
+                            .when_some(self.size, |this, size| this.with_size(size))
+                            .when_some(self.variant, |this, variant| this.with_variant(variant))
+                            .popup_menu_with_anchor(Corner::TopRight, move |this, window, cx| {
+                                popup_menu(this, window, cx)
+                            }),
                     )
                 })
             })

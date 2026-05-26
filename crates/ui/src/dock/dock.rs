@@ -3,15 +3,15 @@
 use std::{ops::Deref, sync::Arc};
 
 use gpui::{
-    App, AppContext, Axis, Context, Element, Empty, Entity, IntoElement, MouseMoveEvent,
-    MouseUpEvent, ParentElement as _, Pixels, Point, Render, Style, StyleRefinement, Styled as _,
-    WeakEntity, Window, div, prelude::FluentBuilder as _, px,
+    div, prelude::FluentBuilder as _, px, App, AppContext, Axis, Context, Element, Empty, Entity,
+    IntoElement, MouseMoveEvent, MouseUpEvent, ParentElement as _, Pixels, Point, Render, Style,
+    StyleRefinement, Styled as _, WeakEntity, Window,
 };
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    resizable::{resize_handle, PANEL_MIN_SIZE},
     StyledExt,
-    resizable::{PANEL_MIN_SIZE, resize_handle},
 };
 
 use super::{DockArea, DockItem, PanelView, TabPanel};
@@ -81,17 +81,17 @@ impl Dock {
     pub(crate) fn new(
         dock_area: WeakEntity<DockArea>,
         placement: DockPlacement,
+        channel: super::DockChannel,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
         let panel = cx.new(|cx| {
-            let mut tab = TabPanel::new(None, dock_area.clone(), window, cx);
+            let mut tab = TabPanel::new(None, dock_area.clone(), channel, window, cx);
             tab.closable = false;
             tab
         });
 
         let panel = DockItem::Tabs {
-            size: None,
             items: Vec::new(),
             active_ix: 0,
             view: panel.clone(),
@@ -105,33 +105,36 @@ impl Dock {
             panel,
             open: true,
             collapsible: true,
-            size: px(200.0),
+            size: px(400.0),
             resizing: false,
         }
     }
 
     pub fn left(
         dock_area: WeakEntity<DockArea>,
+        channel: super::DockChannel,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        Self::new(dock_area, DockPlacement::Left, window, cx)
+        Self::new(dock_area, DockPlacement::Left, channel, window, cx)
     }
 
     pub fn bottom(
         dock_area: WeakEntity<DockArea>,
+        channel: super::DockChannel,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        Self::new(dock_area, DockPlacement::Bottom, window, cx)
+        Self::new(dock_area, DockPlacement::Bottom, channel, window, cx)
     }
 
     pub fn right(
         dock_area: WeakEntity<DockArea>,
+        channel: super::DockChannel,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        Self::new(dock_area, DockPlacement::Right, window, cx)
+        Self::new(dock_area, DockPlacement::Right, channel, window, cx)
     }
 
     /// Update the Dock to be collapsible or not.
@@ -265,6 +268,11 @@ impl Dock {
         cx.notify();
     }
 
+    /// Get mutable access to the root panel
+    pub fn panel_mut(&mut self) -> &mut DockItem {
+        &mut self.panel
+    }
+
     /// Add item to the Dock.
     pub fn add_panel(
         &mut self,
@@ -396,12 +404,14 @@ impl Render for Dock {
             .child(self.render_resize_handle(window, cx))
             .child(DockElement {
                 view: cx.entity().clone(),
+                resizing: self.resizing,
             })
     }
 }
 
 struct DockElement {
     view: Entity<Dock>,
+    resizing: bool,
 }
 
 impl IntoElement for DockElement {
@@ -458,7 +468,7 @@ impl Element for DockElement {
     ) {
         window.on_mouse_event({
             let view = self.view.clone();
-            let resizing = view.read(cx).resizing;
+            let resizing = self.resizing;
             move |e: &MouseMoveEvent, phase, window, cx| {
                 if !resizing {
                     return;

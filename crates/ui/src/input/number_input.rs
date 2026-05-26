@@ -1,36 +1,37 @@
 use gpui::{
-    AnyElement, App, Context, Corners, Edges, Entity, EventEmitter, FocusHandle, Focusable,
-    InteractiveElement, IntoElement, KeyBinding, ParentElement, RenderOnce, SharedString,
-    StyleRefinement, Styled, TextAlign, Window, actions, prelude::FluentBuilder as _,
+    actions, prelude::FluentBuilder as _, px, AnyElement, App, Context, Entity, EventEmitter,
+    FocusHandle, Focusable, InteractiveElement, IntoElement, KeyBinding, ParentElement, RenderOnce,
+    SharedString, StyleRefinement, Styled, Window,
 };
 
 use crate::{
-    ActiveTheme, Disableable, IconName, Sizable, Size, StyledExt as _, button::Button, h_flex,
+    button::{Button, ButtonVariants as _},
+    h_flex, ActiveTheme, Disableable, IconName, Sizable, Size, StyleSized, StyledExt as _,
 };
 
-use super::{Input, InputState};
+use super::{InputState, TextInput};
 
 actions!(number_input, [Increment, Decrement]);
 
-const CONTEXT: &str = "NumberInput";
+const KEY_CONTENT: &str = "NumberInput";
+
 pub fn init(cx: &mut App) {
     cx.bind_keys(vec![
-        KeyBinding::new("up", Increment, Some(CONTEXT)),
-        KeyBinding::new("down", Decrement, Some(CONTEXT)),
+        KeyBinding::new("up", Increment, Some(KEY_CONTENT)),
+        KeyBinding::new("down", Decrement, Some(KEY_CONTENT)),
     ]);
 }
 
-/// A number input element with increment and decrement buttons.
 #[derive(IntoElement)]
 pub struct NumberInput {
     state: Entity<InputState>,
+    style: StyleRefinement,
     placeholder: SharedString,
     size: Size,
     prefix: Option<AnyElement>,
     suffix: Option<AnyElement>,
     appearance: bool,
     disabled: bool,
-    style: StyleRefinement,
 }
 
 impl NumberInput {
@@ -38,29 +39,61 @@ impl NumberInput {
     pub fn new(state: &Entity<InputState>) -> Self {
         Self {
             state: state.clone(),
+            style: StyleRefinement::default(),
             size: Size::default(),
             placeholder: SharedString::default(),
             prefix: None,
             suffix: None,
             appearance: true,
             disabled: false,
-            style: StyleRefinement::default(),
         }
     }
 
-    /// Set the placeholder text of the number input.
     pub fn placeholder(mut self, placeholder: impl Into<SharedString>) -> Self {
         self.placeholder = placeholder.into();
         self
     }
 
-    /// Set the prefix element of the number input.
+    pub fn size(mut self, size: impl Into<Size>) -> Self {
+        self.size = size.into();
+        self
+    }
+
+    pub fn increment(state: &Entity<InputState>, window: &mut Window, cx: &mut App) {
+        Self::increment_with_fine(state, false, window, cx);
+    }
+
+    pub fn increment_with_fine(
+        state: &Entity<InputState>,
+        fine: bool,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        state.update(cx, |state, cx| {
+            state.on_number_input_step(StepAction::Increment, fine, window, cx);
+        })
+    }
+
+    pub fn decrement(state: &Entity<InputState>, window: &mut Window, cx: &mut App) {
+        Self::decrement_with_fine(state, false, window, cx);
+    }
+
+    pub fn decrement_with_fine(
+        state: &Entity<InputState>,
+        fine: bool,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        state.update(cx, |state, cx| {
+            state.on_number_input_step(StepAction::Decrement, fine, window, cx);
+        })
+    }
+
     pub fn prefix(mut self, prefix: impl IntoElement) -> Self {
         self.prefix = Some(prefix.into_any_element());
         self
     }
 
-    /// Set the suffix element of the number input.
     pub fn suffix(mut self, suffix: impl IntoElement) -> Self {
         self.suffix = Some(suffix.into_any_element());
         self
@@ -71,20 +104,6 @@ impl NumberInput {
         self.appearance = appearance;
         self
     }
-
-    fn on_increment(state: &Entity<InputState>, window: &mut Window, cx: &mut App) {
-        state.update(cx, |state, cx| {
-            state.focus(window, cx);
-            state.on_action_increment(&Increment, window, cx);
-        })
-    }
-
-    fn on_decrement(state: &Entity<InputState>, window: &mut Window, cx: &mut App) {
-        state.update(cx, |state, cx| {
-            state.focus(window, cx);
-            state.on_action_decrement(&Decrement, window, cx);
-        })
-    }
 }
 
 impl Disableable for NumberInput {
@@ -94,21 +113,33 @@ impl Disableable for NumberInput {
     }
 }
 
+impl Styled for NumberInput {
+    fn style(&mut self) -> &mut StyleRefinement {
+        &mut self.style
+    }
+}
+
 impl InputState {
     fn on_action_increment(&mut self, _: &Increment, window: &mut Window, cx: &mut Context<Self>) {
-        self.on_number_input_step(StepAction::Increment, window, cx);
+        self.on_number_input_step(StepAction::Increment, false, window, cx);
     }
 
     fn on_action_decrement(&mut self, _: &Decrement, window: &mut Window, cx: &mut Context<Self>) {
-        self.on_number_input_step(StepAction::Decrement, window, cx);
+        self.on_number_input_step(StepAction::Decrement, false, window, cx);
     }
 
-    fn on_number_input_step(&mut self, action: StepAction, _: &mut Window, cx: &mut Context<Self>) {
+    fn on_number_input_step(
+        &mut self,
+        action: StepAction,
+        fine: bool,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if self.disabled {
             return;
         }
 
-        cx.emit(NumberInputEvent::Step(action));
+        cx.emit(NumberInputEvent::Step { action, fine });
     }
 }
 
@@ -118,7 +149,7 @@ pub enum StepAction {
     Increment,
 }
 pub enum NumberInputEvent {
-    Step(StepAction),
+    Step { action: StepAction, fine: bool },
 }
 impl EventEmitter<NumberInputEvent> for InputState {}
 
@@ -134,88 +165,64 @@ impl Sizable for NumberInput {
         self
     }
 }
-
-impl Styled for NumberInput {
-    fn style(&mut self) -> &mut StyleRefinement {
-        &mut self.style
-    }
-}
-
 impl RenderOnce for NumberInput {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let focused = self.state.focus_handle(cx).is_focused(window);
+
         h_flex()
             .id(("number-input", self.state.entity_id()))
-            .key_context(CONTEXT)
+            .refine_style(&self.style)
+            .key_context(KEY_CONTENT)
             .on_action(window.listener_for(&self.state, InputState::on_action_increment))
             .on_action(window.listener_for(&self.state, InputState::on_action_decrement))
             .flex_1()
-            .rounded(cx.theme().radius)
-            .refine_style(&self.style)
+            .input_size(self.size)
+            .px(self.size.input_px() / 2.)
+            .font_family("JetBrainsMono-Regular")
+            .when(self.appearance, |this| {
+                this.bg(cx.theme().background)
+                    .border_color(cx.theme().input)
+                    .border_1()
+                    .rounded(cx.theme().radius)
+            })
             .when(self.disabled, |this| this.bg(cx.theme().muted))
+            .when(focused, |this| this.focused_border(cx))
             .child(
                 Button::new("minus")
-                    .outline()
-                    .with_size(self.size)
+                    .ghost()
+                    .with_size(self.size.smaller())
                     .icon(IconName::Minus)
                     .compact()
                     .tab_stop(false)
                     .disabled(self.disabled)
-                    .border_color(cx.theme().input)
-                    .border_corners(Corners {
-                        top_left: true,
-                        top_right: false,
-                        bottom_right: false,
-                        bottom_left: true,
-                    })
-                    .border_edges(Edges {
-                        top: self.appearance,
-                        right: false,
-                        bottom: self.appearance,
-                        left: self.appearance,
-                    })
                     .on_click({
                         let state = self.state.clone();
-                        move |_, window, cx| {
-                            Self::on_decrement(&state, window, cx);
+                        move |event, window, cx| {
+                            Self::decrement_with_fine(&state, event.modifiers().shift, window, cx);
                         }
                     }),
             )
             .child(
-                Input::new(&self.state)
-                    .appearance(self.appearance)
-                    .with_size(self.size)
+                TextInput::new(&self.state)
+                    .appearance(false)
                     .disabled(self.disabled)
+                    .px(px(2.))
                     .gap_0()
-                    .rounded_none()
-                    .text_align(TextAlign::Center)
                     .when_some(self.prefix, |this, prefix| this.prefix(prefix))
                     .when_some(self.suffix, |this, suffix| this.suffix(suffix)),
             )
             .child(
                 Button::new("plus")
-                    .outline()
-                    .with_size(self.size)
+                    .ghost()
+                    .with_size(self.size.smaller())
                     .icon(IconName::Plus)
                     .compact()
                     .tab_stop(false)
                     .disabled(self.disabled)
-                    .border_color(cx.theme().input)
-                    .border_corners(Corners {
-                        top_left: false,
-                        top_right: true,
-                        bottom_right: true,
-                        bottom_left: false,
-                    })
-                    .border_edges(Edges {
-                        top: self.appearance,
-                        right: self.appearance,
-                        bottom: self.appearance,
-                        left: false,
-                    })
                     .on_click({
                         let state = self.state.clone();
-                        move |_, window, cx| {
-                            Self::on_increment(&state, window, cx);
+                        move |event, window, cx| {
+                            Self::increment_with_fine(&state, event.modifiers().shift, window, cx);
                         }
                     }),
             )

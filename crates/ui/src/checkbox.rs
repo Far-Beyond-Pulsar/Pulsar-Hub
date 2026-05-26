@@ -1,8 +1,8 @@
 use std::{rc::Rc, time::Duration};
 
 use crate::{
-    icon::IconNamed, text::Text, v_flex, ActiveTheme, Disableable, FocusableExt, IconName,
-    Selectable, Sizable, Size, StyledExt as _,
+    text::Text, v_flex, ActiveTheme, Disableable, FocusableExt, IconName, Selectable, Sizable,
+    Size, StyledExt as _,
 };
 use gpui::{
     div, prelude::FluentBuilder as _, px, relative, rems, svg, Animation, AnimationExt, AnyElement,
@@ -27,7 +27,6 @@ pub struct Checkbox {
 }
 
 impl Checkbox {
-    /// Create a new Checkbox with the given id.
     pub fn new(id: impl Into<ElementId>) -> Self {
         Self {
             id: id.into(),
@@ -44,21 +43,16 @@ impl Checkbox {
         }
     }
 
-    /// Set the label for the checkbox.
     pub fn label(mut self, label: impl Into<Text>) -> Self {
         self.label = Some(label.into());
         self
     }
 
-    /// Set the checked state for the checkbox.
     pub fn checked(mut self, checked: bool) -> Self {
         self.checked = checked;
         self
     }
 
-    /// Set the click handler for the checkbox.
-    ///
-    /// The `&bool` parameter indicates the new checked state after the click.
     pub fn on_click(mut self, handler: impl Fn(&bool, &mut Window, &mut App) + 'static) -> Self {
         self.on_click = Some(Rc::new(handler));
         self
@@ -301,6 +295,7 @@ impl RenderOnce for Checkbox {
                         let on_click = self.on_click.clone();
                         move |_, window, cx| {
                             window.prevent_default();
+                            cx.stop_propagation();
                             Self::handle_click(&on_click, checked, window, cx);
                         }
                     })

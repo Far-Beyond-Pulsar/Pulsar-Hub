@@ -1,8 +1,8 @@
-use crate::{ActiveTheme, Disableable, Icon, Selectable, Sizable as _, StyledExt, h_flex};
+use crate::{h_flex, ActiveTheme, Disableable, Icon, Selectable, Sizable as _, StyledExt};
 use gpui::{
-    AnyElement, App, ClickEvent, Div, ElementId, InteractiveElement, IntoElement, MouseMoveEvent,
-    ParentElement, RenderOnce, Stateful, StatefulInteractiveElement as _, StyleRefinement, Styled,
-    Window, div, prelude::FluentBuilder as _,
+    div, prelude::FluentBuilder as _, AnyElement, App, ClickEvent, Div, ElementId,
+    InteractiveElement, IntoElement, MouseButton, MouseMoveEvent, ParentElement, RenderOnce,
+    Stateful, StatefulInteractiveElement as _, StyleRefinement, Styled, Window,
 };
 use smallvec::SmallVec;
 
@@ -171,13 +171,18 @@ impl RenderOnce for ListItem {
             .justify_between()
             .refine_style(&self.style)
             .when(is_selectable, |this| {
-                this.when_some(self.on_click, |this, on_click| this.on_click(on_click))
-                    .when_some(self.on_mouse_enter, |this, on_mouse_enter| {
-                        this.on_mouse_move(move |ev, window, cx| (on_mouse_enter)(ev, window, cx))
+                this.when_some(self.on_click, |this, on_click| {
+                    this.on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                        cx.stop_propagation();
                     })
-                    .when(!is_active, |this| {
-                        this.hover(|this| this.bg(cx.theme().list_hover))
-                    })
+                    .on_click(on_click)
+                })
+                .when_some(self.on_mouse_enter, |this, on_mouse_enter| {
+                    this.on_mouse_move(move |ev, window, cx| (on_mouse_enter)(ev, window, cx))
+                })
+                .when(!is_active, |this| {
+                    this.hover(|this| this.bg(cx.theme().list_hover))
+                })
             })
             .when(!is_selectable, |this| {
                 this.text_color(cx.theme().muted_foreground)
@@ -203,25 +208,20 @@ impl RenderOnce for ListItem {
             .when_some(self.suffix, |this, suffix| this.child(suffix(window, cx)))
             .map(|this| {
                 if is_selectable && (self.selected || self.secondary_selected) {
-                    let bg = if self.selected && cx.theme().list.active_highlight {
-                        cx.theme().list_active
-                    } else {
-                        cx.theme().accent
-                    };
-
-                    this.bg(bg).when(cx.theme().list.active_highlight, |this| {
-                        this.child(
-                            div()
-                                .absolute()
-                                .top_0()
-                                .left_0()
-                                .right_0()
-                                .bottom_0()
-                                .border_1()
-                                .border_color(cx.theme().list_active_border)
-                                .refine_style(&selected_style),
-                        )
-                    })
+                    this.bg(cx.theme().accent).child(
+                        div()
+                            .absolute()
+                            .top_0()
+                            .left_0()
+                            .right_0()
+                            .bottom_0()
+                            .when(!self.secondary_selected, |this| {
+                                this.bg(cx.theme().list_active)
+                            })
+                            .border_1()
+                            .border_color(cx.theme().list_active_border)
+                            .refine_style(&selected_style),
+                    )
                 } else {
                     this
                 }

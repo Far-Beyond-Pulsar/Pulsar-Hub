@@ -2,16 +2,16 @@ use crate::{h_flex, skeleton::Skeleton, v_flex, ActiveTheme, Size};
 use gpui::{prelude::FluentBuilder as _, IntoElement, ParentElement as _, RenderOnce, Styled};
 
 #[derive(IntoElement)]
-pub(super) struct Loading {
+pub struct Loading {
     size: Size,
 }
 
 impl Loading {
-    pub(super) fn new() -> Self {
+    pub fn new() -> Self {
         Self { size: Size::Medium }
     }
 
-    pub(super) fn size(mut self, size: Size) -> Self {
+    pub fn size(mut self, size: Size) -> Self {
         self.size = size;
         self
     }
@@ -24,21 +24,21 @@ struct LoadingRow {
 }
 
 impl LoadingRow {
-    fn header() -> Self {
+    pub fn header() -> Self {
         Self {
             header: true,
             size: Size::Medium,
         }
     }
 
-    fn row() -> Self {
+    pub fn row() -> Self {
         Self {
             header: false,
             size: Size::Medium,
         }
     }
 
-    fn size(mut self, size: Size) -> Self {
+    pub fn size(mut self, size: Size) -> Self {
         self.size = size;
         self
     }
@@ -68,31 +68,11 @@ impl RenderOnce for LoadingRow {
                 h_flex()
                     .gap_3()
                     .flex_1()
-                    .child(
-                        Skeleton::new()
-                            .when(self.header, |this| this.secondary())
-                            .h(height)
-                            .w_24(),
-                    )
-                    .child(
-                        Skeleton::new()
-                            .when(self.header, |this| this.secondary())
-                            .h(height)
-                            .w_48(),
-                    )
-                    .child(
-                        Skeleton::new()
-                            .when(self.header, |this| this.secondary())
-                            .h(height)
-                            .w_16(),
-                    ),
+                    .child(Skeleton::new().secondary(self.header).h(height).w_24())
+                    .child(Skeleton::new().secondary(self.header).h(height).w_48())
+                    .child(Skeleton::new().secondary(self.header).h(height).w_16()),
             )
-            .child(
-                Skeleton::new()
-                    .when(self.header, |this| this.secondary())
-                    .h(height)
-                    .w_24(),
-            )
+            .child(Skeleton::new().secondary(self.header).h(height).w_24())
     }
 }
 

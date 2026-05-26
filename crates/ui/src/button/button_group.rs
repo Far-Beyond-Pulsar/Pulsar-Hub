@@ -1,5 +1,5 @@
 use gpui::{
-    div, prelude::FluentBuilder as _, App, Axis, Corners, Edges, ElementId, InteractiveElement,
+    div, prelude::FluentBuilder as _, App, Corners, Edges, ElementId, InteractiveElement,
     IntoElement, ParentElement, RenderOnce, StatefulInteractiveElement as _, StyleRefinement,
     Styled, Window,
 };
@@ -18,7 +18,6 @@ pub struct ButtonGroup {
     children: Vec<Button>,
     pub(super) multiple: bool,
     pub(super) disabled: bool,
-    pub(super) layout: Axis,
 
     // The button props
     pub(super) compact: bool,
@@ -49,7 +48,6 @@ impl ButtonGroup {
             outline: false,
             multiple: false,
             disabled: false,
-            layout: Axis::Horizontal,
             on_click: None,
         }
     }
@@ -66,29 +64,19 @@ impl ButtonGroup {
         self
     }
 
-    /// With the multiple selection mode, default is false (single selection).
+    /// With the multiple selection mode.
     pub fn multiple(mut self, multiple: bool) -> Self {
         self.multiple = multiple;
         self
     }
 
-    /// Set the layout of the button group. Default is `Axis::Horizontal`.
-    pub fn layout(mut self, layout: Axis) -> Self {
-        self.layout = layout;
-        self
-    }
-
     /// With the compact mode for the ButtonGroup.
-    ///
-    /// See also: [`Button::compact()`]
     pub fn compact(mut self) -> Self {
         self.compact = true;
         self
     }
 
     /// With the outline mode for the ButtonGroup.
-    ///
-    /// See also: [`Button::outline()`]
     pub fn outline(mut self) -> Self {
         self.outline = true;
         self
@@ -158,13 +146,10 @@ impl RenderOnce for ButtonGroup {
             }
         }
 
-        let vertical = self.layout == Axis::Vertical;
-
         div()
             .id(self.id)
             .flex()
-            .when(vertical, |this| this.flex_col().justify_center())
-            .when(!vertical, |this| this.items_center())
+            .items_center()
             .refine_style(&self.style)
             .children(
                 self.children
@@ -179,8 +164,8 @@ impl RenderOnce for ButtonGroup {
                             child
                                 .border_corners(Corners {
                                     top_left: true,
-                                    top_right: vertical,
-                                    bottom_left: !vertical,
+                                    top_right: false,
+                                    bottom_left: true,
                                     bottom_right: false,
                                 })
                                 .border_edges(Edges {
@@ -193,15 +178,15 @@ impl RenderOnce for ButtonGroup {
                             // Last
                             child
                                 .border_edges(Edges {
-                                    left: vertical,
-                                    top: !vertical,
+                                    left: false,
+                                    top: true,
                                     right: true,
                                     bottom: true,
                                 })
                                 .border_corners(Corners {
                                     top_left: false,
-                                    top_right: !vertical,
-                                    bottom_left: vertical,
+                                    top_right: true,
+                                    bottom_left: false,
                                     bottom_right: true,
                                 })
                         } else {
@@ -209,20 +194,19 @@ impl RenderOnce for ButtonGroup {
                             child
                                 .border_corners(Corners::all(false))
                                 .border_edges(Edges {
-                                    left: vertical,
-                                    top: !vertical,
+                                    left: false,
+                                    top: true,
                                     right: true,
                                     bottom: true,
                                 })
                         }
+                        .stop_propagation(false)
                         .when_some(self.size, |this, size| this.with_size(size))
                         .when_some(self.variant, |this, variant| this.with_variant(variant))
                         .when(self.compact, |this| this.compact())
                         .when(self.outline, |this| this.outline())
-                        .when(self.on_click.is_some(), |this| {
-                            this.on_click(move |_, _, _| {
-                                state.set(Some(child_index));
-                            })
+                        .on_click(move |_, _, _| {
+                            state.set(Some(child_index));
                         });
 
                         child

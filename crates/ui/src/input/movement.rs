@@ -5,12 +5,6 @@ use crate::input::{
     MoveToEnd, MoveToNextWord, MoveToPreviousWord, MoveToStart, MoveUp, RopeExt as _,
 };
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum MoveDirection {
-    Up,
-    Down,
-}
-
 impl InputState {
     /// Called after moving the cursor. Updates preferred_column if we know where the cursor now is.
     pub(super) fn update_preferred_column(&mut self) {
@@ -26,7 +20,7 @@ impl InputState {
             return;
         };
 
-        let Some(pos) = line.position_for_index(point.column, last_layout) else {
+        let Some(pos) = line.position_for_index(point.column, last_layout.line_height) else {
             self.preferred_column = None;
             return;
         };
@@ -39,19 +33,13 @@ impl InputState {
     /// The offset is the UTF-8 offset.
     ///
     /// Ensure the offset use self.next_boundary or self.previous_boundary to get the correct offset.
-    pub(crate) fn move_to(
-        &mut self,
-        offset: usize,
-        direction: Option<MoveDirection>,
-        cx: &mut Context<Self>,
-    ) {
+    pub(crate) fn move_to(&mut self, offset: usize, cx: &mut Context<Self>) {
         let offset = offset.clamp(0, self.text.len());
         self.selected_range = (offset..offset).into();
-        self.scroll_to(offset, direction, cx);
+        self.scroll_to(offset, cx);
         self.pause_blink_cursor(cx);
         self.update_preferred_column();
         self.hide_context_menu(cx);
-        self.clear_inline_completion(cx);
         cx.notify()
     }
 
@@ -93,7 +81,7 @@ impl InputState {
                         x: preferred_x,
                         y: next_display_point.local_row * last_layout.line_height,
                     },
-                    last_layout,
+                    last_layout.line_height,
                 ) {
                     new_offset = line_start_offset + x;
                 }
@@ -105,12 +93,7 @@ impl InputState {
         }
 
         self.pause_blink_cursor(cx);
-        let direction = if move_lines < 0 {
-            MoveDirection::Up
-        } else {
-            MoveDirection::Down
-        };
-        self.move_to(new_offset, Some(direction), cx);
+        self.move_to(new_offset, cx);
         // Set back the preferred_column
         self.preferred_column = was_preferred_column;
         cx.notify();
@@ -119,18 +102,18 @@ impl InputState {
     pub(super) fn left(&mut self, _: &MoveLeft, _: &mut Window, cx: &mut Context<Self>) {
         self.pause_blink_cursor(cx);
         if self.selected_range.is_empty() {
-            self.move_to(self.previous_boundary(self.cursor()), None, cx);
+            self.move_to(self.previous_boundary(self.cursor()), cx);
         } else {
-            self.move_to(self.selected_range.start, None, cx)
+            self.move_to(self.selected_range.start, cx)
         }
     }
 
     pub(super) fn right(&mut self, _: &MoveRight, _: &mut Window, cx: &mut Context<Self>) {
         self.pause_blink_cursor(cx);
         if self.selected_range.is_empty() {
-            self.move_to(self.next_boundary(self.selected_range.end), None, cx);
+            self.move_to(self.next_boundary(self.selected_range.end), cx);
         } else {
-            self.move_to(self.selected_range.end, None, cx)
+            self.move_to(self.selected_range.end, cx)
         }
     }
 
@@ -146,7 +129,6 @@ impl InputState {
         if !self.selected_range.is_empty() {
             self.move_to(
                 self.previous_boundary(self.selected_range.start.saturating_sub(1)),
-                Some(MoveDirection::Up),
                 cx,
             );
         }
@@ -166,7 +148,6 @@ impl InputState {
         if !self.selected_range.is_empty() {
             self.move_to(
                 self.next_boundary(self.selected_range.end.saturating_sub(1)),
-                Some(MoveDirection::Down),
                 cx,
             );
         }
@@ -209,13 +190,13 @@ impl InputState {
     pub(super) fn home(&mut self, _: &MoveHome, _: &mut Window, cx: &mut Context<Self>) {
         self.pause_blink_cursor(cx);
         let offset = self.start_of_line();
-        self.move_to(offset, Some(MoveDirection::Up), cx);
+        self.move_to(offset, cx);
     }
 
     pub(super) fn end(&mut self, _: &MoveEnd, _: &mut Window, cx: &mut Context<Self>) {
         self.pause_blink_cursor(cx);
         let offset = self.end_of_line();
-        self.move_to(offset, Some(MoveDirection::Down), cx);
+        self.move_to(offset, cx);
     }
 
     pub(super) fn move_to_start(
@@ -224,11 +205,11 @@ impl InputState {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.move_to(0, None, cx);
+        self.move_to(0, cx);
     }
 
     pub(super) fn move_to_end(&mut self, _: &MoveToEnd, _: &mut Window, cx: &mut Context<Self>) {
-        self.move_to(self.text.len(), None, cx);
+        self.move_to(self.text.len(), cx);
     }
 
     pub(super) fn move_to_previous_word(
@@ -238,7 +219,7 @@ impl InputState {
         cx: &mut Context<Self>,
     ) {
         let offset = self.previous_start_of_word();
-        self.move_to(offset, None, cx);
+        self.move_to(offset, cx);
     }
 
     pub(super) fn move_to_next_word(
@@ -248,6 +229,6 @@ impl InputState {
         cx: &mut Context<Self>,
     ) {
         let offset = self.next_end_of_word();
-        self.move_to(offset, None, cx);
+        self.move_to(offset, cx);
     }
 }

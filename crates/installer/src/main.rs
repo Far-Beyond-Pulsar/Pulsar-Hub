@@ -8,7 +8,6 @@ use gpui_component::Root;
 use gpui::Focusable;
 
 fn main() {
-    // Initialize logging
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -18,44 +17,39 @@ fn main() {
 
     tracing::info!("Starting Pulsar Installer");
 
-    // Create and run the GPUI application
     let app = Application::new();
 
     app.run(move |cx| {
-        // Initialize GPUI components
         gpui_component::init(cx);
         cx.activate(true);
 
-        let window_size = size(px(800.0), px(600.0));
+        let window_size = size(px(960.0), px(640.0));
         let window_bounds = Bounds::centered(None, window_size, cx);
 
         let options = WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(window_bounds)),
             titlebar: Some(TitlebarOptions {
-                title: Some("Pulsar Installer".into()),
-                appears_transparent: false,
-                traffic_light_position: None,
+                title: None,
+                appears_transparent: true,
+                traffic_light_position: Some(point(px(12.0), px(10.0))),
             }),
             window_min_size: Some(Size {
-                width: px(600.0),
-                height: px(480.0),
+                width: px(720.0),
+                height: px(500.0),
             }),
             kind: WindowKind::Normal,
             ..Default::default()
         };
 
         cx.open_window(options, |window, cx| {
-            // Create the installer view
             let installer_view = InstallerView::view(window, cx);
 
-            // Focus the installer view
             let focus_handle = installer_view.focus_handle(cx);
             window.defer(cx, move |window, cx| {
-                focus_handle.focus(window, cx);
+                focus_handle.focus(window);
             });
 
-            // Wrap in Root following the story crate pattern
-            cx.new(|cx| Root::new(installer_view, window, cx))
+            cx.new(|cx| Root::new(installer_view.into(), window, cx))
         })
         .expect("Failed to open installer window");
     });

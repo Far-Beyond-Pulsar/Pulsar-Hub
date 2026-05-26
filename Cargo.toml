@@ -2,6 +2,7 @@
 default-members = ["crates/ui", "crates/installer", "crates/assets"]
 members = [
     "crates/macros",
+    "crates/pulsar_macros",
     "crates/ui",
     "crates/assets",
     "crates/installer",
@@ -18,7 +19,10 @@ gpui-component-macros = { path = "crates/macros", version = "0.5.0" }
 gpui-component-assets = { path = "crates/assets", version = "0.5.0" }
 story = { path = "crates/story" }
 
-gpui = { git = "https://github.com/zed-industries/zed" }
+gpui-ce = { git = "https://github.com/Far-Beyond-Pulsar/WGPUI", rev = "0b555af11e80565429af9405ffd9d17fa832e3fe" }
+
+# Enable all platform wgpu backends (metal=macOS, vulkan+dx12=Linux/Windows)
+wgpu = { git = "https://github.com/Far-Beyond-Pulsar/wgpu", rev = "fce5b80e8017304449124b12637ec324417e40c8", default-features = false, features = ["metal", "vulkan", "dx12", "wgsl", "webgpu"] }
 gpui-macros = "0.2.2"
 sum-tree = { version = "0.2.0", package = "zed-sum-tree" }
 # reqwest = { version = "0.12.15-zed", package = "zed-reqwest" }
@@ -33,6 +37,7 @@ reqwest = { git = "https://github.com/zed-industries/reqwest.git", rev = "c15662
 ], package = "zed-reqwest", version = "0.12.15-zed" }
 
 anyhow = "1"
+image = { version = "0.25.9", default-features = false, features = ["png", "jpeg", "bmp", "tga", "gif", "webp"] }
 log = "0.4"
 lsp-types = { version = "0.97.0", features = ["proposed"] }
 notify = "7.0.0"

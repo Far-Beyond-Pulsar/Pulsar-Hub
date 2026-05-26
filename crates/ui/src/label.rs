@@ -9,7 +9,6 @@ use crate::{ActiveTheme, StyledExt};
 
 const MASKED: &'static str = "•";
 
-/// Represents the type of match for highlighting text in a label.
 #[derive(Clone)]
 pub enum HighlightsMatch {
     Prefix(SharedString),
@@ -48,7 +47,6 @@ impl From<SharedString> for HighlightsMatch {
     }
 }
 
-/// A text label element with optional secondary text, masking, and highlighting capabilities.
 #[derive(IntoElement)]
 pub struct Label {
     style: StyleRefinement,
@@ -59,7 +57,6 @@ pub struct Label {
 }
 
 impl Label {
-    /// Create a new label with the main label.
     pub fn new(label: impl Into<SharedString>) -> Self {
         let label: SharedString = label.into();
         Self {
@@ -78,13 +75,11 @@ impl Label {
         self
     }
 
-    /// Set whether to mask the label text.
     pub fn masked(mut self, masked: bool) -> Self {
         self.masked = masked;
         self
     }
 
-    /// Set for matching text to highlight in the label.
     pub fn highlights(mut self, text: impl Into<HighlightsMatch>) -> Self {
         self.highlights_text = Some(text.into());
         self
@@ -181,7 +176,7 @@ impl Label {
             ));
         }
 
-        Some(gpui::combine_highlights(vec![], highlights).collect())
+        Some(highlights)
     }
 }
 

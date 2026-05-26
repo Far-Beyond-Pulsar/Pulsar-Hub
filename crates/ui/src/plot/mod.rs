@@ -13,9 +13,9 @@ use gpui::{point, px, App, Bounds, IntoElement, Path, PathBuilder, Pixels, Point
 
 use crate::PixelsExt;
 
-pub use axis::{AxisText, PlotAxis, AXIS_GAP};
+pub use axis::{Axis, AxisText, AXIS_GAP};
 pub use grid::Grid;
-pub use label::PlotLabel;
+pub use label::Label;
 
 pub trait Plot: IntoElement {
     fn paint(&mut self, bounds: Bounds<Pixels>, window: &mut Window, cx: &mut App);
@@ -26,7 +26,6 @@ pub enum StrokeStyle {
     #[default]
     Natural,
     Linear,
-    StepAfter,
 }
 
 pub fn origin_point<T>(x: T, y: T, origin: Point<T>) -> Point<T>

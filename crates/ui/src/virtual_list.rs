@@ -1,4 +1,4 @@
-//! Virtual List for render a large number of differently sized rows/columns.
+//! Vistual List for render a large number of differently sized rows/columns.
 //!
 //! > NOTE: This must ensure each column width or row height.
 //!
@@ -18,15 +18,15 @@ use std::{
 };
 
 use gpui::{
-    Along, AnyElement, App, AvailableSpace, Axis, Bounds, ContentMask, Context,
-    DeferredScrollToItem, Div, Element, ElementId, Entity, GlobalElementId, Half, Hitbox,
+    div, point, px, size, Along, AnyElement, App, AvailableSpace, Axis, Bounds, ContentMask,
+    Context, DeferredScrollToItem, Div, Element, ElementId, Entity, GlobalElementId, Half, Hitbox,
     InteractiveElement, IntoElement, IsZero as _, ListSizingBehavior, Pixels, Point, Render,
     ScrollHandle, ScrollStrategy, Size, Stateful, StatefulInteractiveElement, StyleRefinement,
-    Styled, Window, div, point, px, size,
+    Styled, Window,
 };
 use smallvec::SmallVec;
 
-use crate::{AxisExt, PixelsExt, scroll::ScrollbarHandle};
+use crate::{scroll::ScrollHandleOffsetable, AxisExt, PixelsExt};
 
 struct VirtualListScrollHandleState {
     axis: Axis,
@@ -34,9 +34,6 @@ struct VirtualListScrollHandleState {
     pub deferred_scroll_to_item: Option<DeferredScrollToItem>,
 }
 
-/// A scroll handle for [`VirtualList`].
-///
-/// See also [`ScrollHandle`].
 #[derive(Clone)]
 pub struct VirtualListScrollHandle {
     state: Rc<RefCell<VirtualListScrollHandleState>>,
@@ -57,7 +54,7 @@ impl AsRef<ScrollHandle> for VirtualListScrollHandle {
     }
 }
 
-impl ScrollbarHandle for VirtualListScrollHandle {
+impl ScrollHandleOffsetable for VirtualListScrollHandle {
     fn offset(&self) -> Point<Pixels> {
         self.base_handle.offset()
     }
@@ -80,7 +77,6 @@ impl Deref for VirtualListScrollHandle {
 }
 
 impl VirtualListScrollHandle {
-    /// Create a new VirtualListScrollHandle.
     pub fn new() -> Self {
         VirtualListScrollHandle {
             state: Rc::new(RefCell::new(VirtualListScrollHandleState {
@@ -92,7 +88,6 @@ impl VirtualListScrollHandle {
         }
     }
 
-    /// Get the base scroll handle.
     pub fn base_handle(&self) -> &ScrollHandle {
         &self.base_handle
     }
@@ -124,8 +119,7 @@ impl VirtualListScrollHandle {
 ///
 /// This is like `uniform_list` in GPUI, but support two axis.
 ///
-/// The `item_sizes` is the size of each column,
-/// only the `height` is used, `width` is ignored and VirtualList will measure the first item width.
+/// The `item_sizes` is the size of each column.
 ///
 /// See also [`h_virtual_list`]
 #[inline]
@@ -143,9 +137,6 @@ where
 }
 
 /// Create a [`VirtualList`] in horizontal direction.
-///
-/// The `item_sizes` is the size of each column,
-/// only the `width` is used, `height` is ignored and VirtualList will measure the first item height.
 ///
 /// See also [`v_virtual_list`]
 #[inline]
@@ -289,31 +280,6 @@ impl VirtualList {
         self.scroll_handle.set_offset(scroll_offset);
         scroll_offset
     }
-
-    /// Ref from: https://github.com/zed-industries/zed/blob/83f9f9d9e3f5914392cab9a09e3472711a1d7b38/crates/gpui/src/elements/uniform_list.rs#L660
-    fn measure_item(
-        &self,
-        list_width: Option<Pixels>,
-        window: &mut Window,
-        cx: &mut App,
-    ) -> Size<Pixels> {
-        if self.items_count == 0 {
-            return Size::default();
-        }
-
-        let item_ix = 0;
-        let mut items = (self.render_items)(item_ix..item_ix + 1, window, cx);
-        let Some(mut item_to_measure) = items.pop() else {
-            return Size::default();
-        };
-        let available_space = size(
-            list_width.map_or(AvailableSpace::MinContent, |width| {
-                AvailableSpace::Definite(width)
-            }),
-            AvailableSpace::MinContent,
-        );
-        item_to_measure.layout_as_root(available_space, window, cx)
-    }
 }
 
 /// Frame state used by the [VirtualItem].
@@ -362,7 +328,6 @@ impl Element for VirtualList {
         let rem_size = window.rem_size();
         let font_size = window.text_style().font_size.to_pixels(rem_size);
         let mut size_layout = ItemSizeLayout::default();
-        let longest_item_size = self.measure_item(None, window, cx);
 
         let layout_id = self.base.interactivity().request_layout(
             global_id,
@@ -423,11 +388,17 @@ impl Element for VirtualList {
                                         .iter()
                                         .map(|size| size.as_f32())
                                         .sum::<f32>()),
-                                    height: longest_item_size.height,
+                                    height: state
+                                        .items_sizes
+                                        .get(0)
+                                        .map_or(px(0.), |size| size.height),
                                 }
                             } else {
                                 Size {
-                                    width: longest_item_size.width,
+                                    width: state
+                                        .items_sizes
+                                        .get(0)
+                                        .map_or(px(0.), |size| size.width),
                                     height: px(state
                                         .sizes
                                         .iter()
@@ -586,16 +557,7 @@ impl Element for VirtualList {
                 scroll_to_item,
             );
         }
-
-        scroll_offset = scroll_offset
-            .max(&point(
-                content_bounds.size.width - layout.size_layout.content_size.width,
-                content_bounds.size.height - layout.size_layout.content_size.height,
-            ))
-            .min(&point(px(0.), px(0.)));
-        if scroll_offset != self.scroll_handle.offset() {
-            self.scroll_handle.set_offset(scroll_offset);
-        }
+        scroll_offset = scroll_offset.min(&point(px(0.), px(0.)));
 
         self.base.interactivity().prepaint(
             global_id,
@@ -609,16 +571,20 @@ impl Element for VirtualList {
                     let min_scroll_offset = content_bounds.size.along(self.axis)
                         - layout.size_layout.content_size.along(self.axis);
 
+                    // Do not trigger scrolling if the content is smaller than the container.
+                    if min_scroll_offset.as_f32() >= 0. {
+                        scroll_offset.x = px(0.);
+                        scroll_offset.y = px(0.);
+                    }
+
                     let is_scrolled = !scroll_offset.along(self.axis).is_zero();
                     if is_scrolled {
                         match self.axis {
                             Axis::Horizontal if scroll_offset.x < min_scroll_offset => {
                                 scroll_offset.x = min_scroll_offset;
-                                self.scroll_handle.set_offset(scroll_offset);
                             }
                             Axis::Vertical if scroll_offset.y < min_scroll_offset => {
                                 scroll_offset.y = min_scroll_offset;
-                                self.scroll_handle.set_offset(scroll_offset);
                             }
                             _ => {}
                         }

@@ -4,13 +4,13 @@ use crate::input::RopeExt;
 use anyhow::{anyhow, Context, Result};
 use gpui::{HighlightStyle, SharedString};
 
+use sum_tree::Bias;
 use ropey::{ChunkCursor, Rope};
 use std::{
     collections::{BTreeSet, HashMap},
     ops::Range,
     usize,
 };
-use sum_tree::Bias;
 use tree_sitter::{
     InputEdit, Node, Parser, Point, Query, QueryCursor, QueryMatch, StreamingIterator, Tree,
 };
@@ -423,7 +423,7 @@ impl SyntaxHighlighter {
 
         // DO NOT REMOVE THIS PRINT, it's useful for debugging
         // for item in highlights {
-        //     println!("item: {:?}", item);
+        //     tracing::trace!("item: {:?}", item);
         // }
 
         highlights
@@ -447,8 +447,9 @@ impl SyntaxHighlighter {
         let content = self.text.slice(start_offset..end_offset);
         if content.len() == 0 {
             return cache;
-        };
-        // FIXME: Avoid to_string.
+        }
+
+        // Note: Parser requires owned String. Could optimize with zero-copy parsing if tree-sitter supports it.
         let content = content.to_string();
 
         let Some(config) = LanguageRegistry::singleton().language(injection_language) else {
@@ -565,30 +566,10 @@ impl SyntaxHighlighter {
         (language_name, content_node, include_children)
     }
 
-    /// Returns the syntax highlight styles for a range of text.
+    /// The argument `range` is the range of the line in the text.
     ///
-    /// The argument `range` is the range of bytes in the text to highlight.
-    ///
-    /// Returns a vector of tuples where each tuple contains:
-    /// - A byte range relative to the text
-    /// - The corresponding highlight style for that range
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use gpui_component::highlighter::{HighlightTheme, SyntaxHighlighter};
-    /// use ropey::Rope;
-    ///
-    /// let code = "fn main() {\n    println!(\"Hello\");\n}";
-    /// let rope = Rope::from_str(code);
-    /// let mut highlighter = SyntaxHighlighter::new("rust");
-    /// highlighter.update(None, &rope);
-    ///
-    /// let theme = HighlightTheme::default_dark();
-    /// let range = 0..code.len();
-    /// let styles = highlighter.styles(&range, &theme);
-    /// ```
-    pub fn styles(
+    /// Returns `range` is the range in the line.
+    pub(crate) fn styles(
         &self,
         range: &Range<usize>,
         theme: &HighlightTheme,
@@ -622,9 +603,9 @@ impl SyntaxHighlighter {
 
         // NOTE: DO NOT remove this comment, it is used for debugging.
         // for style in &styles {
-        //     println!("---- style: {:?} - {:?}", style.0, style.1.color);
+        //     tracing::trace!("---- style: {:?} - {:?}", style.0, style.1.color);
         // }
-        // println!("--------------------------------");
+        // tracing::trace!("--------------------------------");
 
         styles
     }
@@ -782,11 +763,11 @@ mod tests {
 
         let left = unique_styles(&range, left);
         if left.len() != right.len() {
-            println!("\n---------------------------------------------");
+            tracing::info!("\n---------------------------------------------");
             for (range, style) in left.iter() {
-                println!("({:?}, {})", range, color_name(style.color));
+                tracing::info!("({:?}, {})", range, color_name(style.color));
             }
-            println!("---------------------------------------------");
+            tracing::info!("---------------------------------------------");
             panic!("left {} styles, right {} styles", left.len(), right.len());
         }
         for (left, right) in left.into_iter().zip(right) {

@@ -1,17 +1,17 @@
 use std::rc::Rc;
 
 use gpui::{
-    AnyElement, App, AppContext as _, Entity, IntoElement, SharedString, StyleRefinement, Styled,
-    Subscription, Window, prelude::FluentBuilder as _,
+    prelude::FluentBuilder as _, AnyElement, App, AppContext as _, Entity, IntoElement,
+    SharedString, StyleRefinement, Styled, Subscription, Window,
 };
 
 use crate::{
-    AxisExt, Sizable, StyledExt,
     input::{InputEvent, InputState, NumberInput, NumberInputEvent, StepAction},
     setting::{
+        fields::{get_value, set_value, SettingFieldRender},
         AnySettingField, RenderOptions,
-        fields::{SettingFieldRender, get_value, set_value},
     },
+    AxisExt, Sizable, StyledExt,
 };
 
 #[derive(Clone, Debug)]
@@ -78,21 +78,28 @@ impl SettingFieldRender for NumberField {
                     let _subscriptions = vec![
                         cx.subscribe_in(&input, window, {
                             move |_, input, event: &NumberInputEvent, window, cx| match event {
-                                NumberInputEvent::Step(action) => input.update(cx, |input, cx| {
-                                    let value = input.value();
-                                    if let Ok(value) = value.parse::<f64>() {
-                                        let new_value = if *action == StepAction::Increment {
-                                            value + num_options.step
-                                        } else {
-                                            value - num_options.step
-                                        };
-                                        input.set_value(
-                                            SharedString::from(new_value.to_string()),
-                                            window,
-                                            cx,
-                                        );
-                                    }
-                                }),
+                                NumberInputEvent::Step { action, fine } => {
+                                    input.update(cx, |input, cx| {
+                                        let value = input.value();
+                                        if let Ok(value) = value.parse::<f64>() {
+                                            let step = if *fine {
+                                                num_options.step * 0.1
+                                            } else {
+                                                num_options.step
+                                            };
+                                            let new_value = if *action == StepAction::Increment {
+                                                value + step
+                                            } else {
+                                                value - step
+                                            };
+                                            input.set_value(
+                                                SharedString::from(new_value.to_string()),
+                                                window,
+                                                cx,
+                                            );
+                                        }
+                                    })
+                                }
                             }
                         }),
                         cx.subscribe_in(&input, window, {

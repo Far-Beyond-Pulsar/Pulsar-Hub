@@ -1,18 +1,23 @@
-use crate::{ActiveTheme, PixelsExt as _};
+use std::fmt::{self, Display, Formatter};
+
+use crate::{
+    scroll::{Scrollable, ScrollbarAxis},
+    ActiveTheme,
+};
 use gpui::{
-    App, BoxShadow, Corners, DefiniteLength, Div, Edges, FocusHandle, Hsla, ParentElement, Pixels,
-    Refineable, StyleRefinement, Styled, Window, div, point, px,
+    div, point, px, App, Axis, BoxShadow, Corners, DefiniteLength, Div, Edges, Element,
+    FocusHandle, Hsla, ParentElement, Pixels, Refineable, StyleRefinement, Styled, Window,
 };
 use serde::{Deserialize, Serialize};
 
 /// Returns a `Div` as horizontal flex layout.
-#[inline(always)]
+#[inline]
 pub fn h_flex() -> Div {
     div().h_flex()
 }
 
 /// Returns a `Div` as vertical flex layout.
-#[inline(always)]
+#[inline]
 pub fn v_flex() -> Div {
     div().v_flex()
 }
@@ -24,7 +29,7 @@ pub fn v_flex() -> Div {
 /// If CSS is `box-shadow: 0 0 10px 0 rgba(0, 0, 0, 0.1);`
 ///
 /// Then the equivalent in Rust is `box_shadow(0., 0., 10., 0., hsla(0., 0., 0., 0.1))`
-#[inline(always)]
+#[inline]
 pub fn box_shadow(
     x: impl Into<Pixels>,
     y: impl Into<Pixels>,
@@ -51,10 +56,7 @@ macro_rules! font_weight {
 }
 
 /// Extends [`gpui::Styled`] with specific styling methods.
-#[cfg_attr(
-    any(feature = "inspector", debug_assertions),
-    gpui_macros::derive_inspector_reflection
-)]
+// reflection macro removed: gpui_macros crate not available at current gpui revision
 pub trait StyledExt: Styled + Sized {
     /// Refine the style of this element, applying the given style refinement.
     fn refine_style(mut self, style: &StyleRefinement) -> Self {
@@ -63,13 +65,13 @@ pub trait StyledExt: Styled + Sized {
     }
 
     /// Apply self into a horizontal flex layout.
-    #[inline(always)]
+    #[inline]
     fn h_flex(self) -> Self {
         self.flex().flex_row().items_center()
     }
 
     /// Apply self into a vertical flex layout.
-    #[inline(always)]
+    #[inline]
     fn v_flex(self) -> Self {
         self.flex().flex_col()
     }
@@ -162,6 +164,17 @@ pub trait StyledExt: Styled + Sized {
         self.border_1().border_color(cx.theme().ring)
     }
 
+    /// Wraps the element in a ScrollView.
+    ///
+    /// Current this is only have a vertical scrollbar.
+    #[inline]
+    fn scrollable(self, axis: impl Into<ScrollbarAxis>) -> Scrollable<Self>
+    where
+        Self: Element,
+    {
+        Scrollable::new(axis, self)
+    }
+
     font_weight!(font_thin, THIN);
     font_weight!(font_extralight, EXTRA_LIGHT);
     font_weight!(font_light, LIGHT);
@@ -181,6 +194,36 @@ pub trait StyledExt: Styled + Sized {
             .border_color(cx.theme().border)
             .shadow_lg()
             .rounded(cx.theme().radius)
+    }
+
+    /// Apply default background color from theme
+    #[inline]
+    fn bg_default(self, cx: &App) -> Self {
+        self.bg(cx.theme().background)
+    }
+
+    /// Apply default text color from theme
+    #[inline]
+    fn text_default(self, cx: &App) -> Self {
+        self.text_color(cx.theme().foreground)
+    }
+
+    /// Apply default border color from theme
+    #[inline]
+    fn border_default(self, cx: &App) -> Self {
+        self.border_color(cx.theme().border)
+    }
+
+    /// Apply muted text color from theme
+    #[inline]
+    fn text_muted(self, cx: &App) -> Self {
+        self.text_color(cx.theme().muted_foreground)
+    }
+
+    /// Apply sidebar background color from theme
+    #[inline]
+    fn bg_sidebar(self, cx: &App) -> Self {
+        self.bg(cx.theme().sidebar)
     }
 
     /// Set corner radii for the element.
@@ -213,35 +256,6 @@ impl Size {
             Size::Small => 1.,
             Size::Medium => 2.,
             Size::Large => 3.,
-        }
-    }
-
-    /// Returns the size as a static string.
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Size::XSmall => "xs",
-            Size::Small => "sm",
-            Size::Medium => "md",
-            Size::Large => "lg",
-            Size::Size(_) => "custom",
-        }
-    }
-
-    /// Create a Size from a static string.
-    ///
-    /// - "xs" or "xsmall"
-    /// - "sm" or "small"
-    /// - "md" or "medium"
-    /// - "lg" or "large"
-    ///
-    /// Any other value will return Size::Medium.
-    pub fn from_str(size: &str) -> Self {
-        match size.to_lowercase().as_str() {
-            "xs" | "xsmall" => Size::XSmall,
-            "sm" | "small" => Size::Small,
-            "md" | "medium" => Size::Medium,
-            "lg" | "large" => Size::Large,
-            _ => Size::Medium,
         }
     }
 
@@ -335,10 +349,9 @@ impl Size {
         }
     }
 
-    /// Returns the horizontal input padding.
     pub fn input_px(&self) -> Pixels {
         match self {
-            Self::Large => px(16.),
+            Self::Large => px(20.),
             Self::Medium => px(12.),
             Self::Small => px(8.),
             Self::XSmall => px(4.),
@@ -346,11 +359,10 @@ impl Size {
         }
     }
 
-    /// Returns the vertical input padding.
     pub fn input_py(&self) -> Pixels {
         match self {
             Size::Large => px(10.),
-            Size::Medium => px(8.),
+            Size::Medium => px(5.),
             Size::Small => px(2.),
             Size::XSmall => px(0.),
             _ => px(2.),
@@ -394,19 +406,16 @@ pub trait Sizable: Sized {
     fn with_size(self, size: impl Into<Size>) -> Self;
 
     /// Set to Size::XSmall
-    #[inline(always)]
     fn xsmall(self) -> Self {
         self.with_size(Size::XSmall)
     }
 
     /// Set to Size::Small
-    #[inline(always)]
     fn small(self) -> Self {
         self.with_size(Size::Small)
     }
 
     /// Set to Size::Large
-    #[inline(always)]
     fn large(self) -> Self {
         self.with_size(Size::Large)
     }
@@ -437,9 +446,9 @@ impl<T: Styled> StyleSized<T> for T {
         match size {
             Size::XSmall => self.text_xs(),
             Size::Small => self.text_sm(),
-            Size::Medium => self.text_sm(),
-            Size::Large => self.text_base(),
-            Size::Size(size) => self.text_size(size * 0.875),
+            Size::Medium => self.text_base(),
+            Size::Large => self.text_lg(),
+            Size::Size(size) => self.text_size(size),
         }
     }
 
@@ -473,10 +482,11 @@ impl<T: Styled> StyleSized<T> for T {
         match size {
             Size::Large => self.h_11(),
             Size::Medium => self.h_8(),
-            Size::Small => self.h_6(),
-            Size::XSmall => self.h_5(),
-            _ => self.h_6(),
+            Size::Small => self.h(px(26.)),
+            Size::XSmall => self.h(px(20.)),
+            _ => self.h(px(26.)),
         }
+        .input_text_size(size)
     }
 
     #[inline]
@@ -622,10 +632,108 @@ impl<T: ParentElement + Styled + Sized> FocusableExt<T> for T {
     }
 }
 
+pub trait AxisExt {
+    fn is_horizontal(self) -> bool;
+    fn is_vertical(self) -> bool;
+}
+
+impl AxisExt for Axis {
+    #[inline]
+    fn is_horizontal(self) -> bool {
+        self == Axis::Horizontal
+    }
+
+    #[inline]
+    fn is_vertical(self) -> bool {
+        self == Axis::Vertical
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Placement {
+    Top,
+    Bottom,
+    Left,
+    Right,
+}
+
+impl Display for Placement {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Placement::Top => write!(f, "Top"),
+            Placement::Bottom => write!(f, "Bottom"),
+            Placement::Left => write!(f, "Left"),
+            Placement::Right => write!(f, "Right"),
+        }
+    }
+}
+
+impl Placement {
+    #[inline]
+    pub fn is_horizontal(&self) -> bool {
+        match self {
+            Placement::Left | Placement::Right => true,
+            _ => false,
+        }
+    }
+
+    #[inline]
+    pub fn is_vertical(&self) -> bool {
+        match self {
+            Placement::Top | Placement::Bottom => true,
+            _ => false,
+        }
+    }
+
+    #[inline]
+    pub fn axis(&self) -> Axis {
+        match self {
+            Placement::Top | Placement::Bottom => Axis::Vertical,
+            Placement::Left | Placement::Right => Axis::Horizontal,
+        }
+    }
+}
+
+/// A enum for defining the side of the element.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Side {
+    Left,
+    Right,
+}
+
+impl Side {
+    /// Returns true if the side is left.
+    #[inline]
+    pub fn is_left(&self) -> bool {
+        matches!(self, Self::Left)
+    }
+
+    /// Returns true if the side is right.
+    #[inline]
+    pub fn is_right(&self) -> bool {
+        matches!(self, Self::Right)
+    }
+}
+
 /// A trait for defining element that can be collapsed.
 pub trait Collapsible {
     fn collapsed(self, collapsed: bool) -> Self;
     fn is_collapsed(&self) -> bool;
+}
+
+/// A trait for converting `Pixels` to `f32` and `f64`.
+pub trait PixelsExt {
+    fn as_f32(&self) -> f32;
+    fn as_f64(self) -> f64;
+}
+impl PixelsExt for Pixels {
+    fn as_f32(&self) -> f32 {
+        f32::from(self)
+    }
+
+    fn as_f64(self) -> f64 {
+        f64::from(self)
+    }
 }
 
 #[cfg(test)]
@@ -658,32 +766,5 @@ mod tests {
             Size::Size(px(10.)).max(Size::Size(px(20.))),
             Size::Size(px(10.))
         );
-    }
-
-    #[test]
-    fn test_size_as_str() {
-        assert_eq!(Size::XSmall.as_str(), "xs");
-        assert_eq!(Size::Small.as_str(), "sm");
-        assert_eq!(Size::Medium.as_str(), "md");
-        assert_eq!(Size::Large.as_str(), "lg");
-        assert_eq!(Size::Size(px(15.)).as_str(), "custom");
-    }
-
-    #[test]
-    fn test_size_from_str() {
-        assert_eq!(Size::from_str("xs"), Size::XSmall);
-        assert_eq!(Size::from_str("xsmall"), Size::XSmall);
-        assert_eq!(Size::from_str("sm"), Size::Small);
-        assert_eq!(Size::from_str("small"), Size::Small);
-        assert_eq!(Size::from_str("md"), Size::Medium);
-        assert_eq!(Size::from_str("medium"), Size::Medium);
-        assert_eq!(Size::from_str("lg"), Size::Large);
-        assert_eq!(Size::from_str("large"), Size::Large);
-        assert_eq!(Size::from_str("unknown"), Size::Medium);
-
-        // Case insensitive
-        assert_eq!(Size::from_str("XS"), Size::XSmall);
-        assert_eq!(Size::from_str("SMALL"), Size::Small);
-        assert_eq!(Size::from_str("Md"), Size::Medium);
     }
 }

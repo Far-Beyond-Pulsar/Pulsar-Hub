@@ -1,14 +1,14 @@
 use crate::{
-    IconName, Sizable, Size, StyledExt,
     group_box::GroupBoxVariant,
     input::{Input, InputState},
     resizable::{h_resizable, resizable_panel},
     setting::{SettingGroup, SettingPage},
     sidebar::{Sidebar, SidebarMenu, SidebarMenuItem},
+    IconName, Sizable, Size, StyledExt,
 };
 use gpui::{
-    App, AppContext as _, Axis, ElementId, Entity, IntoElement, ParentElement as _, Pixels,
-    RenderOnce, StyleRefinement, Styled, Window, div, prelude::FluentBuilder as _, px, relative,
+    div, prelude::FluentBuilder as _, px, relative, App, AppContext as _, Axis, ElementId, Entity,
+    IntoElement, ParentElement as _, Pixels, RenderOnce, StyleRefinement, Styled, Window,
 };
 use rust_i18n::t;
 
@@ -32,6 +32,8 @@ pub struct Settings {
     size: Size,
     sidebar_width: Pixels,
     sidebar_style: StyleRefinement,
+    default_selected_index: SelectIndex,
+    header_style: StyleRefinement,
 }
 
 impl Settings {
@@ -44,6 +46,8 @@ impl Settings {
             size: Size::default(),
             sidebar_width: px(250.0),
             sidebar_style: StyleRefinement::default(),
+            default_selected_index: SelectIndex::default(),
+            header_style: StyleRefinement::default(),
         }
     }
 
@@ -76,6 +80,18 @@ impl Settings {
     /// Set the style refinement for the sidebar.
     pub fn sidebar_style(mut self, style: &StyleRefinement) -> Self {
         self.sidebar_style = style.clone();
+        self
+    }
+
+    /// Set the default index of the page to be selected.
+    pub fn default_selected_index(mut self, index: SelectIndex) -> Self {
+        self.default_selected_index = index;
+        self
+    }
+
+    /// Set the style refinement for the header.
+    pub fn header_style(mut self, style: &StyleRefinement) -> Self {
+        self.header_style = style.clone();
         self
     }
 
@@ -143,14 +159,16 @@ impl Settings {
         let selected_index = state.read(cx).selected_index;
         let search_input = state.read(cx).search_input.clone();
 
-        Sidebar::left()
+        Sidebar::new("settings-sidebar")
             .w(relative(1.))
             .border_0()
             .refine_style(&self.sidebar_style)
+            .collapsible(false)
             .collapsed(false)
             .header(
                 div()
                     .w_full()
+                    .refine_style(&self.header_style)
                     .child(Input::new(&search_input).prefix(IconName::Search)),
             )
             .child(
@@ -158,6 +176,7 @@ impl Settings {
                     let is_page_active =
                         selected_index.page_ix == page_ix && selected_index.group_ix.is_none();
                     SidebarMenuItem::new(page.title.clone())
+                        .when_some(page.icon.clone(), |this, icon| this.icon(icon))
                         .default_open(page.default_open)
                         .active(is_page_active)
                         .on_click({
@@ -230,9 +249,9 @@ pub struct RenderOptions {
 }
 
 #[derive(Clone, Copy, Default)]
-pub(super) struct SelectIndex {
-    page_ix: usize,
-    group_ix: Option<usize>,
+pub struct SelectIndex {
+    pub page_ix: usize,
+    pub group_ix: Option<usize>,
 }
 
 impl RenderOnce for Settings {
@@ -246,7 +265,7 @@ impl RenderOnce for Settings {
 
             SettingsState {
                 search_input,
-                selected_index: SelectIndex::default(),
+                selected_index: self.default_selected_index,
                 deferred_scroll_group_ix: None,
             }
         });

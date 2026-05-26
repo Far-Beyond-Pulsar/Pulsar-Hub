@@ -17,7 +17,6 @@ pub struct AvatarGroup {
 }
 
 impl AvatarGroup {
-    /// Create a new AvatarGroup.
     pub fn new() -> Self {
         Self {
             base: div(),

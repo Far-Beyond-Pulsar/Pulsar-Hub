@@ -1,5 +1,8 @@
 use crate::{
-    h_flex, text::Text, tooltip::Tooltip, ActiveTheme, Disableable, Side, Sizable, Size, StyledExt,
+    h_flex,
+    text::Text,
+    tooltip::{HoverTooltip, Tooltip},
+    ActiveTheme, Disableable, Side, Sizable, Size, StyledExt,
 };
 use gpui::{
     div, prelude::FluentBuilder as _, px, Animation, AnimationExt as _, App, ElementId,
@@ -23,7 +26,6 @@ pub struct Switch {
 }
 
 impl Switch {
-    /// Create a new Switch element.
     pub fn new(id: impl Into<ElementId>) -> Self {
         let id: ElementId = id.into();
         Self {
@@ -39,19 +41,16 @@ impl Switch {
         }
     }
 
-    /// Set the checked state of the switch.
     pub fn checked(mut self, checked: bool) -> Self {
         self.checked = checked;
         self
     }
 
-    /// Set the label of the switch.
     pub fn label(mut self, label: impl Into<Text>) -> Self {
         self.label = Some(label.into());
         self
     }
 
-    /// Add a click handler for the switch.
     pub fn on_click<F>(mut self, handler: F) -> Self
     where
         F: Fn(&bool, &mut Window, &mut App) + 'static,
@@ -60,7 +59,11 @@ impl Switch {
         self
     }
 
-    /// Set tooltip for the switch.
+    pub fn label_side(mut self, label_side: Side) -> Self {
+        self.label_side = label_side;
+        self
+    }
+
     pub fn tooltip(mut self, tooltip: impl Into<SharedString>) -> Self {
         self.tooltip = Some(tooltip.into());
         self
@@ -94,8 +97,8 @@ impl RenderOnce for Switch {
         let toggle_state = window.use_keyed_state(self.id.clone(), cx, |_, _| checked);
 
         let (bg, toggle_bg) = match checked {
-            true => (cx.theme().primary, cx.theme().switch_thumb),
-            false => (cx.theme().switch, cx.theme().switch_thumb),
+            true => (cx.theme().primary, cx.theme().background),
+            false => (cx.theme().switch, cx.theme().background),
         };
 
         let (bg, toggle_bg) = if self.disabled {
@@ -122,7 +125,7 @@ impl RenderOnce for Switch {
             cx.theme().radius
         };
 
-        div().refine_style(&self.style).child(
+        let element = div().refine_style(&self.style).relative().group("").child(
             h_flex()
                 .id(self.id.clone())
                 .gap_2()
@@ -140,11 +143,6 @@ impl RenderOnce for Switch {
                         .border(inset)
                         .border_color(cx.theme().transparent)
                         .bg(bg)
-                        .when_some(self.tooltip.clone(), |this, tooltip| {
-                            this.tooltip(move |window, cx| {
-                                Tooltip::new(tooltip.clone()).build(window, cx)
-                            })
-                        })
                         .child(
                             // Switch Toggle
                             div()
@@ -210,6 +208,17 @@ impl RenderOnce for Switch {
                         })
                     },
                 ),
-        )
+        );
+
+        if let Some(tooltip) = self.tooltip {
+            HoverTooltip::new(
+                (self.id.clone(), "hover-tooltip"),
+                element,
+                move |window, cx| Tooltip::new(tooltip.clone()).build(window, cx),
+            )
+            .into_any_element()
+        } else {
+            element.into_any_element()
+        }
     }
 }

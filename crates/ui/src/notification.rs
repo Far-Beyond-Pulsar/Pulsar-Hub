@@ -6,20 +6,17 @@ use std::{
 };
 
 use gpui::{
-    Animation, AnimationExt, AnyElement, App, AppContext, ClickEvent, Context, DismissEvent,
-    ElementId, Entity, EventEmitter, InteractiveElement as _, IntoElement, ParentElement as _,
-    Pixels, Render, SharedString, StatefulInteractiveElement, StyleRefinement, Styled,
-    Subscription, Window, div, prelude::FluentBuilder, px,
+    div, prelude::FluentBuilder, px, Animation, AnimationExt, AnyElement, App, AppContext,
+    ClickEvent, Context, DismissEvent, ElementId, Entity, EventEmitter, InteractiveElement as _,
+    IntoElement, ParentElement as _, Render, SharedString, StatefulInteractiveElement,
+    StyleRefinement, Styled, Subscription, Window,
 };
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
 use smol::Timer;
 
 use crate::{
-    ActiveTheme as _, Anchor, Edges, Icon, IconName, Sizable as _, StyledExt, TITLE_BAR_HEIGHT,
     animation::cubic_bezier,
     button::{Button, ButtonVariants as _},
-    h_flex, v_flex,
+    h_flex, v_flex, ActiveTheme as _, Icon, IconName, Sizable as _, StyledExt,
 };
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -73,8 +70,8 @@ pub struct Notification {
     message: Option<SharedString>,
     icon: Option<Icon>,
     autohide: bool,
-    action_builder: Option<Rc<dyn Fn(&mut Self, &mut Window, &mut Context<Self>) -> Button>>,
-    content_builder: Option<Rc<dyn Fn(&mut Self, &mut Window, &mut Context<Self>) -> AnyElement>>,
+    action_builder: Option<Rc<dyn Fn(&mut Window, &mut Context<Self>) -> Button>>,
+    content_builder: Option<Rc<dyn Fn(&mut Window, &mut Context<Self>) -> AnyElement>>,
     on_click: Option<Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>>,
     closing: bool,
 }
@@ -112,9 +109,9 @@ impl From<(NotificationType, SharedString)> for Notification {
 struct DefaultIdType;
 
 impl Notification {
-    /// Create a new notification.
+    /// Create a new notification with the given content.
     ///
-    /// The default id is a random UUID.
+    /// default width is 320px.
     pub fn new() -> Self {
         let id: SharedString = uuid::Uuid::new_v4().to_string().into();
         let id = (TypeId::of::<DefaultIdType>(), id.into());
@@ -134,34 +131,29 @@ impl Notification {
         }
     }
 
-    /// Set the message of the notification, default is None.
     pub fn message(mut self, message: impl Into<SharedString>) -> Self {
         self.message = Some(message.into());
         self
     }
 
-    /// Create an info notification with the given message.
     pub fn info(message: impl Into<SharedString>) -> Self {
         Self::new()
             .message(message)
             .with_type(NotificationType::Info)
     }
 
-    /// Create a success notification with the given message.
     pub fn success(message: impl Into<SharedString>) -> Self {
         Self::new()
             .message(message)
             .with_type(NotificationType::Success)
     }
 
-    /// Create a warning notification with the given message.
     pub fn warning(message: impl Into<SharedString>) -> Self {
         Self::new()
             .message(message)
             .with_type(NotificationType::Warning)
     }
 
-    /// Create an error notification with the given message.
     pub fn error(message: impl Into<SharedString>) -> Self {
         Self::new()
             .message(message)
@@ -223,22 +215,16 @@ impl Notification {
     }
 
     /// Set the action button of the notification.
-    ///
-    /// When an action is set, the notification will not autohide.
     pub fn action<F>(mut self, action: F) -> Self
     where
-        F: Fn(&mut Self, &mut Window, &mut Context<Self>) -> Button + 'static,
+        F: Fn(&mut Window, &mut Context<Self>) -> Button + 'static,
     {
         self.action_builder = Some(Rc::new(action));
-        self.autohide = false;
         self
     }
 
     /// Dismiss the notification.
     pub fn dismiss(&mut self, _: &mut Window, cx: &mut Context<Self>) {
-        if self.closing {
-            return;
-        }
         self.closing = true;
         cx.notify();
 
@@ -260,7 +246,7 @@ impl Notification {
     /// Set the content of the notification.
     pub fn content(
         mut self,
-        content: impl Fn(&mut Self, &mut Window, &mut Context<Self>) -> AnyElement + 'static,
+        content: impl Fn(&mut Window, &mut Context<Self>) -> AnyElement + 'static,
     ) -> Self {
         self.content_builder = Some(Rc::new(content));
         self
@@ -275,22 +261,12 @@ impl Styled for Notification {
 }
 impl Render for Notification {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let content = self
-            .content_builder
-            .clone()
-            .map(|builder| builder(self, window, cx));
-        let action = self
-            .action_builder
-            .clone()
-            .map(|builder| builder(self, window, cx).small().mr_3p5());
-
         let closing = self.closing;
         let icon = match self.type_ {
             None => self.icon.clone(),
             Some(type_) => Some(type_.icon(cx)),
         };
         let has_icon = icon.is_some();
-        let placement = cx.theme().notification.placement;
 
         h_flex()
             .id("notification")
@@ -321,14 +297,24 @@ impl Render for Notification {
                     .when_some(self.message.clone(), |this, message| {
                         this.child(div().text_sm().child(message))
                     })
-                    .when_some(content, |this, content| this.child(content)),
+                    .when_some(self.content_builder.clone(), |this, child_builder| {
+                        this.child(child_builder(window, cx))
+                    }),
             )
-            .when_some(action, |this, action| this.child(action))
+            .when_some(self.action_builder.clone(), |this, action_builder| {
+                this.child(action_builder(window, cx).small().mr_3p5())
+            })
+            .when_some(self.on_click.clone(), |this, on_click| {
+                this.on_click(cx.listener(move |view, event, window, cx| {
+                    view.dismiss(window, cx);
+                    on_click(event, window, cx);
+                }))
+            })
             .child(
-                div()
+                h_flex()
                     .absolute()
-                    .top_1()
-                    .right_1()
+                    .top_3p5()
+                    .right_3p5()
                     .invisible()
                     .group_hover("", |this| this.visible())
                     .child(
@@ -339,81 +325,27 @@ impl Render for Notification {
                             .on_click(cx.listener(|this, _, window, cx| this.dismiss(window, cx))),
                     ),
             )
-            .when_some(self.on_click.clone(), |this, on_click| {
-                this.on_click(cx.listener(move |view, event, window, cx| {
-                    view.dismiss(window, cx);
-                    on_click(event, window, cx);
-                }))
-            })
             .with_animation(
-                ElementId::NamedInteger("slide-down".into(), closing as u64),
+                ElementId::NamedInteger("slide-up".into(), closing as u64),
                 Animation::new(Duration::from_secs_f64(0.25))
                     .with_easing(cubic_bezier(0.4, 0., 0.2, 1.)),
                 move |this, delta| {
                     if closing {
+                        let x_offset = px(0.) + delta * px(45.);
                         let opacity = 1. - delta;
-                        let that = this
+                        this.left(px(0.) + x_offset)
                             .shadow_none()
                             .opacity(opacity)
-                            .when(opacity < 0.85, |this| this.shadow_none());
-                        match placement {
-                            Anchor::TopRight | Anchor::BottomRight => {
-                                let x_offset = px(0.) + delta * px(45.);
-                                that.left(px(0.) + x_offset)
-                            }
-                            Anchor::TopLeft | Anchor::BottomLeft => {
-                                let x_offset = px(0.) - delta * px(45.);
-                                that.left(px(0.) + x_offset)
-                            }
-                            Anchor::TopCenter => {
-                                let y_offset = px(0.) - delta * px(45.);
-                                that.top(px(0.) + y_offset)
-                            }
-                            Anchor::BottomCenter => {
-                                let y_offset = px(0.) + delta * px(45.);
-                                that.top(px(0.) + y_offset)
-                            }
-                        }
+                            .when(opacity < 0.85, |this| this.shadow_none())
                     } else {
-                        let y_offset = match placement {
-                            placement if placement.is_top() => px(-45.) + delta * px(45.),
-                            placement if placement.is_bottom() => px(45.) - delta * px(45.),
-                            _ => px(0.),
-                        };
+                        let y_offset = px(45.) - delta * px(45.);
                         let opacity = delta;
-                        this.top(px(0.) + y_offset)
+                        this.bottom(px(0.) + y_offset)
                             .opacity(opacity)
                             .when(opacity < 0.85, |this| this.shadow_none())
                     }
                 },
             )
-    }
-}
-
-/// The settings for notifications.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct NotificationSettings {
-    /// The placement of the notification, default: [`Anchor::TopRight`]
-    pub placement: Anchor,
-    /// The margins of the notification with respect to the window edges.
-    pub margins: Edges<Pixels>,
-    /// The maximum number of notifications to show at once, default: 10
-    pub max_items: usize,
-}
-
-impl Default for NotificationSettings {
-    fn default() -> Self {
-        let offset = px(16.);
-        Self {
-            placement: Anchor::TopRight,
-            margins: Edges {
-                top: TITLE_BAR_HEIGHT + offset, // avoid overlap with title bar
-                right: offset,
-                bottom: offset,
-                left: offset,
-            },
-            max_items: 10,
-        }
     }
 }
 
@@ -506,38 +438,17 @@ impl Render for NotificationList {
         let size = window.viewport_size();
         let items = self.notifications.iter().rev().take(10).rev().cloned();
 
-        let placement = cx.theme().notification.placement;
-        let margins = &cx.theme().notification.margins;
-
-        v_flex()
-            .id("notification-list")
-            .max_h(size.height)
-            .pt(margins.top)
-            .pb(margins.bottom)
-            .gap_3()
-            .when(
-                matches!(placement, Anchor::TopRight),
-                |this| this.pr(margins.right), // ignore left
-            )
-            .when(
-                matches!(placement, Anchor::TopLeft),
-                |this| this.pl(margins.left), // ignore right
-            )
-            .when(
-                matches!(placement, Anchor::BottomLeft),
-                |this| this.flex_col_reverse().pl(margins.left), // ignore right
-            )
-            .when(
-                matches!(placement, Anchor::BottomRight),
-                |this| this.flex_col_reverse().pr(margins.right), // ignore left
-            )
-            .when(matches!(placement, Anchor::BottomCenter), |this| {
-                this.flex_col_reverse()
-            })
-            .on_hover(cx.listener(|view, hovered, _, cx| {
-                view.expanded = *hovered;
-                cx.notify()
-            }))
-            .children(items)
+        div().absolute().bottom_4().right_4().child(
+            v_flex()
+                .id("notification-list")
+                .flex_col_reverse()
+                .max_h(size.height - px(8.))
+                .on_hover(cx.listener(|view, hovered, _, cx| {
+                    view.expanded = *hovered;
+                    cx.notify()
+                }))
+                .gap_3()
+                .children(items),
+        )
     }
 }

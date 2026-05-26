@@ -5,7 +5,6 @@ use gpui::{
     StyleRefinement, Styled, Window,
 };
 
-/// The variant of the Tag.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TagVariant {
     Primary,
@@ -131,8 +130,7 @@ pub struct Tag {
     children: Vec<AnyElement>,
 }
 impl Tag {
-    /// Create a new Tag.
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self {
             style: StyleRefinement::default(),
             variant: TagVariant::default(),
@@ -141,6 +139,17 @@ impl Tag {
             rounded: None,
             children: Vec::new(),
         }
+    }
+
+    pub fn with_variant(mut self, variant: TagVariant) -> Self {
+        self.variant = variant;
+        self
+    }
+
+    /// Use outline style
+    pub fn outline(mut self) -> Self {
+        self.outline = true;
+        self
     }
 
     /// Create a new tag with default variant ([`TagVariant::Primary`]).
@@ -185,18 +194,6 @@ impl Tag {
     /// Create a new tag with default variant ([`TagVariant::Color`]).
     pub fn color(color: impl Into<ColorName>) -> Self {
         Self::new().with_variant(TagVariant::Color(color.into()))
-    }
-
-    /// Set the variant of the Tag.
-    pub fn with_variant(mut self, variant: TagVariant) -> Self {
-        self.variant = variant;
-        self
-    }
-
-    /// Use outline style
-    pub fn outline(mut self) -> Self {
-        self.outline = true;
-        self
     }
 
     /// Set rounded corners.

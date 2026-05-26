@@ -1,8 +1,6 @@
-use std::f32;
-
 use gpui::{
-    Bounds, Context, Edges, Empty, EntityId, IntoElement, ParentElement as _, Pixels, Render,
-    SharedString, Styled as _, TextAlign, Window, div, prelude::FluentBuilder, px,
+    div, prelude::FluentBuilder, px, Bounds, Context, Edges, Empty, EntityId, IntoElement,
+    ParentElement as _, Pixels, Render, SharedString, Styled as _, TextAlign, Window,
 };
 
 use crate::ActiveTheme as _;
@@ -10,36 +8,16 @@ use crate::ActiveTheme as _;
 /// Represents a column in a table, used for initializing table columns.
 #[derive(Debug, Clone)]
 pub struct Column {
-    /// The unique key of the column.
-    ///
-    /// This is used to identify the column in the table and your data source.
-    ///
-    /// In most cases, it should match the field name in your data source.
     pub key: SharedString,
-    /// The display name of the column.
     pub name: SharedString,
-    /// The text alignment of the column.
     pub align: TextAlign,
-    /// The sorting behavior of the column, if any.
-    ///
-    /// If `None`, the column is not sortable.
     pub sort: Option<ColumnSort>,
-    /// The padding of the column.
     pub paddings: Option<Edges<Pixels>>,
-    /// The width of the column.
     pub width: Pixels,
-    /// Whether the column is fixed, the fixed column will pin at the left side when scrolling horizontally.
     pub fixed: Option<ColumnFixed>,
-    /// Whether the column is resizable.
     pub resizable: bool,
-    /// Whether the column is movable.
     pub movable: bool,
-    /// Whether the column is selectable, if true this column's cells can be selected in column selection mode.
     pub selectable: bool,
-    /// The minimum width of the column.
-    pub min_width: Pixels,
-    /// The maximum width of the column.
-    pub max_width: Pixels,
 }
 
 impl Default for Column {
@@ -55,8 +33,6 @@ impl Default for Column {
             resizable: true,
             movable: true,
             selectable: true,
-            min_width: px(20.0),
-            max_width: px(f32::MAX),
         }
     }
 }
@@ -113,7 +89,6 @@ impl Column {
         self
     }
 
-    /// Set the padding of the column to 0px.
     pub fn p_0(mut self) -> Self {
         self.paddings = Some(Edges::all(px(0.)));
         self
@@ -154,32 +129,6 @@ impl Column {
         self.selectable = selectable;
         self
     }
-
-    /// Set the minimum width of the column, default is 20px
-    pub fn min_width(mut self, min_width: impl Into<Pixels>) -> Self {
-        let min_width = min_width.into();
-        self.min_width = min_width;
-
-        // If the current width is smaller than the new minimum,
-        // bump the width up to match the minimum.
-        if self.width < min_width {
-            self.width = min_width;
-        }
-        self
-    }
-
-    /// Set the minimum width of the column, default is 1200px
-    pub fn max_width(mut self, max_width: impl Into<Pixels>) -> Self {
-        let max_width = max_width.into();
-        self.max_width = max_width;
-
-        // If the current width is larger than the new maximum,
-        // pull the width down to match the maximum.
-        if self.width > max_width {
-            self.width = max_width;
-        }
-        self
-    }
 }
 
 impl FluentBuilder for Column {}
@@ -215,7 +164,6 @@ pub(crate) struct DragColumn {
     pub(crate) col_ix: usize,
 }
 
-/// The sorting behavior of a column.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
 pub enum ColumnSort {
     /// No sorting.

@@ -1,7 +1,5 @@
-use crate::{
-    highlighter::HighlightTheme, notification::NotificationSettings, list::ListSettings, scroll::ScrollbarShow,
-};
-use gpui::{App, Global, Hsla, Pixels, SharedString, Window, WindowAppearance, px};
+use crate::{highlighter::HighlightTheme, scroll::ScrollbarShow};
+use gpui::{px, App, Global, Hsla, Pixels, SharedString, Window, WindowAppearance};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -38,52 +36,47 @@ impl ActiveTheme for App {
     }
 }
 
-/// The global theme configuration.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Theme {
     pub colors: ThemeColor,
     pub highlight_theme: Arc<HighlightTheme>,
+    // TODO: these ARE NOT SEND+SYNC because of Rc - fix later
     pub light_theme: Rc<ThemeConfig>,
     pub dark_theme: Rc<ThemeConfig>,
 
     pub mode: ThemeMode,
-    /// The font family for the application, default is `.SystemUIFont`.
     pub font_family: SharedString,
-    /// The base font size for the application, default is 16px.
     pub font_size: Pixels,
-    /// The monospace font family for the application.
-    ///
-    /// Defaults to:
-    ///
-    /// - macOS: `Menlo`
-    /// - Windows: `Consolas`
-    /// - Linux: `DejaVu Sans Mono`
-    pub mono_font_family: SharedString,
-    /// The monospace font size for the application, default is 13px.
-    pub mono_font_size: Pixels,
     /// Radius for the general elements.
     pub radius: Pixels,
-    /// Radius for the large elements, e.g.: Dialog, Notification border radius.
+    /// Radius for the large elements, e.g.: Modal, Notification border radius.
     pub radius_lg: Pixels,
     pub shadow: bool,
     pub transparent: Hsla,
     /// Show the scrollbar mode, default: Scrolling
     pub scrollbar_show: ScrollbarShow,
-    /// The notification setting.
-    pub notification: NotificationSettings,
     /// Tile grid size, default is 4px.
     pub tile_grid_size: Pixels,
     /// The shadow of the tile panel.
     pub tile_shadow: bool,
-    /// The border radius of the tile panel, default is 0px.
-    pub tile_radius: Pixels,
-    /// The list settings.
-    pub list: ListSettings,
+    /// The requested window background appearance for this theme.
+    ///
+    /// Themes can set this to `transparent` or `blurred` to enable
+    /// compositor-level transparency / frosted-glass effects. Defaults to
+    /// `opaque` so that themes which don't specify this field behave exactly
+    /// as before.
+    pub window_background: ThemeWindowBackground,
+    /// When `true` the window stays transparent even when it loses OS focus.
+    ///
+    /// Useful for themes that rely on compositor blur/transparency so the
+    /// effect is not broken by window deactivation (e.g. Windows Acrylic).
+    /// Defaults to `false` for full backward-compatibility.
+    pub always_transparent: bool,
 }
 
 impl Default for Theme {
     fn default() -> Self {
-        Self::from(&ThemeColor::default())
+        Self::from(ThemeColor::default())
     }
 }
 
@@ -103,11 +96,49 @@ impl DerefMut for Theme {
 
 impl Global for Theme {}
 
+// Global function pointer for plugin theme accessor (set by export_plugin! macro)
+// The type signature MUST match exactly: unsafe fn() -> Option<&'static Theme>
+// The plugin MUST ensure this function remains valid for its entire lifetime.
+static PLUGIN_THEME_ACCESSOR: std::sync::RwLock<Option<unsafe fn() -> Option<&'static Theme>>> =
+    std::sync::RwLock::new(None);
+
 impl Theme {
+    /// Register a plugin theme accessor function
+    /// Called automatically by export_plugin! macro
+    ///
+    /// SAFETY: The accessor function MUST:
+    /// - Match the signature: unsafe fn() -> Option<&'static Theme>
+    /// - Remain valid for the entire plugin lifetime
+    /// - Return None if theme is unavailable
+    /// - Not panic
+    pub fn register_plugin_accessor(accessor: unsafe fn() -> Option<&'static Theme>) {
+        // Store the function pointer directly in the RwLock
+        *PLUGIN_THEME_ACCESSOR.write().unwrap() = Some(accessor);
+    }
+
     /// Returns the global theme reference
+    /// Falls back to plugin-synced theme if running in a plugin context
     #[inline(always)]
     pub fn global(cx: &App) -> &Theme {
-        cx.global::<Theme>()
+        // Try to get from GPUI's global state first
+        match cx.try_global::<Theme>() {
+            Some(theme) => theme,
+            None => {
+                // If we're in a plugin context, try the plugin accessor
+                if let Ok(accessor_guard) = PLUGIN_THEME_ACCESSOR.read() {
+                    if let Some(accessor) = *accessor_guard {
+                        // Call the accessor (it returns None if theme unavailable)
+                        // SAFETY: The plugin registered this function and guarantees it's valid
+                        if let Some(theme) = unsafe { accessor() } {
+                            return theme;
+                        }
+                    }
+                }
+
+                // Last resort: panic with helpful message
+                panic!("Theme not available in this context. Make sure ui::init() was called and plugins have initialized globals.");
+            }
+        }
     }
 
     /// Returns the global theme mutable reference
@@ -131,6 +162,22 @@ impl Theme {
         }
     }
 
+    // /// Sets the theme to default light.
+    // pub fn set_default_light(&mut self) {
+    //     self.light_theme = ThemeColor::light();
+    //     self.colors = ThemeColor::light();
+    //     self.light_highlight_theme = Arc::new(HighlightTheme::default_light());
+    //     self.highlight_theme = self.light_highlight_theme.clone();
+    // }
+
+    // /// Sets the theme to default dark.
+    // pub fn set_default_dark(&mut self) {
+    //     self.dark_theme = ThemeColor::dark();
+    //     self.colors = ThemeColor::dark();
+    //     self.dark_highlight_theme = Arc::new(HighlightTheme::default_dark());
+    //     self.highlight_theme = self.dark_highlight_theme.clone();
+    // }
+
     /// Sync the theme with the system appearance
     pub fn sync_system_appearance(window: Option<&mut Window>, cx: &mut App) {
         // Better use window.appearance() for avoid error on Linux.
@@ -152,7 +199,6 @@ impl Theme {
         };
     }
 
-    /// Change the theme mode.
     pub fn change(mode: impl Into<ThemeMode>, window: Option<&mut Window>, cx: &mut App) {
         let mode = mode.into();
         if !cx.has_global::<Theme>() {
@@ -171,49 +217,51 @@ impl Theme {
         }
 
         if let Some(window) = window {
+            let theme = cx.global::<Theme>();
+            window.set_background_appearance(theme.window_background.into());
+            // window.set_always_transparent(theme.always_transparent);
             window.refresh();
+        } else {
+            // No specific window supplied — push the appearance update to every
+            // open window so a theme switch takes effect everywhere immediately.
+            let bg = cx.global::<Theme>().window_background.into();
+            let always = cx.global::<Theme>().always_transparent;
+            for handle in cx.windows() {
+                let _ = handle.update(cx, |_view, window, _cx| {
+                    window.set_background_appearance(bg);
+                    // window.set_always_transparent(always);
+                });
+            }
+            cx.refresh_windows();
         }
-    }
-
-    /// Get the editor background color, if not set, use the theme background color.
-    #[inline]
-    pub(crate) fn editor_background(&self) -> Hsla {
-        self.highlight_theme
-            .style
-            .editor_background
-            .unwrap_or(self.background)
     }
 }
 
-impl From<&ThemeColor> for Theme {
-    fn from(colors: &ThemeColor) -> Self {
+impl From<ThemeColor> for Theme {
+    fn from(colors: ThemeColor) -> Self {
         Theme {
             mode: ThemeMode::default(),
             transparent: Hsla::transparent_black(),
-            font_family: ".SystemUIFont".into(),
-            font_size: px(16.),
-            mono_font_family: if cfg!(target_os = "macos") {
-                // https://en.wikipedia.org/wiki/Menlo_(typeface)
-                "Menlo".into()
+            font_size: px(14.),
+            font_family: if cfg!(target_os = "macos") {
+                ".SystemUIFont".into()
             } else if cfg!(target_os = "windows") {
-                "Consolas".into()
+                "Segoe UI".into()
             } else {
-                "DejaVu Sans Mono".into()
+                "FreeMono".into()
             },
-            mono_font_size: px(13.),
             radius: px(6.),
             radius_lg: px(8.),
             shadow: true,
             scrollbar_show: ScrollbarShow::default(),
-            notification: NotificationSettings::default(),
             tile_grid_size: px(8.),
             tile_shadow: true,
-            tile_radius: px(0.),
-            list: ListSettings::default(),
-            colors: *colors,
+            colors,
             light_theme: Rc::new(ThemeConfig::default()),
             dark_theme: Rc::new(ThemeConfig::default()),
             highlight_theme: HighlightTheme::default_light(),
+            window_background: ThemeWindowBackground::Opaque,
+            always_transparent: false,
         }
     }
 }

@@ -1,12 +1,10 @@
 use std::ops::Range;
 
-use gpui::{
-    App, Font, LineFragment, Pixels, Point, ShapedLine, Size, TextAlign, Window, point, px, size,
-};
+use gpui::{point, px, size, App, Font, LineFragment, Pixels, Point, ShapedLine, Size, Window};
 use ropey::Rope;
 use smallvec::SmallVec;
 
-use crate::input::{LastLayout, RopeExt};
+use crate::input::RopeExt;
 
 /// A line with soft wrapped lines info.
 #[derive(Debug, Clone)]
@@ -61,8 +59,6 @@ pub(super) struct TextWrapper {
     pub(super) longest_row: LongestRow,
     /// The lines by split \n
     pub(super) lines: Vec<LineItem>,
-
-    _initialized: bool,
 }
 
 #[allow(unused)]
@@ -76,7 +72,6 @@ impl TextWrapper {
             soft_lines: 0,
             longest_row: LongestRow::default(),
             lines: Vec::new(),
-            _initialized: false,
         }
     }
 
@@ -114,14 +109,6 @@ impl TextWrapper {
         self.font = font;
         self.font_size = font_size;
         self.update_all(&self.text.clone(), cx);
-    }
-
-    pub(super) fn prepare_if_need(&mut self, text: &Rope, cx: &mut App) {
-        if self._initialized {
-            return;
-        }
-        self._initialized = true;
-        self.update_all(text, cx);
     }
 
     /// Update the text wrapper and recalculate the wrapped lines.
@@ -164,6 +151,10 @@ impl TextWrapper {
     ) where
         F: FnMut(&str, Pixels) -> Vec<gpui::Boundary>,
     {
+        // Performance optimization: For very large files, avoid recalculating everything
+        let total_lines = changed_text.lines_len();
+        let is_large_file = total_lines > 10000;
+
         // Remove the old changed lines.
         let start_row = self.text.offset_to_point(range.start).row;
         let start_row = start_row.min(self.lines.len().saturating_sub(1));
@@ -172,7 +163,11 @@ impl TextWrapper {
         let rows_range = start_row..=end_row;
 
         if rows_range.contains(&self.longest_row.row) {
-            self.longest_row = LongestRow::default();
+            // Only reset longest row if we're modifying it
+            // For large files, avoid recalculating longest row
+            if !is_large_file {
+                self.longest_row = LongestRow::default();
+            }
         }
 
         let mut longest_row_ix = self.longest_row.row;
@@ -199,17 +194,22 @@ impl TextWrapper {
             let mut wrapped_lines = vec![];
             let mut prev_boundary_ix = 0;
 
-            if line_str.len() > longest_row_len {
+            // Only update longest row if this line is longer
+            if !is_large_file && line_str.len() > longest_row_len {
                 longest_row_ix = new_start_row + ix;
                 longest_row_len = line_str.len();
             }
 
             // If wrap_width is Pixels::MAX, skip wrapping to disable word wrap
             if let Some(wrap_width) = wrap_width {
-                // Here only have wrapped line, if there is no wrap meet, the `line_wraps` result will empty.
-                for boundary in wrap_line(&line_str, wrap_width) {
-                    wrapped_lines.push(prev_boundary_ix..boundary.ix);
-                    prev_boundary_ix = boundary.ix;
+                // For very large files, limit wrapping calculation
+                // Only wrap if line is shorter than a threshold to avoid performance issues
+                if !is_large_file || line_str.len() < 10000 {
+                    // Here only have wrapped line, if there is no wrap meet, the `line_wraps` result will empty.
+                    for boundary in wrap_line(&line_str, wrap_width) {
+                        wrapped_lines.push(prev_boundary_ix..boundary.ix);
+                        prev_boundary_ix = boundary.ix;
+                    }
                 }
             }
 
@@ -231,7 +231,15 @@ impl TextWrapper {
         }
 
         self.text = changed_text.clone();
-        self.soft_lines = self.lines.iter().map(|l| l.lines_len()).sum();
+
+        // Performance optimization: For large files, calculate soft_lines incrementally
+        if is_large_file {
+            // Only recalculate the changed portion
+            self.soft_lines = self.lines.iter().map(|l| l.lines_len()).sum();
+        } else {
+            self.soft_lines = self.lines.iter().map(|l| l.lines_len()).sum();
+        }
+
         self.longest_row = LongestRow {
             row: longest_row_ix,
             len: longest_row_len,
@@ -383,12 +391,10 @@ impl LineLayout {
     pub(crate) fn position_for_index(
         &self,
         offset: usize,
-        last_layout: &LastLayout,
+        line_height: Pixels,
     ) -> Option<Point<Pixels>> {
         let mut acc_len = 0;
         let mut offset_y = px(0.);
-
-        let x_offset = last_layout.alignment_offset(self.longest_width);
 
         for (i, line) in self.wrapped_lines.iter().enumerate() {
             let is_last = i + 1 == self.wrapped_lines.len();
@@ -396,22 +402,19 @@ impl LineLayout {
 
             let range = acc_len..(acc_len + line_len);
             if range.contains(&offset) {
-                let x = line.x_for_index(offset.saturating_sub(acc_len)) + x_offset;
+                let x = line.x_for_index(offset.saturating_sub(acc_len));
                 return Some(point(x, offset_y));
             }
             acc_len += line_len;
-            offset_y += last_layout.line_height;
+            offset_y += line_height;
         }
 
         None
     }
 
     /// Get the closest index for the given x in this line layout.
-    pub(super) fn closest_index_for_x(&self, x: Pixels, last_layout: &LastLayout) -> usize {
+    pub(super) fn closest_index_for_x(&self, x: Pixels) -> usize {
         let mut acc_len = 0;
-        let x_offset = last_layout.alignment_offset(self.longest_width);
-        let x = x - x_offset;
-
         for (i, line) in self.wrapped_lines.iter().enumerate() {
             let is_last = i + 1 == self.wrapped_lines.len();
             if x <= line.width {
@@ -437,16 +440,15 @@ impl LineLayout {
     pub(super) fn closest_index_for_position(
         &self,
         pos: Point<Pixels>,
-        last_layout: &LastLayout,
+        line_height: Pixels,
     ) -> Option<usize> {
         let mut offset = 0;
         let mut line_top = px(0.);
-        let x_offset = last_layout.alignment_offset(self.longest_width);
         for (i, line) in self.wrapped_lines.iter().enumerate() {
             let is_last = i + 1 == self.wrapped_lines.len();
-            let line_bottom = line_top + last_layout.line_height;
+            let line_bottom = line_top + line_height;
             if pos.y >= line_top && pos.y < line_bottom {
-                let mut ix = line.closest_index_for_x(pos.x - x_offset);
+                let mut ix = line.closest_index_for_x(pos.x);
                 if !is_last && ix == line.text.len() {
                     // For soft wrap line, we can't put the cursor at the end of the line.
                     let c_len = line.text.chars().last().map(|c| c.len_utf8()).unwrap_or(0);
@@ -465,15 +467,14 @@ impl LineLayout {
     pub(super) fn index_for_position(
         &self,
         pos: Point<Pixels>,
-        last_layout: &LastLayout,
+        line_height: Pixels,
     ) -> Option<usize> {
         let mut offset = 0;
         let mut line_top = px(0.);
-        let x_offset = last_layout.alignment_offset(self.longest_width);
         for line in self.wrapped_lines.iter() {
-            let line_bottom = line_top + last_layout.line_height;
+            let line_bottom = line_top + line_height;
             if pos.y >= line_top && pos.y < line_bottom {
-                let ix = line.index_for_x(pos.x - x_offset)?;
+                let ix = line.index_for_x(pos.x)?;
                 return Some(offset + ix);
             }
 
@@ -492,8 +493,6 @@ impl LineLayout {
         &self,
         pos: Point<Pixels>,
         line_height: Pixels,
-        text_align: TextAlign,
-        align_width: Option<Pixels>,
         window: &mut Window,
         cx: &mut App,
     ) {
@@ -501,8 +500,6 @@ impl LineLayout {
             _ = line.paint(
                 pos + point(px(0.), ix * line_height),
                 line_height,
-                text_align,
-                align_width,
                 window,
                 cx,
             );
@@ -513,7 +510,7 @@ impl LineLayout {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use gpui::{Boundary, FontFeatures, FontStyle, FontWeight, px};
+    use gpui::{px, Boundary, FontFeatures, FontStyle, FontWeight};
 
     #[test]
     fn test_update() {

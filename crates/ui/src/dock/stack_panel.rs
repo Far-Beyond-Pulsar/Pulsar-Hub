@@ -1,20 +1,19 @@
 use std::sync::Arc;
 
 use crate::{
-    ActiveTheme, AxisExt as _, Placement,
     dock::PanelInfo,
     h_flex,
     resizable::{
-        PANEL_MIN_SIZE, ResizablePanelEvent, ResizablePanelGroup, ResizablePanelState,
-        ResizableState, resizable_panel,
+        resizable_panel, ResizablePanelEvent, ResizablePanelGroup, ResizablePanelState,
+        ResizableState, PANEL_MIN_SIZE,
     },
+    ActiveTheme, AxisExt as _, Placement,
 };
 
 use super::{DockArea, Panel, PanelEvent, PanelState, PanelView, TabPanel};
 use gpui::{
-    App, AppContext as _, Axis, Context, DismissEvent, Entity, EventEmitter, FocusHandle,
-    Focusable, IntoElement, ParentElement, Pixels, Render, Styled, Subscription, WeakEntity,
-    Window,
+    App, Axis, Context, DismissEvent, Entity, EventEmitter, FocusHandle, Focusable, IntoElement,
+    ParentElement, Pixels, Render, Styled, Subscription, WeakEntity, Window,
 };
 use smallvec::SmallVec;
 
@@ -32,11 +31,10 @@ impl Panel for StackPanel {
         "StackPanel"
     }
 
-    fn title(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        "StackPanel"
+    fn title(&self, _window: &gpui::Window, _cx: &gpui::App) -> gpui::AnyElement {
+        "StackPanel".into_any_element()
     }
-
-    fn set_active(&mut self, active: bool, window: &mut Window, cx: &mut Context<Self>) {
+    fn set_active(&mut self, active: bool, window: &mut Window, cx: &mut App) {
         for panel in &self.panels {
             panel.set_active(active, window, cx);
         }
@@ -55,14 +53,12 @@ impl Panel for StackPanel {
 
 impl StackPanel {
     pub fn new(axis: Axis, _: &mut Window, cx: &mut Context<Self>) -> Self {
-        let state = cx.new(|_| ResizableState::default());
+        let state = ResizableState::new(cx);
 
-        let _subscriptions = vec![
-            // Bubble up the resize event.
-            cx.subscribe(&state, |_, _, _: &ResizablePanelEvent, cx| {
-                cx.emit(PanelEvent::LayoutChanged)
-            }),
-        ];
+        // Bubble up the resize event.
+        let _subscriptions = vec![cx.subscribe(&state, |_, _, _: &ResizablePanelEvent, cx| {
+            cx.emit(PanelEvent::LayoutChanged)
+        })];
 
         Self {
             axis,
@@ -256,7 +252,7 @@ impl StackPanel {
             Some(size) => size,
             None => {
                 let state = self.state.read(cx);
-                (state.container_size() / (state.sizes().len() + 1) as f32).max(PANEL_MIN_SIZE)
+                (state.total_size() / (state.sizes().len() + 1) as f32).max(PANEL_MIN_SIZE)
             }
         };
 
@@ -419,10 +415,10 @@ impl Render for StackPanel {
         h_flex()
             .size_full()
             .overflow_hidden()
-            .bg(cx.theme().tab_bar)
+            // NO BACKGROUND - allow transparency for viewports (same as TabPanel)
             .child(
                 ResizablePanelGroup::new("stack-panel-group")
-                    .with_state(&self.state)
+                    .state(self.state.clone())
                     .axis(self.axis)
                     .children(self.panels.clone().into_iter().map(|panel| {
                         resizable_panel()

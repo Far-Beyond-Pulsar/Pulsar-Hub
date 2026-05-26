@@ -16,7 +16,7 @@ path = "src/reqwest_client.rs"
 doctest = true
 
 [dependencies]
-gpui.workspace = true
+gpui-ce.workspace = true
 reqwest.workspace = true
 anyhow.workspace = true
 log.workspace = true
@@ -29,4 +29,4 @@ tokio = { version = "1", features = ["rt", "rt-multi-thread"] }
 regex = "1.5"
 
 [dev-dependencies]
-gpui.workspace = true
+gpui-ce.workspace = true

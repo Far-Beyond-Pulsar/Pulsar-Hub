@@ -5,15 +5,13 @@ use std::collections::HashMap;
 use std::ops::Range;
 use std::rc::Rc;
 
-use gpui::{DefiniteLength, SharedString, px, relative};
+use gpui::{px, relative, DefiniteLength, SharedString};
 use html5ever::tendril::TendrilSink;
-use html5ever::{LocalName, ParseOpts, local_name, parse_document};
+use html5ever::{local_name, parse_document, LocalName, ParseOpts};
 use markup5ever_rcdom::{Node, NodeData, RcDom};
 
-use crate::text::document::ParsedDocument;
 use crate::text::node::{
-    self, BlockNode, ImageNode, InlineNode, LinkMark, NodeContext, Paragraph, Table, TableRow,
-    TextMark,
+    self, ImageNode, InlineNode, LinkMark, NodeContext, Paragraph, Table, TableRow, TextMark,
 };
 
 const BLOCK_ELEMENTS: [&str; 35] = [
@@ -55,7 +53,7 @@ const BLOCK_ELEMENTS: [&str; 35] = [
 ];
 
 /// Parse HTML into AST Node.
-pub(crate) fn parse(source: &str, cx: &mut NodeContext) -> Result<ParsedDocument, SharedString> {
+pub(crate) fn parse(source: &str, cx: &mut NodeContext) -> Result<node::Node, SharedString> {
     let opts = ParseOpts {
         ..Default::default()
     };
@@ -71,14 +69,11 @@ pub(crate) fn parse(source: &str, cx: &mut NodeContext) -> Result<ParsedDocument
 
     let mut paragraph = Paragraph::default();
     // NOTE: The outer paragraph is not used.
-    let node: BlockNode =
-        parse_node(&dom.document, &mut paragraph, cx).unwrap_or(BlockNode::Unknown);
+    let node: node::Node =
+        parse_node(&dom.document, &mut paragraph, cx).unwrap_or(node::Node::Unknown);
     let node = node.compact();
 
-    Ok(ParsedDocument {
-        source: source.to_string().into(),
-        blocks: vec![node],
-    })
+    Ok(node)
 }
 
 fn cleanup_html(source: &str) -> Vec<u8> {
@@ -257,7 +252,7 @@ fn parse_paragraph(
     }
 
     match &node.data {
-        NodeData::Text { contents } => {
+        NodeData::Text { ref contents } => {
             let part = &contents.borrow();
             text.push_str(&part);
             paragraph.push_str(&text);
@@ -334,6 +329,11 @@ fn parse_paragraph(
                     url: src.into(),
                     link: None,
                     alt: alt.map(Into::into),
+                    math_tex: None,
+                    math_svg: None,
+                    math_display_mode: false,
+                    mermaid_code: None,
+                    mermaid_svg: None,
                     width,
                     height,
                     title: title.map(Into::into),
@@ -366,7 +366,7 @@ fn parse_node(
     node: &Rc<Node>,
     paragraph: &mut Paragraph,
     cx: &mut NodeContext,
-) -> Option<BlockNode> {
+) -> Option<node::Node> {
     match node.data {
         NodeData::Text { ref contents } => {
             let text = contents.borrow().to_string();
@@ -381,10 +381,7 @@ fn parse_node(
             ref attrs,
             ..
         } => match name.local {
-            local_name!("br") => Some(BlockNode::Break {
-                html: true,
-                span: None,
-            }),
+            local_name!("br") => Some(node::Node::Break { html: true }),
             local_name!("h1")
             | local_name!("h2")
             | local_name!("h3")
@@ -407,18 +404,14 @@ fn parse_node(
                     parse_paragraph(&mut paragraph, child);
                 }
 
-                let heading = BlockNode::Heading {
+                let heading = node::Node::Heading {
                     level,
                     children: paragraph,
-                    span: None,
                 };
                 if children.len() > 0 {
                     children.push(heading);
 
-                    Some(BlockNode::Root {
-                        children,
-                        span: None,
-                    })
+                    Some(node::Node::Root { children })
                 } else {
                     Some(heading)
                 }
@@ -444,28 +437,26 @@ fn parse_node(
                     link: None,
                     title: title.map(Into::into),
                     alt: alt.map(Into::into),
+                    math_tex: None,
+                    math_svg: None,
+                    math_display_mode: false,
+                    mermaid_code: None,
+                    mermaid_svg: None,
                     width,
                     height,
                 });
 
                 if children.len() > 0 {
-                    children.push(BlockNode::Paragraph(paragraph));
-                    Some(BlockNode::Root {
-                        children,
-                        span: None,
-                    })
+                    children.push(node::Node::Paragraph(paragraph));
+                    Some(node::Node::Root { children })
                 } else {
-                    Some(BlockNode::Paragraph(paragraph))
+                    Some(node::Node::Paragraph(paragraph))
                 }
             }
             local_name!("ul") | local_name!("ol") => {
                 let ordered = name.local == local_name!("ol");
                 let children = consume_children_nodes(node, paragraph, cx);
-                Some(BlockNode::List {
-                    children,
-                    ordered,
-                    span: None,
-                })
+                Some(node::Node::List { children, ordered })
             }
             local_name!("li") => {
                 let mut children = vec![];
@@ -479,23 +470,22 @@ fn parse_node(
                     if child_paragraph.text_len() > 0 {
                         // If last child is paragraph, merge child
                         if let Some(last_child) = children.last_mut() {
-                            if let BlockNode::Paragraph(last_paragraph) = last_child {
+                            if let node::Node::Paragraph(last_paragraph) = last_child {
                                 last_paragraph.merge(child_paragraph);
                                 continue;
                             }
                         }
 
-                        children.push(BlockNode::Paragraph(child_paragraph));
+                        children.push(node::Node::Paragraph(child_paragraph));
                     }
                 }
 
                 consume_paragraph(&mut children, paragraph);
 
-                Some(BlockNode::ListItem {
+                Some(node::Node::ListItem {
                     children,
                     spread: false,
                     checked: None,
-                    span: None,
                 })
             }
             local_name!("table") => {
@@ -520,28 +510,22 @@ fn parse_node(
                 }
                 consume_paragraph(&mut children, paragraph);
 
-                let table = BlockNode::Table(table);
+                let table = node::Node::Table(table);
                 if children.len() > 0 {
                     children.push(table);
-                    Some(BlockNode::Root {
-                        children,
-                        span: None,
-                    })
+                    Some(node::Node::Root { children })
                 } else {
                     Some(table)
                 }
             }
             local_name!("blockquote") => {
                 let children = consume_children_nodes(node, paragraph, cx);
-                Some(BlockNode::Blockquote {
-                    children,
-                    span: None,
-                })
+                Some(node::Node::Blockquote { children })
             }
             local_name!("style") | local_name!("script") => None,
             _ => {
                 if BLOCK_ELEMENTS.contains(&name.local.trim()) {
-                    let mut children: Vec<BlockNode> = vec![];
+                    let mut children: Vec<node::Node> = vec![];
 
                     // Case:
                     //
@@ -561,17 +545,14 @@ fn parse_node(
                     if children.is_empty() {
                         None
                     } else {
-                        Some(BlockNode::Root {
-                            children,
-                            span: None,
-                        })
+                        Some(node::Node::Root { children })
                     }
                 } else {
                     // Others to as Inline
                     parse_paragraph(paragraph, node);
 
                     if paragraph.is_image() {
-                        Some(BlockNode::Paragraph(paragraph.take()))
+                        Some(node::Node::Paragraph(paragraph.take()))
                     } else {
                         None
                     }
@@ -580,10 +561,7 @@ fn parse_node(
         },
         NodeData::Document => {
             let children = consume_children_nodes(node, paragraph, cx);
-            Some(BlockNode::Root {
-                children,
-                span: None,
-            })
+            Some(node::Node::Root { children })
         }
         NodeData::Doctype { .. }
         | NodeData::Comment { .. }
@@ -595,7 +573,7 @@ fn consume_children_nodes(
     node: &Node,
     paragraph: &mut Paragraph,
     cx: &mut NodeContext,
-) -> Vec<BlockNode> {
+) -> Vec<node::Node> {
     let mut children = vec![];
     consume_paragraph(&mut children, paragraph);
     for child in node.children.borrow().iter() {
@@ -608,22 +586,19 @@ fn consume_children_nodes(
     children
 }
 
-fn consume_paragraph(children: &mut Vec<BlockNode>, paragraph: &mut Paragraph) {
+fn consume_paragraph(children: &mut Vec<node::Node>, paragraph: &mut Paragraph) {
     if paragraph.is_empty() {
         return;
     }
 
-    children.push(BlockNode::Paragraph(paragraph.take()));
+    children.push(node::Node::Paragraph(paragraph.take()));
 }
 
 #[cfg(test)]
 mod tests {
     use gpui::{px, relative};
 
-    use crate::text::{
-        document::ParsedDocument,
-        node::{BlockNode, ImageNode, InlineNode, NodeContext, Paragraph},
-    };
+    use crate::text::node::{ImageNode, InlineNode, Node, NodeContext, Paragraph};
 
     use super::trim_text;
 
@@ -711,42 +686,36 @@ mod tests {
         let node = super::parse(html, &mut cx).unwrap();
         assert_eq!(
             node,
-            ParsedDocument {
-                source: html.to_string().into(),
-                blocks: vec![BlockNode::Paragraph(Paragraph {
-                    span: None,
-                    children: vec![InlineNode::image(ImageNode {
-                        url: "https://example.com/image.png".to_string().into(),
-                        alt: Some("Example".to_string().into()),
-                        width: Some(px(100.).into()),
-                        height: Some(px(200.).into()),
-                        title: Some("Example Image".to_string().into()),
-                        ..Default::default()
-                    })],
+            Node::Paragraph(Paragraph {
+                span: None,
+                children: vec![InlineNode::image(ImageNode {
+                    url: "https://example.com/image.png".to_string().into(),
+                    alt: Some("Example".to_string().into()),
+                    width: Some(px(100.).into()),
+                    height: Some(px(200.).into()),
+                    title: Some("Example Image".to_string().into()),
                     ..Default::default()
-                })]
-            }
+                })],
+                ..Default::default()
+            })
         );
 
         let html = r#"<img src="https://example.com/image.png" alt="Example" style="width: 80%" title="Example Image" />"#;
         let node = super::parse(html, &mut cx).unwrap();
         assert_eq!(
             node,
-            ParsedDocument {
-                source: html.to_string().into(),
-                blocks: vec![BlockNode::Paragraph(Paragraph {
-                    span: None,
-                    children: vec![InlineNode::image(ImageNode {
-                        url: "https://example.com/image.png".to_string().into(),
-                        alt: Some("Example".to_string().into()),
-                        width: Some(relative(0.8)),
-                        height: None,
-                        title: Some("Example Image".to_string().into()),
-                        ..Default::default()
-                    })],
+            Node::Paragraph(Paragraph {
+                span: None,
+                children: vec![InlineNode::image(ImageNode {
+                    url: "https://example.com/image.png".to_string().into(),
+                    alt: Some("Example".to_string().into()),
+                    width: Some(relative(0.8)),
+                    height: None,
+                    title: Some("Example Image".to_string().into()),
                     ..Default::default()
-                })]
-            }
+                })],
+                ..Default::default()
+            })
         );
     }
 }

@@ -3,34 +3,30 @@ use rust_i18n::t;
 use std::{ops::Range, rc::Rc};
 
 use gpui::{
-    App, AppContext as _, Context, Empty, Entity, FocusHandle, Focusable, Half,
-    InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _, Pixels, Render, Styled,
-    Subscription, Window, actions, div, prelude::FluentBuilder as _,
+    actions, canvas, div, prelude::FluentBuilder as _, App, AppContext as _, Context, Empty,
+    Entity, FocusHandle, Focusable, Half, InteractiveElement as _, IntoElement, KeyBinding,
+    ParentElement as _, Pixels, Render, Styled, Subscription, Window,
 };
 use ropey::Rope;
 
 use crate::{
-    ActiveTheme, Disableable, ElementExt, IconName, Selectable, Sizable,
-    actions::SelectUp,
+    actions::SelectRight,
     button::{Button, ButtonVariants},
     h_flex,
-    input::{
-        Enter, Escape, IndentInline, Input, InputEvent, InputState, RopeExt as _, Search,
-        movement::MoveDirection,
-    },
+    input::{Enter, Escape, IndentInline, InputEvent, InputState, RopeExt as _, Search, TextInput},
     label::Label,
-    v_flex,
+    v_flex, ActiveTheme, Disableable, IconName, Selectable, Sizable,
 };
 
-const CONTEXT: &'static str = "SearchPanel";
+const KEY_CONTEXT: &'static str = "SearchPanel";
 
 actions!(input, [Tab]);
 
 pub(super) fn init(cx: &mut App) {
     cx.bind_keys(vec![KeyBinding::new(
         "shift-enter",
-        SelectUp,
-        Some(CONTEXT),
+        SelectRight,
+        Some(KEY_CONTEXT),
     )]);
 }
 
@@ -258,11 +254,7 @@ impl SearchPanel {
         cx: &mut Context<Self>,
     ) {
         self.open = true;
-        self.search_input
-            .read(cx)
-            .focus_handle
-            .clone()
-            .focus(window, cx);
+        self.search_input.read(cx).focus_handle.focus(window);
 
         self.search_input.update(cx, |this, cx| {
             if selected_text.len() > 0 {
@@ -294,11 +286,11 @@ impl SearchPanel {
 
     pub(super) fn hide(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.open = false;
-        self.editor.read(cx).focus_handle.clone().focus(window, cx);
+        self.editor.read(cx).focus_handle.focus(window);
         cx.notify();
     }
 
-    fn on_action_prev(&mut self, _: &SelectUp, window: &mut Window, cx: &mut Context<Self>) {
+    fn on_action_prev(&mut self, _: &SelectRight, window: &mut Window, cx: &mut Context<Self>) {
         self.prev(window, cx);
     }
 
@@ -311,13 +303,13 @@ impl SearchPanel {
     }
 
     fn on_action_tab(&mut self, _: &IndentInline, window: &mut Window, cx: &mut Context<Self>) {
-        self.editor.focus_handle(cx).focus(window, cx);
+        self.editor.focus_handle(cx).focus(window);
     }
 
     fn prev(&mut self, _: &mut Window, cx: &mut Context<Self>) {
         if let Some(range) = self.matcher.next_back() {
             self.editor.update(cx, |state, cx| {
-                state.scroll_to(range.start, Some(MoveDirection::Up), cx);
+                state.scroll_to(range.start, cx);
             });
         }
     }
@@ -325,7 +317,7 @@ impl SearchPanel {
     fn next(&mut self, _: &mut Window, cx: &mut Context<Self>) {
         if let Some(range) = self.matcher.next() {
             self.editor.update(cx, |state, cx| {
-                state.scroll_to(range.end, Some(MoveDirection::Down), cx);
+                state.scroll_to(range.end, cx);
             });
         }
     }
@@ -354,7 +346,7 @@ impl SearchPanel {
                 cx.update(|window, cx| {
                     text_state.update(cx, |state, cx| {
                         let range_utf16 = state.range_to_utf16(&range);
-                        state.scroll_to(next_range.end, Some(MoveDirection::Down), cx);
+                        state.scroll_to(next_range.end, cx);
                         state.replace_text_in_range_silent(
                             Some(range_utf16),
                             new_text.as_str(),
@@ -391,7 +383,7 @@ impl SearchPanel {
                         window,
                         cx,
                     );
-                    state.scroll_to(0, Some(MoveDirection::Down), cx);
+                    state.scroll_to(0, cx);
                 });
             })
         })
@@ -417,12 +409,12 @@ impl Render for SearchPanel {
             .id("search-panel")
             .occlude()
             .track_focus(&self.focus_handle(cx))
-            .key_context(CONTEXT)
+            .key_context(KEY_CONTEXT)
             .on_action(cx.listener(Self::on_action_prev))
             .on_action(cx.listener(Self::on_action_next))
             .on_action(cx.listener(Self::on_action_escape))
             .on_action(cx.listener(Self::on_action_tab))
-            .font_family(cx.theme().font_family.clone())
+            .font_family(".SystemUIFont")
             .items_center()
             .py_2()
             .px_3()
@@ -440,8 +432,9 @@ impl Render for SearchPanel {
                         div()
                             .flex_1()
                             .gap_1()
+                            .font_family("JetBrainsMono-Regular")
                             .child(
-                                Input::new(&self.search_input)
+                                TextInput::new(&self.search_input)
                                     .focus_bordered(false)
                                     .suffix(
                                         Button::new("case-insensitive")
@@ -460,12 +453,21 @@ impl Render for SearchPanel {
                                     .w_full()
                                     .shadow_none(),
                             )
-                            .on_prepaint({
-                                let view = cx.entity();
-                                move |bounds, _, cx| {
-                                    view.update(cx, |r, _| r.input_width = bounds.size.width)
-                                }
-                            }),
+                            .child(
+                                canvas(
+                                    {
+                                        let view = cx.entity();
+                                        move |bounds, _, cx| {
+                                            view.update(cx, |r, _| {
+                                                r.input_width = bounds.size.width
+                                            })
+                                        }
+                                    },
+                                    |_, _, _, _| {},
+                                )
+                                .absolute()
+                                .size_full(),
+                            ),
                     )
                     .child(
                         Button::new("replace-mode")
@@ -476,17 +478,9 @@ impl Render for SearchPanel {
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.replace_mode = !this.replace_mode;
                                 if this.replace_mode {
-                                    this.replace_input
-                                        .read(cx)
-                                        .focus_handle
-                                        .clone()
-                                        .focus(window, cx);
+                                    this.replace_input.read(cx).focus_handle.focus(window);
                                 } else {
-                                    this.search_input
-                                        .read(cx)
-                                        .focus_handle
-                                        .clone()
-                                        .focus(window, cx);
+                                    this.search_input.read(cx).focus_handle.focus(window);
                                 }
                                 cx.notify();
                             })),
@@ -535,8 +529,9 @@ impl Render for SearchPanel {
                     h_flex()
                         .w_full()
                         .gap_2()
+                        .font_family("JetBrainsMono-Regular")
                         .child(
-                            Input::new(&self.replace_input)
+                            TextInput::new(&self.replace_input)
                                 .focus_bordered(false)
                                 .small()
                                 .w(self.input_width)

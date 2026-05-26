@@ -16,5 +16,5 @@ doctest = false
 
 [dependencies]
 anyhow.workspace = true
-gpui.workspace = true
+gpui-ce.workspace = true
 rust-embed = { version = "8.7.2", features = ["interpolate-folder-path"] }

@@ -1,9 +1,9 @@
 // From:
-// https://github.com/zed-industries/zed/blob/56daba28d40301ee4c05546fadb691d070b7b2b6/crates/gpui/examples/window_shadow.rs
+// https://github.com/zed-industries/zed/blob/a8afc63a91f6b75528540dcffe73dc8ce0c92ad8/crates/gpui/examples/window_shadow.rs
 use gpui::{
-    AnyElement, App, Bounds, CursorStyle, Decorations, Edges, HitboxBehavior, Hsla,
-    InteractiveElement as _, IntoElement, MouseButton, ParentElement, Pixels, Point, RenderOnce,
-    ResizeEdge, Size, Styled as _, Window, canvas, div, point, prelude::FluentBuilder as _, px,
+    canvas, div, point, prelude::FluentBuilder as _, px, AnyElement, App, Bounds, CursorStyle,
+    Decorations, Edges, HitboxBehavior, Hsla, InteractiveElement as _, IntoElement, MouseButton,
+    ParentElement, Pixels, Point, RenderOnce, ResizeEdge, Size, Styled as _, Window,
 };
 
 use crate::ActiveTheme;
@@ -12,8 +12,13 @@ use crate::ActiveTheme;
 const SHADOW_SIZE: Pixels = px(0.0);
 #[cfg(target_os = "linux")]
 const SHADOW_SIZE: Pixels = px(12.0);
+const RESIZE_HANDLE_SIZE: Pixels = px(5.0);
 const BORDER_SIZE: Pixels = px(1.0);
+// Windows gets rounded corners natively from DWM; other platforms render them client-side.
+#[cfg(target_os = "windows")]
 pub(crate) const BORDER_RADIUS: Pixels = px(0.0);
+#[cfg(not(target_os = "windows"))]
+pub(crate) const BORDER_RADIUS: Pixels = px(8.0);
 
 /// Create a new window border.
 pub fn window_border() -> WindowBorder {
@@ -89,7 +94,8 @@ impl RenderOnce for WindowBorder {
                             move |_bounds, hitbox, window, _| {
                                 let mouse = window.mouse_position();
                                 let size = window.window_bounds().get_bounds().size;
-                                let Some(edge) = resize_edge(mouse, SHADOW_SIZE, size) else {
+                                let Some(edge) = resize_edge(mouse, RESIZE_HANDLE_SIZE, size)
+                                else {
                                     return;
                                 };
                                 window.set_cursor_style(
@@ -128,7 +134,7 @@ impl RenderOnce for WindowBorder {
                         let size = window.window_bounds().get_bounds().size;
                         let pos = window.mouse_position();
 
-                        match resize_edge(pos, SHADOW_SIZE, size) {
+                        match resize_edge(pos, RESIZE_HANDLE_SIZE, size) {
                             Some(edge) => window.start_window_resize(edge),
                             None => {}
                         };
@@ -137,7 +143,6 @@ impl RenderOnce for WindowBorder {
             .size_full()
             .child(
                 div()
-                    .cursor(CursorStyle::default())
                     .map(|div| match decorations {
                         Decorations::Server => div,
                         Decorations::Client { tiling } => div

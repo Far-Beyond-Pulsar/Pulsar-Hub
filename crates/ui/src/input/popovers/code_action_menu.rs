@@ -1,10 +1,10 @@
 use std::rc::Rc;
 
 use gpui::{
-    Action, AnyElement, App, AppContext, Context, DismissEvent, Empty, Entity, EventEmitter,
+    canvas, deferred, div, prelude::FluentBuilder, px, relative, Action, AnyElement, App,
+    AppContext, Bounds, Context, DismissEvent, Empty, Entity, EventEmitter,
     InteractiveElement as _, IntoElement, ParentElement, Pixels, Point, Render, RenderOnce,
-    SharedString, Styled, StyledText, Subscription, Window, deferred, div, prelude::FluentBuilder,
-    px, relative,
+    SharedString, Styled, StyledText, Subscription, Window,
 };
 use lsp_types::CodeAction;
 
@@ -12,9 +12,10 @@ const MAX_MENU_WIDTH: Pixels = px(320.);
 const MAX_MENU_HEIGHT: Pixels = px(480.);
 
 use crate::{
-    ActiveTheme, IndexPath, Selectable, actions, h_flex,
-    input::{self, InputState, popovers::editor_popover},
-    list::{List, ListDelegate, ListEvent, ListState},
+    actions, h_flex,
+    input::{self, popovers::editor_popover, InputState},
+    list::{List, ListDelegate, ListEvent},
+    ActiveTheme, IndexPath, Selectable,
 };
 
 #[derive(Debug, Clone)]
@@ -110,10 +111,10 @@ impl ListDelegate for MenuDelegate {
     }
 
     fn render_item(
-        &mut self,
+        &self,
         ix: crate::IndexPath,
         _: &mut Window,
-        _: &mut Context<ListState<Self>>,
+        _: &mut Context<List<Self>>,
     ) -> Option<Self::Item> {
         let item = self.items.get(ix.row)?;
         Some(MenuItem::new(ix.row, item.clone()))
@@ -123,13 +124,13 @@ impl ListDelegate for MenuDelegate {
         &mut self,
         ix: Option<crate::IndexPath>,
         _: &mut Window,
-        cx: &mut Context<ListState<Self>>,
+        cx: &mut Context<List<Self>>,
     ) {
         self.selected_ix = ix.map(|i| i.row).unwrap_or(0);
         cx.notify();
     }
 
-    fn confirm(&mut self, _: bool, window: &mut Window, cx: &mut Context<ListState<Self>>) {
+    fn confirm(&mut self, _: bool, window: &mut Window, cx: &mut Context<List<Self>>) {
         let Some(item) = self.selected_item() else {
             return;
         };
@@ -144,8 +145,9 @@ impl ListDelegate for MenuDelegate {
 pub struct CodeActionMenu {
     offset: usize,
     state: Entity<InputState>,
-    list: Entity<ListState<MenuDelegate>>,
+    list: Entity<List<MenuDelegate>>,
     open: bool,
+    bounds: Bounds<Pixels>,
 
     _subscriptions: Vec<Subscription>,
 }
@@ -167,7 +169,11 @@ impl CodeActionMenu {
                 selected_ix: 0,
             };
 
-            let list = cx.new(|cx| ListState::new(menu, window, cx));
+            let list = cx.new(|cx| {
+                List::new(menu, window, cx)
+                    .no_query()
+                    .max_h(MAX_MENU_HEIGHT)
+            });
 
             let _subscriptions =
                 vec![
@@ -187,6 +193,7 @@ impl CodeActionMenu {
                 state,
                 list,
                 open: false,
+                bounds: Bounds::default(),
                 _subscriptions,
             }
         })
@@ -314,6 +321,8 @@ impl Render for CodeActionMenu {
             return Empty.into_any_element();
         }
 
+        let view = cx.entity();
+
         let Some(pos) = self.origin(cx) else {
             return Empty.into_any_element();
         };
@@ -327,7 +336,15 @@ impl Render for CodeActionMenu {
                 .top(pos.y)
                 .max_w(max_width)
                 .min_w(px(120.))
-                .child(List::new(&self.list).max_h(MAX_MENU_HEIGHT))
+                .child(self.list.clone())
+                .child(
+                    canvas(
+                        move |bounds, _, cx| view.update(cx, |r, _| r.bounds = bounds),
+                        |_, _, _, _| {},
+                    )
+                    .absolute()
+                    .size_full(),
+                )
                 .on_mouse_down_out(cx.listener(|this, _, _, cx| {
                     this.hide(cx);
                 })),
