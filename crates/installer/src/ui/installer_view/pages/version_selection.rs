@@ -146,12 +146,12 @@ impl InstallerView {
                     .rounded(px(8.0))
                     .border_1()
                     .border_color(if selected {
-                        cx.theme().accent.opacity(0.5)
+                        cx.theme().secondary.opacity(0.5)
                     } else {
                         cx.theme().border
                     })
                     .bg(if selected {
-                        cx.theme().accent.opacity(0.06)
+                        cx.theme().secondary.opacity(0.06)
                     } else {
                         cx.theme().sidebar.opacity(0.3)
                     })
@@ -169,7 +169,7 @@ impl InstallerView {
                             .rounded_full()
                             .border_2()
                             .border_color(if selected {
-                                cx.theme().accent
+                                cx.theme().secondary
                             } else {
                                 cx.theme().border
                             })
@@ -182,7 +182,7 @@ impl InstallerView {
                                         .w(px(8.0))
                                         .h(px(8.0))
                                         .rounded_full()
-                                        .bg(cx.theme().accent),
+                                        .bg(cx.theme().secondary),
                                 )
                             }),
                     )
@@ -190,7 +190,7 @@ impl InstallerView {
                         Icon::new(IconName::GalleryVerticalEnd)
                             .with_size(px(16.0))
                             .text_color(if selected {
-                                cx.theme().accent
+                                cx.theme().secondary
                             } else {
                                 cx.theme().muted_foreground
                             }),

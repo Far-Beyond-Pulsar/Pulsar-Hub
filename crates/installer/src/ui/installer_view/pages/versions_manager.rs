@@ -11,8 +11,9 @@ use gpui_component::{
     Icon, IconName,
 };
 use gpui::prelude::FluentBuilder;
+use std::path::{Path, PathBuf};
 use crate::installed_versions::InstalledVersion;
-use super::super::{InstallerView, Page};
+use super::super::{InstallerView, Page, SIDECAR_PACKAGES};
 
 impl InstallerView {
     pub(crate) fn render_versions_manager(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -49,9 +50,9 @@ impl InstallerView {
                                         .px_2()
                                         .py(px(2.0))
                                         .rounded(px(4.0))
-                                        .bg(cx.theme().accent.opacity(0.15))
+                                        .bg(cx.theme().secondary.opacity(0.15))
                                         .text_xs()
-                                        .text_color(cx.theme().accent)
+                                        .text_color(cx.theme().secondary)
                                         .child(format!("{}", self.installed_versions.len())),
                                 )
                             }),
@@ -155,7 +156,7 @@ impl InstallerView {
         let sidebar         = cx.theme().sidebar;
         let foreground      = cx.theme().foreground;
         let muted           = cx.theme().muted_foreground;
-        let accent          = cx.theme().accent;
+        let secondary       = cx.theme().secondary;
         let warning         = cx.theme().warning;
 
         // Pre-build per-card listeners so we don't borrow cx inside the map closure.
@@ -181,6 +182,32 @@ impl InstallerView {
             })
             .collect();
 
+        // Pre-build sidecar launch listeners for each card.
+        let sidecar_actions: Vec<Vec<_>> = versions
+            .iter()
+            .map(|ver| {
+                let install_path = ver.metadata.install_path.clone();
+                installed_sidecars_for_install(&install_path)
+                    .into_iter()
+                    .map(|(sidecar_id, sidecar_name, icon)| {
+                        let launch_install_path = install_path.clone();
+                        let sidecar_id_launch = sidecar_id.to_string();
+                        (
+                            sidecar_name.to_string(),
+                            icon,
+                            cx.listener(move |this, _, _, cx| {
+                                this.launch_sidecar_path(
+                                    launch_install_path.clone(),
+                                    sidecar_id_launch.clone(),
+                                    cx,
+                                );
+                            }),
+                        )
+                    })
+                    .collect()
+            })
+            .collect();
+
         gpui::div()
             .id("vm-grid-scroll")
             .size_full()
@@ -195,8 +222,9 @@ impl InstallerView {
                         versions
                             .into_iter()
                             .zip(listeners)
+                            .zip(sidecar_actions)
                             .enumerate()
-                            .map(|(idx, (ver, (on_launch, on_open, on_remove)))| {
+                            .map(|(idx, ((ver, (on_launch, on_open, on_remove)), sidecars))| {
                                 let size_str    = InstallerView::format_bytes(ver.disk_size_bytes);
                                 let version_str = ver.metadata.version.clone();
                                 let date_str    = if ver.metadata.install_date.is_empty() {
@@ -225,16 +253,16 @@ impl InstallerView {
                                                     .w(px(36.0))
                                                     .h(px(36.0))
                                                     .rounded(px(8.0))
-                                                    .bg(accent.opacity(0.12))
+                                                        .bg(secondary.opacity(0.12))
                                                     .border_1()
-                                                    .border_color(accent.opacity(0.3))
+                                                        .border_color(secondary.opacity(0.3))
                                                     .flex()
                                                     .items_center()
                                                     .justify_center()
                                                     .child(
                                                         Icon::new(IconName::HardDrive)
                                                             .with_size(px(18.0))
-                                                            .text_color(accent),
+                                                            .text_color(secondary),
                                                     ),
                                             )
                                             .child(
@@ -252,17 +280,37 @@ impl InstallerView {
                                                             .px_2()
                                                             .py(px(1.0))
                                                             .rounded(px(4.0))
-                                                            .bg(accent.opacity(0.1))
+                                                            .bg(secondary.opacity(0.1))
                                                             .text_xs()
                                                             .font_weight(FontWeight::MEDIUM)
-                                                            .text_color(accent)
+                                                            .text_color(secondary)
                                                             .child(version_str),
                                                     ),
+                                            )
+                                            .child(
+                                                h_flex()
+                                                    .ml_auto()
+                                                    .gap_1()
+                                                    .children(sidecars.into_iter().enumerate().map(
+                                                        |(side_idx, (sidecar_name, icon, on_click))| {
+                                                            Button::new(format!(
+                                                                "vm-sidecar-{idx}-{side_idx}"
+                                                            ))
+                                                            .ghost()
+                                                            .small()
+                                                            .compact()
+                                                            .icon(icon)
+                                                            .tooltip(format!(
+                                                                "Launch {}",
+                                                                sidecar_name
+                                                            ))
+                                                            .on_click(on_click)
+                                                        },
+                                                    )),
                                             )
                                             .when(has_update, |e| {
                                                 e.child(
                                                     gpui::div()
-                                                        .ml_auto()
                                                         .px_2()
                                                         .py(px(2.0))
                                                         .rounded(px(4.0))
@@ -412,5 +460,56 @@ impl InstallerView {
                             ),
                     ),
             )
+    }
+}
+
+fn installed_sidecars_for_install(install_path: &Path) -> Vec<(&'static str, &'static str, IconName)> {
+    let version_root = version_root_from_install_path(install_path);
+
+    SIDECAR_PACKAGES
+        .iter()
+        .filter_map(|(sidecar_id, sidecar_name, _)| {
+            let sidecar_path = sidecar_binary_path(&version_root, sidecar_id);
+            if sidecar_path.exists() {
+                Some((*sidecar_id, *sidecar_name, sidecar_icon(sidecar_id)))
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+fn version_root_from_install_path(install_path: &Path) -> PathBuf {
+    #[cfg(target_os = "macos")]
+    {
+        if install_path.extension() == Some(std::ffi::OsStr::new("app")) {
+            if let Some(parent) = install_path.parent() {
+                return parent.to_path_buf();
+            }
+        }
+    }
+
+    install_path.to_path_buf()
+}
+
+fn sidecar_binary_path(version_root: &Path, sidecar_id: &str) -> PathBuf {
+    #[cfg(windows)]
+    {
+        return version_root
+            .join(sidecar_id)
+            .join(format!("{sidecar_id}.exe"));
+    }
+
+    #[cfg(not(windows))]
+    {
+        version_root.join(sidecar_id).join(sidecar_id)
+    }
+}
+
+fn sidecar_icon(sidecar_id: &str) -> IconName {
+    match sidecar_id {
+        "pulsar-host" => IconName::Server,
+        "pulsar-multiedit" => IconName::Group,
+        _ => IconName::Package,
     }
 }

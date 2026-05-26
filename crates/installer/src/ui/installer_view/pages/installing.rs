@@ -34,7 +34,9 @@ impl InstallerView {
                         h_flex()
                             .gap_3()
                             .items_center()
-                            .when(!is_done, |el| el.child(Spinner::new().color(cx.theme().accent)))
+                            .when(!is_done, |el| {
+                                el.child(Spinner::new().color(cx.theme().secondary))
+                            })
                             .when(is_done, |el| {
                                 el.child(
                                     Icon::new(IconName::CircleCheck)
@@ -67,7 +69,7 @@ impl InstallerView {
                                         gpui::div()
                                             .text_xs()
                                             .font_weight(FontWeight::MEDIUM)
-                                            .text_color(cx.theme().accent)
+                                            .text_color(cx.theme().secondary)
                                             .child(format!("{:.0}%", self.install_progress)),
                                     ),
                             ),

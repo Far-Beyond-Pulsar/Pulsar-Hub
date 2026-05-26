@@ -27,7 +27,7 @@ impl InstallerView {
                             .w(px(80.0))
                             .h(px(80.0))
                             .rounded(px(20.0))
-                            .bg(cx.theme().accent)
+                            .bg(cx.theme().secondary)
                             .flex()
                             .items_center()
                             .justify_center()
@@ -35,7 +35,7 @@ impl InstallerView {
                                 gpui::div()
                                     .text_3xl()
                                     .font_weight(FontWeight::BOLD)
-                                    .text_color(cx.theme().accent_foreground)
+                                    .text_color(cx.theme().secondary_foreground)
                                     .child("P"),
                             ),
                     )
@@ -84,13 +84,13 @@ impl InstallerView {
                                     .gap_3()
                                     .rounded(px(12.0))
                                     .border_1()
-                                    .border_color(cx.theme().accent.opacity(0.35))
-                                    .bg(cx.theme().accent.opacity(0.05))
+                                    .border_color(cx.theme().secondary.opacity(0.35))
+                                    .bg(cx.theme().secondary.opacity(0.05))
                                     .cursor_pointer()
                                     .child(
                                         Icon::new(IconName::ArrowDown)
                                             .with_size(px(28.0))
-                                            .text_color(cx.theme().accent),
+                                            .text_color(cx.theme().secondary),
                                     )
                                     .child(
                                         gpui::div()

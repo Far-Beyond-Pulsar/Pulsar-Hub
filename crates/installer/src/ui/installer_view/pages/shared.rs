@@ -42,10 +42,10 @@ impl InstallerView {
                                     .px_2()
                                     .py(px(2.0))
                                     .rounded(px(4.0))
-                                    .bg(cx.theme().accent.opacity(0.15))
+                                    .bg(cx.theme().secondary.opacity(0.15))
                                     .text_xs()
                                     .font_weight(FontWeight::MEDIUM)
-                                    .text_color(cx.theme().accent)
+                                    .text_color(cx.theme().secondary)
                                     .child(b.to_string()),
                             )
                         } else {
@@ -68,7 +68,7 @@ impl InstallerView {
             .items_center()
             .justify_center()
             .gap_4()
-            .child(Spinner::new().color(cx.theme().accent))
+            .child(Spinner::new().color(cx.theme().secondary))
             .child(
                 gpui::div()
                     .text_sm()
@@ -85,12 +85,12 @@ impl InstallerView {
             .px_3()
             .py_1()
             .rounded_full()
-            .bg(cx.theme().accent.opacity(0.1))
+            .bg(cx.theme().secondary.opacity(0.1))
             .border_1()
-            .border_color(cx.theme().accent.opacity(0.25))
+            .border_color(cx.theme().secondary.opacity(0.25))
             .text_xs()
             .font_weight(FontWeight::MEDIUM)
-            .text_color(cx.theme().accent)
+            .text_color(cx.theme().secondary)
             .child(label.to_string())
     }
 }

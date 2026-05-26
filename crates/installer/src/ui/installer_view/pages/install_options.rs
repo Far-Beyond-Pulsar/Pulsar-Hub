@@ -330,12 +330,12 @@ fn format_option_row(
         .rounded(px(8.0))
         .border_1()
         .border_color(if selected {
-            cx.theme().accent.opacity(0.5)
+            cx.theme().secondary.opacity(0.5)
         } else {
             cx.theme().border
         })
         .bg(if selected {
-            cx.theme().accent.opacity(0.05)
+            cx.theme().secondary.opacity(0.05)
         } else {
             cx.theme().sidebar.opacity(0.3)
         })
@@ -348,7 +348,7 @@ fn format_option_row(
                 .h(px(16.0))
                 .rounded_full()
                 .border_2()
-                .border_color(cx.theme().accent)
+                .border_color(cx.theme().secondary)
                 .flex()
                 .items_center()
                 .justify_center()
@@ -358,7 +358,7 @@ fn format_option_row(
                             .w(px(8.0))
                             .h(px(8.0))
                             .rounded_full()
-                            .bg(cx.theme().accent),
+                            .bg(cx.theme().secondary),
                     )
                 }),
         )

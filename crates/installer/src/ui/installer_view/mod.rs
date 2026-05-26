@@ -206,7 +206,7 @@ impl InstallerView {
                                     .w(px(32.0))
                                     .h(px(32.0))
                                     .rounded(px(8.0))
-                                    .bg(cx.theme().accent)
+                                    .bg(cx.theme().secondary)
                                     .flex()
                                     .items_center()
                                     .justify_center()
@@ -214,7 +214,7 @@ impl InstallerView {
                                         div()
                                             .text_sm()
                                             .font_weight(FontWeight::BOLD)
-                                            .text_color(cx.theme().accent_foreground)
+                                            .text_color(cx.theme().secondary_foreground)
                                             .child("P"),
                                     ),
                             )
@@ -265,7 +265,7 @@ impl InstallerView {
                                 .py(px(6.0))
                                 .rounded(px(6.0))
                                 .items_center()
-                                .when(is_active, |e| e.bg(cx.theme().accent.opacity(0.12)))
+                                .when(is_active, |e| e.bg(cx.theme().secondary.opacity(0.12)))
                                 // Step bubble
                                 .child(
                                     div()
@@ -277,18 +277,18 @@ impl InstallerView {
                                         .items_center()
                                         .justify_center()
                                         .when(is_done, |e| {
-                                            e.bg(cx.theme().accent.opacity(0.2)).child(
+                                            e.bg(cx.theme().secondary.opacity(0.2)).child(
                                                 Icon::new(IconName::Check)
                                                     .with_size(px(12.0))
-                                                    .text_color(cx.theme().accent),
+                                                    .text_color(cx.theme().secondary),
                                             )
                                         })
                                         .when(is_active, |e| {
-                                            e.bg(cx.theme().accent).child(
+                                            e.bg(cx.theme().secondary).child(
                                                 div()
                                                     .text_xs()
                                                     .font_weight(FontWeight::BOLD)
-                                                    .text_color(cx.theme().accent_foreground)
+                                                    .text_color(cx.theme().secondary_foreground)
                                                     .child(format!("{}", idx + 1)),
                                             )
                                         })
@@ -313,9 +313,9 @@ impl InstallerView {
                                             Icon::new(step.icon())
                                                 .with_size(px(14.0))
                                                 .text_color(if is_active {
-                                                    cx.theme().accent
+                                                    cx.theme().secondary
                                                 } else if is_done {
-                                                    cx.theme().accent.opacity(0.6)
+                                                    cx.theme().secondary.opacity(0.6)
                                                 } else {
                                                     cx.theme().muted_foreground
                                                 }),
@@ -349,11 +349,11 @@ impl InstallerView {
                                 .py(px(6.0))
                                 .rounded(px(6.0))
                                 .items_center()
-                                .bg(cx.theme().accent.opacity(0.12))
+                                .bg(cx.theme().secondary.opacity(0.12))
                                 .child(
                                     Icon::new(IconName::Inbox)
                                         .with_size(px(14.0))
-                                        .text_color(cx.theme().accent),
+                                    .text_color(cx.theme().secondary),
                                 )
                                 .child(
                                     div()
