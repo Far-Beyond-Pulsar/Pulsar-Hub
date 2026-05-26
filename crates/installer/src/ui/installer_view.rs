@@ -18,7 +18,7 @@ use gpui::prelude::FluentBuilder;
 use gpui::http_client::{HttpClient, http, AsyncBody};
 use futures::AsyncReadExt;
 use reqwest_client::ReqwestClient;
-use crate::download::{GitHubReleases, HttpDownloadManager, GitHubRelease, GitHubAsset};
+use crate::download::{GitHubReleases, HttpDownloadManager, GitHubAsset};
 use crate::traits::DownloadManager as _;
 use crate::InstallerConfig;
 use crate::installed_versions::{InstalledVersion, scan_installed_versions, write_metadata};
@@ -67,7 +67,7 @@ impl Page {
     pub fn icon(self) -> IconName {
         match self {
             Page::Welcome         => IconName::Bot,
-            Page::License         => IconName::File,
+            Page::License         => IconName::BookOpen,
             Page::VersionSelection=> IconName::Github,
             Page::InstallOptions  => IconName::Settings,
             Page::Installing      => IconName::HardDrive,
@@ -273,7 +273,7 @@ impl InstallerView {
                     return;
                 }
             };
-            match client.send(request, None).await {
+            match client.send(request).await {
                 Ok(mut response) => {
                     let mut body = Vec::new();
                     if response.body_mut().read_to_end(&mut body).await.is_ok() {
@@ -495,11 +495,12 @@ impl InstallerView {
             cx.notify();
 
             cx.spawn(async move |this, cx| {
+                let path_for_retain = path.clone();
                 let result = smol::unblock(move || std::fs::remove_dir_all(&path)).await;
                 match result {
                     Ok(_) => {
                         this.update(cx, |v, cx| {
-                            v.installed_versions.retain(|iv| iv.metadata.install_path != path);
+                            v.installed_versions.retain(|iv| iv.metadata.install_path != path_for_retain);
                             cx.notify();
                         }).ok();
                     }
@@ -1500,7 +1501,6 @@ impl InstallerView {
                     .text_xs()
                     .font_family("monospace")
                     .text_color(cx.theme().foreground)
-                    .leading_normal()
                     .child(text),
             )
     }

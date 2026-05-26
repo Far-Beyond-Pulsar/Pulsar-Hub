@@ -108,8 +108,7 @@ fn platform_search_roots() -> Vec<PathBuf> {
         home.join(".local").join("bin").join("pulsar"),
     ];
 
-    #[allow(unreachable_code)]
-    vec![]
+    vec![]  // fallback for unsupported platforms
 }
 
 /// Recursively sum the size of every regular file under `path`.
