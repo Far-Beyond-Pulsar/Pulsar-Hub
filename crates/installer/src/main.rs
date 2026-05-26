@@ -21,6 +21,11 @@ fn main() {
 
     app.run(move |cx| {
         gpui_component::init(cx);
+        // Force dark theme by default
+        {
+            use gpui_component::theme::{Theme, ThemeMode};
+            Theme::change(ThemeMode::Dark, None, cx);
+        }
         cx.activate(true);
 
         let window_size = size(px(960.0), px(640.0));
