@@ -5001,7 +5001,7 @@ dependencies = [
 
 [[package]]
 name = "pulsar-installer"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "anyhow",
  "async-channel 2.5.0",
