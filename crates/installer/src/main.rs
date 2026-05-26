@@ -6,6 +6,7 @@ use gpui::{prelude::*, *};
 use pulsar_installer::ui::InstallerView;
 use gpui_component::Root;
 use gpui::Focusable;
+use gpui_component_assets::Assets;
 
 fn main() {
     tracing_subscriber::fmt()
@@ -17,7 +18,7 @@ fn main() {
 
     tracing::info!("Starting Pulsar Installer");
 
-    let app = Application::new();
+    let app = Application::new().with_assets(Assets);
 
     app.run(move |cx| {
         gpui_component::init(cx);
