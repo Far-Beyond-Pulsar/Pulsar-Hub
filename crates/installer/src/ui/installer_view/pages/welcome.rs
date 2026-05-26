@@ -84,8 +84,8 @@ impl InstallerView {
                                     .gap_3()
                                     .rounded(px(12.0))
                                     .border_1()
-                                    .border_color(cx.theme().secondary.opacity(0.35))
-                                    .bg(cx.theme().secondary.opacity(0.05))
+                                    .border_color(cx.theme().secondary)
+                                    .bg(cx.theme().secondary)
                                     .cursor_pointer()
                                     .child(
                                         Icon::new(IconName::ArrowDown)
@@ -124,7 +124,7 @@ impl InstallerView {
                                     .rounded(px(12.0))
                                     .border_1()
                                     .border_color(cx.theme().border)
-                                    .bg(cx.theme().sidebar.opacity(0.5))
+                                    .bg(cx.theme().sidebar)
                                     .cursor_pointer()
                                     .child(
                                         Icon::new(IconName::Inbox)

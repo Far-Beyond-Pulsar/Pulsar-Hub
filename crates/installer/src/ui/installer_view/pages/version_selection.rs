@@ -32,7 +32,7 @@ impl InstallerView {
                     .py_3()
                     .border_b_1()
                     .border_color(cx.theme().border)
-                    .bg(cx.theme().sidebar.opacity(0.4))
+                    .bg(cx.theme().sidebar)
                     .items_center()
                     .justify_between()
                     .child(
@@ -146,14 +146,14 @@ impl InstallerView {
                     .rounded(px(8.0))
                     .border_1()
                     .border_color(if selected {
-                        cx.theme().secondary.opacity(0.5)
+                        cx.theme().secondary
                     } else {
                         cx.theme().border
                     })
                     .bg(if selected {
-                        cx.theme().secondary.opacity(0.06)
+                        cx.theme().secondary
                     } else {
-                        cx.theme().sidebar.opacity(0.3)
+                        cx.theme().sidebar
                     })
                     .gap_3()
                     .items_center()
@@ -217,7 +217,7 @@ impl InstallerView {
                                                 .px_2()
                                                 .py(px(1.0))
                                                 .rounded(px(4.0))
-                                                .bg(cx.theme().warning.opacity(0.15))
+                                                .bg(cx.theme().warning)
                                                 .text_xs()
                                                 .font_weight(FontWeight::MEDIUM)
                                                 .text_color(cx.theme().warning)
@@ -265,7 +265,7 @@ impl InstallerView {
             .child(
                 Icon::new(IconName::Github)
                     .with_size(px(48.0))
-                    .text_color(cx.theme().muted_foreground.opacity(0.4)),
+                    .text_color(cx.theme().muted_foreground),
             )
             .child(
                 v_flex()
@@ -281,7 +281,7 @@ impl InstallerView {
                     .child(
                         gpui::div()
                             .text_sm()
-                            .text_color(cx.theme().muted_foreground.opacity(0.6))
+                            .text_color(cx.theme().muted_foreground)
                             .child("Could not fetch releases from GitHub"),
                     ),
             )

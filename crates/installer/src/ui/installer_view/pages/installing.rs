@@ -29,7 +29,7 @@ impl InstallerView {
                     .gap_4()
                     .border_b_1()
                     .border_color(cx.theme().border)
-                    .bg(cx.theme().sidebar.opacity(0.3))
+                    .bg(cx.theme().sidebar)
                     .child(
                         h_flex()
                             .gap_3()
@@ -128,7 +128,7 @@ impl InstallerView {
                                     el.child(
                                         gpui::div()
                                             .text_xs()
-                                            .text_color(cx.theme().muted_foreground.opacity(0.5))
+                                            .text_color(cx.theme().muted_foreground)
                                             .child("Waiting for output\u{2026}"),
                                     )
                                 },

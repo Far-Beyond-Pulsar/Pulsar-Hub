@@ -62,10 +62,6 @@ pub struct InstallerView {
     /// Index into `installed_versions` awaiting uninstall confirmation.
     pub uninstall_confirm: Option<usize>,
 
-    // ── macOS asset preference ────────────────────────────────────────────────
-    /// When `true`, prefer the pre-built .app.zip bundle; otherwise prefer the
-    /// bare binary (recommended — smaller, no Gatekeeper bundle issues).
-    pub macos_use_app_bundle: bool,
     /// IDs of optional sidecar packages to co-install (e.g. "pulsar-host").
     pub selected_sidecars: Vec<String>,
 }
@@ -111,8 +107,6 @@ impl InstallerView {
             installed_versions: Vec::new(),
             loading_installed: true,
             uninstall_confirm: None,
-            // macOS asset preference
-            macos_use_app_bundle: false,
             selected_sidecars: Vec::new(),
         }
     }
@@ -265,7 +259,7 @@ impl InstallerView {
                                 .py(px(6.0))
                                 .rounded(px(6.0))
                                 .items_center()
-                                .when(is_active, |e| e.bg(cx.theme().secondary.opacity(0.12)))
+                                .when(is_active, |e| e.bg(cx.theme().secondary))
                                 // Step bubble
                                 .child(
                                     div()
@@ -315,7 +309,7 @@ impl InstallerView {
                                                 .text_color(if is_active {
                                                     cx.theme().secondary
                                                 } else if is_done {
-                                                    cx.theme().secondary.opacity(0.6)
+                                                    cx.theme().secondary
                                                 } else {
                                                     cx.theme().muted_foreground
                                                 }),
@@ -333,7 +327,7 @@ impl InstallerView {
                                                 } else if is_done {
                                                     cx.theme().muted_foreground
                                                 } else {
-                                                    cx.theme().muted_foreground.opacity(0.6)
+                                                    cx.theme().muted_foreground
                                                 })
                                                 .child(step.label()),
                                         ),
@@ -349,7 +343,7 @@ impl InstallerView {
                                 .py(px(6.0))
                                 .rounded(px(6.0))
                                 .items_center()
-                                .bg(cx.theme().secondary.opacity(0.12))
+                                .bg(cx.theme().secondary)
                                 .child(
                                     Icon::new(IconName::Inbox)
                                         .with_size(px(14.0))
@@ -403,7 +397,7 @@ impl InstallerView {
                     .child(
                         div()
                             .text_xs()
-                            .text_color(cx.theme().muted_foreground.opacity(0.5))
+                            .text_color(cx.theme().muted_foreground)
                             .child(format!("v{}", env!("CARGO_PKG_VERSION"))),
                     ),
             )

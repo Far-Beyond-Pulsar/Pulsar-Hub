@@ -50,7 +50,7 @@ impl InstallerView {
                                         .px_2()
                                         .py(px(2.0))
                                         .rounded(px(4.0))
-                                        .bg(cx.theme().secondary.opacity(0.15))
+                                        .bg(cx.theme().secondary)
                                         .text_xs()
                                         .text_color(cx.theme().secondary)
                                         .child(format!("{}", self.installed_versions.len())),
@@ -113,7 +113,7 @@ impl InstallerView {
             .child(
                 Icon::new(IconName::Inbox)
                     .with_size(px(48.0))
-                    .text_color(cx.theme().muted_foreground.opacity(0.4)),
+                    .text_color(cx.theme().muted_foreground),
             )
             .child(
                 v_flex()
@@ -129,7 +129,7 @@ impl InstallerView {
                     .child(
                         gpui::div()
                             .text_sm()
-                            .text_color(cx.theme().muted_foreground.opacity(0.6))
+                            .text_color(cx.theme().muted_foreground)
                             .child("Install Pulsar to manage versions here."),
                     ),
             )
@@ -242,7 +242,7 @@ impl InstallerView {
                                     .rounded(px(10.0))
                                     .border_1()
                                     .border_color(border)
-                                    .bg(sidebar.opacity(0.5))
+                                    .bg(sidebar)
                                     // ── Engine icon + version ─────────────────
                                     .child(
                                         h_flex()
@@ -253,9 +253,9 @@ impl InstallerView {
                                                     .w(px(36.0))
                                                     .h(px(36.0))
                                                     .rounded(px(8.0))
-                                                        .bg(secondary.opacity(0.12))
+                                                        .bg(secondary)
                                                     .border_1()
-                                                        .border_color(secondary.opacity(0.3))
+                                                        .border_color(secondary)
                                                     .flex()
                                                     .items_center()
                                                     .justify_center()
@@ -280,7 +280,7 @@ impl InstallerView {
                                                             .px_2()
                                                             .py(px(1.0))
                                                             .rounded(px(4.0))
-                                                            .bg(secondary.opacity(0.1))
+                                                            .bg(secondary)
                                                             .text_xs()
                                                             .font_weight(FontWeight::MEDIUM)
                                                             .text_color(secondary)
@@ -314,7 +314,7 @@ impl InstallerView {
                                                         .px_2()
                                                         .py(px(2.0))
                                                         .rounded(px(4.0))
-                                                        .bg(warning.opacity(0.15))
+                                                        .bg(warning)
                                                         .text_xs()
                                                         .text_color(warning)
                                                         .child("Update"),
@@ -338,19 +338,19 @@ impl InstallerView {
                                                     .child(
                                                         gpui::div()
                                                             .text_xs()
-                                                            .text_color(muted.opacity(0.6))
+                                                            .text_color(muted)
                                                             .child(size_str),
                                                     )
                                                     .child(
                                                         gpui::div()
                                                             .text_xs()
-                                                            .text_color(muted.opacity(0.4))
+                                                            .text_color(muted)
                                                             .child("·"),
                                                     )
                                                     .child(
                                                         gpui::div()
                                                             .text_xs()
-                                                            .text_color(muted.opacity(0.6))
+                                                            .text_color(muted)
                                                             .child(date_str),
                                                     ),
                                             ),
@@ -406,7 +406,7 @@ impl InstallerView {
             .flex()
             .items_center()
             .justify_center()
-            .bg(gpui::black().opacity(0.5))
+            .bg(gpui::black())
             .child(
                 v_flex()
                     .w(px(360.0))

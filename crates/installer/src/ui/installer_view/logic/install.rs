@@ -33,7 +33,10 @@ impl InstallerView {
         self.install_failed = false;
         self.installed_path = None;
 
-        let prefer_app_bundle = self.macos_use_app_bundle;
+        #[cfg(target_os = "macos")]
+        let prefer_app_bundle = true;
+        #[cfg(not(target_os = "macos"))]
+        let prefer_app_bundle = false;
         let versions_root = InstallerView::normalize_versions_root(self.install_config.install_path.clone());
         if !InstallerView::path_in_legal_area(&versions_root) {
             let expected = InstallerView::default_versions_root();

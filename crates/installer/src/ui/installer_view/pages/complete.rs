@@ -38,15 +38,15 @@ impl InstallerView {
                             .items_center()
                             .justify_center()
                             .bg(if success {
-                                cx.theme().success.opacity(0.12)
+                                cx.theme().success
                             } else {
-                                cx.theme().danger.opacity(0.12)
+                                cx.theme().danger
                             })
                             .border_2()
                             .border_color(if success {
-                                cx.theme().success.opacity(0.4)
+                                cx.theme().success
                             } else {
-                                cx.theme().danger.opacity(0.4)
+                                cx.theme().danger
                             })
                             .child(
                                 Icon::new(if success {

@@ -10,7 +10,6 @@ use gpui_component::{
     checkbox::Checkbox,
     h_flex, v_flex,
 };
-use gpui::prelude::FluentBuilder;
 use super::super::{InstallerView, Page, SIDECAR_PACKAGES};
 
 impl InstallerView {
@@ -19,9 +18,6 @@ impl InstallerView {
         let desktop_shortcut = self.install_config.create_desktop_shortcut;
         let start_menu       = self.install_config.create_start_menu_shortcut;
         let add_to_path      = self.install_config.add_to_path;
-
-        #[cfg(target_os = "macos")]
-        let use_app_bundle = self.macos_use_app_bundle;
 
         v_flex()
             .size_full()
@@ -67,57 +63,6 @@ impl InstallerView {
                                     ),
                             ),
                     )
-                    // ── macOS: download-format picker ─────────────────────────
-                    .when(cfg!(target_os = "macos"), |el: gpui::Stateful<gpui::Div>| {
-                        #[cfg(target_os = "macos")]
-                        let use_bundle = use_app_bundle;
-                        #[cfg(not(target_os = "macos"))]
-                        let use_bundle = false;
-
-                        el.child(
-                            v_flex()
-                                .gap_3()
-                                .child(section_label("Download Format", cx))
-                                .child(
-                                    v_flex()
-                                        .gap_2()
-                                        // Binary (recommended)
-                                        .child(format_option_row(
-                                            "macos-format-binary",
-                                            "Binary",
-                                            Some(("Recommended", true)),
-                                            "Bare executable — smaller download, no Gatekeeper bundle issues.",
-                                            !use_bundle,
-                                            cx.listener(|this, _, _, cx| {
-                                                this.macos_use_app_bundle = false;
-                                                this.install_config.install_path =
-                                                    InstallerView::normalize_versions_root(
-                                                        this.install_config.install_path.clone(),
-                                                    );
-                                                cx.notify();
-                                            }),
-                                            cx,
-                                        ))
-                                        // .app Bundle (not recommended)
-                                        .child(format_option_row(
-                                            "macos-format-appbundle",
-                                            ".app Bundle",
-                                            Some(("Not Recommended", false)),
-                                            "Pre-built .app bundle — larger download, may require Gatekeeper approval.",
-                                            use_bundle,
-                                            cx.listener(|this, _, _, cx| {
-                                                this.macos_use_app_bundle = true;
-                                                this.install_config.install_path =
-                                                    InstallerView::normalize_versions_root(
-                                                        this.install_config.install_path.clone(),
-                                                    );
-                                                cx.notify();
-                                            }),
-                                            cx,
-                                        )),
-                                ),
-                        )
-                    })
                     // ── Optional sidecar packages ─────────────────────────────
                     .child({
                         let selected = self.selected_sidecars.clone();
@@ -300,99 +245,3 @@ fn option_row(
         )
 }
 
-/// A selectable radio-style row for the macOS download-format picker.
-/// `on_click` should be the result of `cx.listener(...)`.
-fn format_option_row(
-    id: &str,
-    label: &str,
-    badge: Option<(&str, bool)>, // (text, is_positive)
-    desc: &str,
-    selected: bool,
-    on_click: impl Fn(&gpui::ClickEvent, &mut gpui::Window, &mut gpui::App) + 'static,
-    cx: &mut gpui::Context<InstallerView>,
-) -> impl IntoElement {
-    h_flex()
-        .id(id.to_string())
-        .gap_3()
-        .p_3()
-        .rounded(px(8.0))
-        .border_1()
-        .border_color(if selected {
-            cx.theme().secondary.opacity(0.5)
-        } else {
-            cx.theme().border
-        })
-        .bg(if selected {
-            cx.theme().secondary.opacity(0.05)
-        } else {
-            cx.theme().sidebar.opacity(0.3)
-        })
-        .cursor_pointer()
-        .on_click(on_click)
-        // Radio indicator
-        .child(
-            gpui::div()
-                .w(px(16.0))
-                .h(px(16.0))
-                .rounded_full()
-                .border_2()
-                .border_color(cx.theme().secondary)
-                .flex()
-                .items_center()
-                .justify_center()
-                .when(selected, |e| {
-                    e.child(
-                        gpui::div()
-                            .w(px(8.0))
-                            .h(px(8.0))
-                            .rounded_full()
-                            .bg(cx.theme().secondary),
-                    )
-                }),
-        )
-        // Label + badge + description
-        .child(
-            v_flex()
-                .flex_1()
-                .gap(px(1.0))
-                .child(
-                    h_flex()
-                        .gap_2()
-                        .items_center()
-                        .child(
-                            gpui::div()
-                                .text_sm()
-                                .font_weight(FontWeight::MEDIUM)
-                                .text_color(cx.theme().foreground)
-                                .child(label.to_string()),
-                        )
-                        .when_some(badge, |el, (badge_text, positive)| {
-                            el.child(
-                                gpui::div()
-                                    .px_2()
-                                    .py(px(1.0))
-                                    .rounded(px(4.0))
-                                    .bg(if positive {
-                                        cx.theme().success.opacity(0.15)
-                                    } else {
-                                        cx.theme().warning.opacity(0.15)
-                                    })
-                                    .text_xs()
-                                    .font_weight(FontWeight::MEDIUM)
-                                    .text_color(if positive {
-                                        cx.theme().success
-                                    } else {
-                                        cx.theme().warning
-                                    })
-                                    .child(badge_text.to_string()),
-                            )
-                        }),
-                )
-                .child(
-                    gpui::div()
-                        .text_xs()
-                        .text_color(cx.theme().muted_foreground)
-                        .child(desc.to_string()),
-                ),
-        )
-}
