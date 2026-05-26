@@ -605,17 +605,7 @@ impl InstallerView {
         self.install_failed = false;
         self.installed_path = None;
         let prefer_app_bundle = self.macos_use_app_bundle;
-        // On macOS, binary mode uses a plain directory (no .app); strip the extension.
-        #[cfg(target_os = "macos")]
-        let install_dir = {
-            let base = self.install_config.install_path.clone();
-            if !prefer_app_bundle && base.extension() == Some(std::ffi::OsStr::new("app")) {
-                base.with_extension("")
-            } else {
-                base
-            }
-        };
-        #[cfg(not(target_os = "macos"))]
+        // install_config.install_path is already correct (updated live by the format picker).
         let install_dir = self.install_config.install_path.clone();
         let selected_sidecars = self.selected_sidecars.clone();
         // Build sidecar install dirs as siblings of the engine dir.
@@ -2100,6 +2090,11 @@ impl InstallerView {
                                                 .cursor_pointer()
                                                 .on_click(cx.listener(|this, _, _, cx| {
                                                     this.macos_use_app_bundle = false;
+                                                    // Strip .app from the install path for binary mode.
+                                                    #[cfg(target_os = "macos")]
+                                                    if this.install_config.install_path.extension() == Some(std::ffi::OsStr::new("app")) {
+                                                        this.install_config.install_path = this.install_config.install_path.with_extension("");
+                                                    }
                                                     cx.notify();
                                                 }))
                                                 .child(
@@ -2182,6 +2177,14 @@ impl InstallerView {
                                                 .cursor_pointer()
                                                 .on_click(cx.listener(|this, _, _, cx| {
                                                     this.macos_use_app_bundle = true;
+                                                    // Restore .app extension for bundle mode.
+                                                    #[cfg(target_os = "macos")]
+                                                    if this.install_config.install_path.extension() != Some(std::ffi::OsStr::new("app")) {
+                                                        let p = this.install_config.install_path.clone();
+                                                        this.install_config.install_path = p.with_file_name(
+                                                            format!("{}.app", p.file_name().and_then(|n| n.to_str()).unwrap_or("Pulsar"))
+                                                        );
+                                                    }
                                                     cx.notify();
                                                 }))
                                                 .child(
