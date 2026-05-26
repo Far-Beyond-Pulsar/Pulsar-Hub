@@ -10,6 +10,7 @@ pub enum Page {
     Welcome,
     License,
     VersionSelection,
+    ReleaseNotes,
     InstallOptions,
     Installing,
     Complete,
@@ -24,9 +25,10 @@ impl Page {
             Page::Welcome          => Some(0),
             Page::License          => Some(1),
             Page::VersionSelection => Some(2),
-            Page::InstallOptions   => Some(3),
-            Page::Installing       => Some(4),
-            Page::Complete         => Some(5),
+            Page::ReleaseNotes     => Some(3),
+            Page::InstallOptions   => Some(4),
+            Page::Installing       => Some(5),
+            Page::Complete         => Some(6),
             Page::VersionsManager  => None,
         }
     }
@@ -36,6 +38,7 @@ impl Page {
             Page::Welcome          => "Welcome",
             Page::License          => "License",
             Page::VersionSelection => "Select Version",
+            Page::ReleaseNotes     => "Release Notes",
             Page::InstallOptions   => "Install Options",
             Page::Installing       => "Installing",
             Page::Complete         => "Complete",
@@ -48,6 +51,7 @@ impl Page {
             Page::Welcome          => IconName::Bot,
             Page::License          => IconName::BookOpen,
             Page::VersionSelection => IconName::Github,
+            Page::ReleaseNotes     => IconName::Notes,
             Page::InstallOptions   => IconName::Settings,
             Page::Installing       => IconName::HardDrive,
             Page::Complete         => IconName::CircleCheck,
@@ -57,10 +61,11 @@ impl Page {
 }
 
 /// Ordered wizard steps (excludes `VersionsManager`).
-pub const WIZARD_STEPS: [Page; 6] = [
+pub const WIZARD_STEPS: [Page; 7] = [
     Page::Welcome,
     Page::License,
     Page::VersionSelection,
+    Page::ReleaseNotes,
     Page::InstallOptions,
     Page::Installing,
     Page::Complete,
@@ -87,6 +92,7 @@ pub const SIDECAR_PACKAGES: &[(&str, &str, &str)] = &[
 pub struct ReleaseInfo {
     pub tag_name: String,
     pub name: String,
+    pub body: String,
     pub prerelease: bool,
 }
 

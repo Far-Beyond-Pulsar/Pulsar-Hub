@@ -185,6 +185,7 @@ fn map_releases(releases: Vec<crate::download::GitHubRelease>) -> Vec<ReleaseInf
         .map(|r| ReleaseInfo {
             tag_name: r.tag_name,
             name: r.name,
+            body: r.body,
             prerelease: r.prerelease,
         })
         .collect()

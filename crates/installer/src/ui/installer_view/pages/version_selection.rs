@@ -109,7 +109,7 @@ impl InstallerView {
                             .label("Next →")
                             .disabled(!has_selection)
                             .on_click(cx.listener(|this, _, window, cx| {
-                                this.navigate_to(Page::InstallOptions, window, cx);
+                                this.navigate_to(Page::ReleaseNotes, window, cx);
                             })),
                     ),
             )

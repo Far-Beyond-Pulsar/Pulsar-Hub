@@ -121,7 +121,7 @@ impl Focusable for InstallerView {
 }
 
 impl Render for InstallerView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .size_full()
             .bg(cx.theme().background)
@@ -133,7 +133,7 @@ impl Render for InstallerView {
                     .flex_1()
                     .overflow_hidden()
                     .child(self.render_sidebar(cx))
-                    .child(self.render_main_content(cx)),
+                    .child(self.render_main_content(window, cx)),
             )
     }
 }
@@ -403,7 +403,7 @@ impl InstallerView {
             )
     }
 
-    fn render_main_content(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render_main_content(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .flex_1()
             .h_full()
@@ -415,6 +415,7 @@ impl InstallerView {
                 Page::Welcome          => el.child(self.render_welcome(cx)),
                 Page::License          => el.child(self.render_license(cx)),
                 Page::VersionSelection => el.child(self.render_version_selection(cx)),
+                Page::ReleaseNotes     => el.child(self.render_release_notes(window, cx)),
                 Page::InstallOptions   => el.child(self.render_install_options(cx)),
                 Page::Installing       => el.child(self.render_installing(cx)),
                 Page::Complete         => el.child(self.render_complete(cx)),

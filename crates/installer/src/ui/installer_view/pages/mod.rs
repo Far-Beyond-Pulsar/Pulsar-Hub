@@ -4,6 +4,7 @@ pub mod complete;
 pub mod install_options;
 pub mod installing;
 pub mod license;
+pub mod release_notes;
 pub mod shared;
 pub mod version_selection;
 pub mod versions_manager;
