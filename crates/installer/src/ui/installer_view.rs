@@ -810,13 +810,18 @@ impl InstallerView {
             let dest = install_dir.join("pulsar.exe");
             fs::copy(archive_path, &dest).map_err(crate::error::InstallerError::Io)?;
         } else {
-            let dest = install_dir.join("pulsar");
-            fs::copy(archive_path, &dest).map_err(crate::error::InstallerError::Io)?;
-            #[cfg(unix)]
+            // On macOS we build a proper .app bundle below via MacOSInstaller;
+            // do NOT pre-copy the raw binary into the bundle root here.
+            #[cfg(not(target_os = "macos"))]
             {
-                use std::os::unix::fs::PermissionsExt;
-                fs::set_permissions(&dest, fs::Permissions::from_mode(0o755))
-                    .map_err(crate::error::InstallerError::Io)?;
+                let dest = install_dir.join("pulsar");
+                fs::copy(archive_path, &dest).map_err(crate::error::InstallerError::Io)?;
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    fs::set_permissions(&dest, fs::Permissions::from_mode(0o755))
+                        .map_err(crate::error::InstallerError::Io)?;
+                }
             }
         }
 
@@ -851,12 +856,13 @@ impl InstallerView {
                 use crate::platform::MacOSInstaller;
                 use crate::traits::{Progress as Prog, ProgressCallback};
                 let binary_name = "pulsar".to_string();
-                let source_binary = install_dir.join("Contents").join("MacOS").join(&binary_name);
+                // Use the downloaded archive directly as the binary source —
+                // MacOSInstaller will create the bundle structure and copy it in.
                 let installer = MacOSInstaller::new(install_dir.clone(), version.to_string(), binary_name);
                 let progress: ProgressCallback = Box::new(|p: Prog| {
                     tracing::info!("[{}%] {}", p.current, p.message.unwrap_or(""));
                 });
-                installer.install(&source_binary, progress).await?;
+                installer.install(archive_path, progress).await?;
             }
         }
 
