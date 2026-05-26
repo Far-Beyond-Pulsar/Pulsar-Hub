@@ -512,12 +512,17 @@ impl InstallerView {
     pub fn uninstall_version(&mut self, index: usize, cx: &mut Context<Self>) {
         if let Some(ver) = self.installed_versions.get(index) {
             let path = ver.metadata.install_path.clone();
+            let delete_path = if path.extension() == Some(std::ffi::OsStr::new("app")) {
+                path.parent().map(|p| p.to_path_buf()).unwrap_or(path.clone())
+            } else {
+                path.clone()
+            };
             self.uninstall_confirm = None;
             cx.notify();
 
             cx.spawn(async move |this, cx| {
                 let path_for_retain = path.clone();
-                let result = smol::unblock(move || std::fs::remove_dir_all(&path)).await;
+                let result = smol::unblock(move || std::fs::remove_dir_all(&delete_path)).await;
                 match result {
                     Ok(_) => {
                         this.update(cx, |v, cx| {
@@ -661,14 +666,35 @@ impl InstallerView {
         self.install_failed = false;
         self.installed_path = None;
         let prefer_app_bundle = self.macos_use_app_bundle;
-        // install_config.install_path is already correct (updated live by the format picker).
-        let install_dir = self.install_config.install_path.clone();
+        let selected_version = release_info.tag_name.clone();
+        let version_dir = selected_version
+            .trim()
+            .trim_start_matches('v')
+            .replace('/', "_")
+            .replace(':', "_")
+            .replace(' ', "_");
+        let base_path = self.install_config.install_path.clone();
+
+        // Version-managed layout: one folder per release version.
+        #[cfg(target_os = "macos")]
+        let (install_dir, version_root) = {
+            let is_app_path = base_path.extension() == Some(std::ffi::OsStr::new("app"));
+            let versions_root = if is_app_path { base_path.with_extension("") } else { base_path.clone() };
+            let root = versions_root.join(&version_dir);
+            let engine_dir = if prefer_app_bundle { root.join("Pulsar.app") } else { root.clone() };
+            (engine_dir, root)
+        };
+
+        #[cfg(not(target_os = "macos"))]
+        let (install_dir, version_root) = {
+            let root = base_path.join(&version_dir);
+            (root.clone(), root)
+        };
+
         let selected_sidecars = self.selected_sidecars.clone();
-        // Build sidecar install dirs as siblings of the engine dir.
+        // Sidecars are colocated with each version install.
         let sidecar_specs: Vec<(String, PathBuf)> = selected_sidecars.iter().map(|id| {
-            let sidecar_dir = install_dir.parent()
-                .map(|p| p.join(id.as_str()))
-                .unwrap_or_else(|| install_dir.join("sidecars").join(id.as_str()));
+            let sidecar_dir = version_root.join(id.as_str());
             (id.clone(), sidecar_dir)
         }).collect();
         cx.notify();

@@ -32,11 +32,42 @@ pub struct InstalledVersion {
 /// installation found there.
 pub fn scan_installed_versions() -> Vec<InstalledVersion> {
     let mut results = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+
     for root in platform_search_roots() {
+        if !root.exists() {
+            continue;
+        }
+
+        // New layout: discover all installs by metadata file under this root.
+        for entry in WalkDir::new(&root).into_iter().filter_map(|e| e.ok()) {
+            if !entry.file_type().is_file() {
+                continue;
+            }
+            if entry.file_name() != ".pulsar-install.json" {
+                continue;
+            }
+            let Some(dir) = entry.path().parent() else {
+                continue;
+            };
+            if let Some(ver) = try_load_from_dir(dir) {
+                let key = ver.metadata.install_path.clone();
+                if seen.insert(key) {
+                    results.push(ver);
+                }
+            }
+        }
+
+        // Legacy layout fallback: allow direct root install without metadata walk hit.
         if let Some(ver) = try_load_from_dir(&root) {
-            results.push(ver);
+            let key = ver.metadata.install_path.clone();
+            if seen.insert(key) {
+                results.push(ver);
+            }
         }
     }
+
+    results.sort_by(|a, b| b.metadata.install_date.cmp(&a.metadata.install_date));
     results
 }
 
@@ -87,10 +118,16 @@ fn platform_search_roots() -> Vec<PathBuf> {
     let home = dirs::home_dir().unwrap_or_default();
 
     #[cfg(target_os = "macos")]
-    return vec![
-        PathBuf::from("/Applications/Pulsar.app"),
-        home.join("Applications").join("Pulsar.app"),
-    ];
+    {
+        return vec![
+            // Version-managed roots
+            PathBuf::from("/Applications/Pulsar"),
+            home.join("Applications").join("Pulsar"),
+            // Legacy single-install roots
+            PathBuf::from("/Applications/Pulsar.app"),
+            home.join("Applications").join("Pulsar.app"),
+        ];
+    }
 
     #[cfg(windows)]
     {
@@ -108,7 +145,10 @@ fn platform_search_roots() -> Vec<PathBuf> {
         home.join(".local").join("bin").join("pulsar"),
     ];
 
-    vec![]  // fallback for unsupported platforms
+    #[cfg(not(any(target_os = "macos", windows, target_os = "linux")))]
+    {
+        vec![] // fallback for unsupported platforms
+    }
 }
 
 /// Recursively sum the size of every regular file under `path`.
