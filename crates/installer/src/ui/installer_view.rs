@@ -86,6 +86,13 @@ const WIZARD_STEPS: [Page; 6] = [
     Page::Complete,
 ];
 
+/// Optional sidecar packages that can be co-installed with the engine.
+/// Each entry is `(asset_prefix, display_name, description)`.
+pub const SIDECAR_PACKAGES: &[(&str, &str, &str)] = &[
+    ("pulsar-host",      "Pulsar Host",      "Host process for spawning and managing engine instances."),
+    ("pulsar-multiedit", "Pulsar Multi-Edit", "Multi-user concurrent editing extension."),
+];
+
 // ─── Data types ───────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone)]
@@ -153,6 +160,8 @@ pub struct InstallerView {
     /// When true, prefer the pre-built .app.zip bundle; otherwise prefer the
     /// bare binary (recommended — smaller, no Gatekeeper bundle issues).
     pub macos_use_app_bundle: bool,
+    /// IDs of optional sidecar packages to co-install (e.g. "pulsar-host").
+    pub selected_sidecars: Vec<String>,
 }
 
 // ─── Constructor ──────────────────────────────────────────────────────────────
@@ -198,6 +207,7 @@ impl InstallerView {
             uninstall_confirm: None,
             // macOS asset preference
             macos_use_app_bundle: false,
+            selected_sidecars: Vec::new(),
         }
     }
 
@@ -530,7 +540,7 @@ impl InstallerView {
     /// Pick the best asset from a release for the current OS + arch.
     /// On macOS, `prefer_app_bundle` selects the `.app.zip` when `true`;
     /// otherwise the bare binary is preferred (recommended).
-    fn select_asset(assets: &[GitHubAsset], #[allow(unused_variables)] prefer_app_bundle: bool) -> Option<GitHubAsset> {
+    fn select_asset_for(prefix: &str, assets: &[GitHubAsset], #[allow(unused_variables)] prefer_app_bundle: bool) -> Option<GitHubAsset> {
         let os_token = match std::env::consts::OS {
             "linux"   => "linux",
             "macos"   => "macos",
@@ -552,7 +562,7 @@ impl InstallerView {
             .iter()
             .filter(|a| {
                 let n = &a.name;
-                !n.ends_with(".sig") && n.contains(os_token) && n.contains(arch_token)
+                !n.ends_with(".sig") && n.starts_with(prefix) && n.contains(os_token) && n.contains(arch_token)
             })
             .collect();
         tracing::info!(
@@ -607,6 +617,14 @@ impl InstallerView {
         };
         #[cfg(not(target_os = "macos"))]
         let install_dir = self.install_config.install_path.clone();
+        let selected_sidecars = self.selected_sidecars.clone();
+        // Build sidecar install dirs as siblings of the engine dir.
+        let sidecar_specs: Vec<(String, PathBuf)> = selected_sidecars.iter().map(|id| {
+            let sidecar_dir = install_dir.parent()
+                .map(|p| p.join(id.as_str()))
+                .unwrap_or_else(|| install_dir.join("sidecars").join(id.as_str()));
+            (id.clone(), sidecar_dir)
+        }).collect();
         cx.notify();
 
         cx.spawn(async move |this, cx| {
@@ -632,7 +650,7 @@ impl InstallerView {
                 Ok(releases) => {
                     match releases.into_iter().find(|r| r.tag_name == release_info.tag_name) {
                         Some(rel) => {
-                            match Self::select_asset(&rel.assets, prefer_app_bundle) {
+                            match Self::select_asset_for("pulsar_engine", &rel.assets, prefer_app_bundle) {
                                 Some(a) => (rel, a),
                                 None => {
                                     this.update(cx, |v, cx| {
@@ -721,6 +739,48 @@ impl InstallerView {
                         Ok(()) => {
                             // Write install metadata
                             let _ = write_metadata(&install_dir, &release_info.tag_name);
+
+                            // Install optional sidecar packages sequentially
+                            for (sidecar_id, sidecar_dir) in &sidecar_specs {
+                                match Self::select_asset_for(sidecar_id, &full_release.assets, false) {
+                                    Some(scar_asset) => {
+                                        let scar_name = scar_asset.name.clone();
+                                        let scar_url = scar_asset.browser_download_url.clone();
+                                        let scar_path = download_dir.join(&scar_name);
+                                        this.update(cx, |v, cx| {
+                                            v.log(LogLevel::Info, format!("Downloading {} ({})", scar_name, Self::format_bytes(scar_asset.size)), cx);
+                                            v.install_message = format!("Downloading {}…", sidecar_id);
+                                            cx.notify();
+                                        }).ok();
+                                        match download_manager.download(&scar_url, &scar_path, Box::new(|_| {})).await {
+                                            Ok(_) => {
+                                                match Self::install_sidecar_binary(&scar_path, sidecar_dir, sidecar_id).await {
+                                                    Ok(()) => {
+                                                        this.update(cx, |v, cx| {
+                                                            v.log(LogLevel::Success, format!("{} → {}", sidecar_id, sidecar_dir.display()), cx);
+                                                        }).ok();
+                                                    }
+                                                    Err(e) => {
+                                                        this.update(cx, |v, cx| {
+                                                            v.log(LogLevel::Warning, format!("{} install failed: {e}", sidecar_id), cx);
+                                                        }).ok();
+                                                    }
+                                                }
+                                            }
+                                            Err(e) => {
+                                                this.update(cx, |v, cx| {
+                                                    v.log(LogLevel::Warning, format!("{} download failed: {e}", sidecar_id), cx);
+                                                }).ok();
+                                            }
+                                        }
+                                    }
+                                    None => {
+                                        this.update(cx, |v, cx| {
+                                            v.log(LogLevel::Warning, format!("No {} asset for this platform, skipping.", sidecar_id), cx);
+                                        }).ok();
+                                    }
+                                }
+                            }
 
                             this.update(cx, |v, cx| {
                                 v.install_progress = 100.0;
@@ -905,6 +965,39 @@ impl InstallerView {
         }
 
         Ok(())
+    }
+
+    /// Install a sidecar binary into `install_dir/{binary_name}` (or `.exe` on Windows).
+    /// No bundle wrapping — sidecars are plain executables.
+    async fn install_sidecar_binary(
+        archive_path: &PathBuf,
+        install_dir: &PathBuf,
+        binary_name: &str,
+    ) -> crate::error::Result<()> {
+        let archive_path = archive_path.clone();
+        let install_dir = install_dir.clone();
+        let binary_name = binary_name.to_string();
+        smol::unblock(move || {
+            use std::fs;
+            fs::create_dir_all(&install_dir).map_err(crate::error::InstallerError::Io)?;
+            let archive_name = archive_path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string();
+            let dest = if archive_name.ends_with(".exe") {
+                install_dir.join(format!("{}.exe", binary_name))
+            } else {
+                install_dir.join(&binary_name)
+            };
+            fs::copy(&archive_path, &dest).map_err(crate::error::InstallerError::Io)?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                fs::set_permissions(&dest, fs::Permissions::from_mode(0o755))
+                    .map_err(crate::error::InstallerError::Io)?;
+                let _ = std::process::Command::new("xattr")
+                    .args(["-d", "com.apple.quarantine", &dest.to_string_lossy().as_ref()])
+                    .output();
+            }
+            Ok(())
+        }).await
     }
 }
 
