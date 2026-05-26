@@ -2242,6 +2242,56 @@ impl InstallerView {
                                 ),
                         )
                     })
+                    // Optional components
+                    .child({
+                        let selected = self.selected_sidecars.clone();
+                        v_flex()
+                            .gap_3()
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .text_color(cx.theme().foreground)
+                                    .child("Optional Components"),
+                            )
+                            .children(SIDECAR_PACKAGES.iter().enumerate().map(|(i, (id, name, desc))| {
+                                let id_str = id.to_string();
+                                let is_checked = selected.contains(&id_str);
+                                let id_for_cb = id_str.clone();
+                                h_flex()
+                                    .gap_3()
+                                    .items_center()
+                                    .child(
+                                        Checkbox::new(format!("sidecar-cb-{i}"))
+                                            .checked(is_checked)
+                                            .on_click(cx.listener(move |this, checked: &bool, _, cx| {
+                                                if *checked {
+                                                    if !this.selected_sidecars.contains(&id_for_cb) {
+                                                        this.selected_sidecars.push(id_for_cb.clone());
+                                                    }
+                                                } else {
+                                                    this.selected_sidecars.retain(|s| s != &id_for_cb);
+                                                }
+                                                cx.notify();
+                                            })),
+                                    )
+                                    .child(
+                                        v_flex()
+                                            .child(
+                                                div()
+                                                    .text_sm()
+                                                    .text_color(cx.theme().foreground)
+                                                    .child(*name),
+                                            )
+                                            .child(
+                                                div()
+                                                    .text_xs()
+                                                    .text_color(cx.theme().muted_foreground)
+                                                    .child(*desc),
+                                            ),
+                                    )
+                            }))
+                    })
                     // Options
                     .child(
                         v_flex()
