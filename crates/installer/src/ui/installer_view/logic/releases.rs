@@ -90,6 +90,112 @@ impl InstallerView {
         cx.notify();
     }
 
+    /// Release notes markdown for the currently selected release.
+    pub fn selected_release_notes_markdown(&self) -> String {
+        self.selected_release_idx
+            .and_then(|idx| self.releases.get(idx))
+            .map(|r| r.body.clone())
+            .filter(|body| !body.trim().is_empty())
+            .unwrap_or_else(|| "No release notes available for this version.".to_string())
+    }
+
+    /// Open a centered release-notes modal for the currently selected release.
+    pub fn open_release_notes_modal_for_selected(
+        &mut self,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(idx) = self.selected_release_idx else {
+            return;
+        };
+        let Some(release) = self.releases.get(idx) else {
+            return;
+        };
+
+        self.release_notes_modal = Some(super::super::ReleaseNotesModal {
+            title: format!("Release Notes · {}", release.tag_name),
+            markdown: self.selected_release_notes_markdown(),
+        });
+        cx.notify();
+    }
+
+    /// Release notes markdown for an installed version.
+    ///
+    /// This reads from the cached GitHub releases list already loaded in memory.
+    pub fn release_notes_markdown_for_version(&self, version: &str) -> String {
+        self.find_release_index_by_version(version)
+            .and_then(|idx| self.releases.get(idx))
+            .map(|r| r.body.clone())
+            .filter(|body| !body.trim().is_empty())
+            .unwrap_or_else(|| {
+                format!(
+                    "No release notes are cached for `{version}` yet.\n\nSelect this version in the installer flow to load release metadata."
+                )
+            })
+    }
+
+    /// Open a centered release-notes modal for an installed version.
+    ///
+    /// Uses cached release metadata first, then fetches all releases on demand.
+    pub fn open_release_notes_modal_for_version(
+        &mut self,
+        version: String,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(idx) = self.find_release_index_by_version(&version) {
+            let release = &self.releases[idx];
+            self.release_notes_modal = Some(super::super::ReleaseNotesModal {
+                title: format!("Release Notes · {}", release.tag_name),
+                markdown: self.release_notes_markdown_for_version(&version),
+            });
+            cx.notify();
+            return;
+        }
+
+        self.loading_releases = true;
+        cx.notify();
+
+        cx.spawn(async move |this, cx| {
+            let github = GitHubReleases::new(GITHUB_ORG, GITHUB_REPO);
+            match github.get_all_releases().await {
+                Ok(releases) => {
+                    let infos = map_releases(releases);
+                    this.update(cx, |v, cx| {
+                        v.releases = infos;
+                        v.loading_releases = false;
+                        v.release_notes_modal = Some(super::super::ReleaseNotesModal {
+                            title: format!("Release Notes · {}", version),
+                            markdown: v.release_notes_markdown_for_version(&version),
+                        });
+                        cx.notify();
+                    })
+                    .ok();
+                }
+                Err(e) => {
+                    tracing::error!("Failed to fetch releases for release-notes modal: {e}");
+                    this.update(cx, |v, cx| {
+                        v.loading_releases = false;
+                        v.release_notes_modal = Some(super::super::ReleaseNotesModal {
+                            title: format!("Release Notes · {}", version),
+                            markdown: "Failed to fetch release notes from GitHub.".to_string(),
+                        });
+                        cx.notify();
+                    })
+                    .ok();
+                }
+            }
+        })
+        .detach();
+    }
+
+    fn find_release_index_by_version(&self, version: &str) -> Option<usize> {
+        let wanted = normalize_release_key(version);
+        self.releases
+            .iter()
+            .position(|r| normalize_release_key(&r.tag_name) == wanted)
+    }
+
     // ─── Asset selection ──────────────────────────────────────────────────────
 
     /// Pick the best release asset for a given package `prefix` + current OS/arch.
@@ -178,6 +284,10 @@ impl InstallerView {
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+fn normalize_release_key(version: &str) -> String {
+    version.trim().trim_start_matches(['v', 'V']).to_ascii_lowercase()
+}
 
 fn map_releases(releases: Vec<crate::download::GitHubRelease>) -> Vec<ReleaseInfo> {
     releases

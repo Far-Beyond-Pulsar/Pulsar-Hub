@@ -104,13 +104,27 @@ impl InstallerView {
                             })),
                     )
                     .child(
-                        Button::new("vs-next-btn")
-                            .primary()
-                            .label("Next →")
-                            .disabled(!has_selection)
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.navigate_to(Page::ReleaseNotes, window, cx);
-                            })),
+                        h_flex()
+                            .gap_2()
+                            .items_center()
+                            .child(
+                                Button::new("vs-notes-btn")
+                                    .outline()
+                                    .label("Release Notes")
+                                    .disabled(!has_selection)
+                                    .on_click(cx.listener(|this, _, window, cx| {
+                                        this.open_release_notes_modal_for_selected(window, cx);
+                                    })),
+                            )
+                            .child(
+                                Button::new("vs-next-btn")
+                                    .primary()
+                                    .label("Next →")
+                                    .disabled(!has_selection)
+                                    .on_click(cx.listener(|this, _, window, cx| {
+                                        this.navigate_to(Page::InstallOptions, window, cx);
+                                    })),
+                            ),
                     ),
             )
     }

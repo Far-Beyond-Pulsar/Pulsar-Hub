@@ -1,16 +1,18 @@
 //! Versions-manager page — card grid of installed engines with launch / remove actions.
 
 use gpui::{
-    Context, FontWeight, IntoElement, InteractiveElement as _,
+    Context, Corner, FontWeight, IntoElement, InteractiveElement as _,
     ParentElement, StatefulInteractiveElement as _, Styled, px,
 };
 use gpui_component::{
     ActiveTheme, Sizable as _,
     button::{Button, ButtonVariants as _},
     h_flex, v_flex,
+    menu::PopupMenuItem,
     Icon, IconName,
 };
 use gpui::prelude::FluentBuilder;
+use std::rc::Rc;
 use std::path::Path;
 use crate::installed_versions::InstalledVersion;
 use super::super::{InstallerView, Page, SIDECAR_PACKAGES};
@@ -165,6 +167,7 @@ impl InstallerView {
             .enumerate()
             .map(|(idx, ver)| {
                 let path = ver.metadata.install_path.clone();
+                let version = ver.metadata.version.clone();
                 let path_open   = path.clone();
                 let path_launch = path.clone();
                 (
@@ -177,6 +180,9 @@ impl InstallerView {
                     cx.listener(move |this, _, _, cx| {
                         this.uninstall_confirm = Some(idx);
                         cx.notify();
+                    }),
+                    cx.listener(move |this, _, window, cx| {
+                        this.open_release_notes_modal_for_version(version.clone(), window, cx);
                     }),
                 )
             })
@@ -224,7 +230,7 @@ impl InstallerView {
                             .zip(listeners)
                             .zip(sidecar_actions)
                             .enumerate()
-                            .map(|(idx, ((ver, (on_launch, on_open, on_remove)), sidecars))| {
+                            .map(|(idx, ((ver, (on_launch, on_open, on_remove, on_show_notes)), sidecars))| {
                                 let size_str    = InstallerView::format_bytes(ver.disk_size_bytes);
                                 let version_str = ver.metadata.version.clone();
                                 let date_str    = if ver.metadata.install_date.is_empty() {
@@ -234,6 +240,7 @@ impl InstallerView {
                                 };
                                 let path_label = ver.metadata.install_path.display().to_string();
                                 let has_update = ver.update_available;
+                                let on_show_notes = Rc::new(on_show_notes);
 
                                 v_flex()
                                     .w(px(280.0))
@@ -307,6 +314,23 @@ impl InstallerView {
                                                             .on_click(on_click)
                                                         },
                                                     )),
+                                            )
+                                            .child(
+                                                Button::new(format!("vm-menu-{idx}"))
+                                                    .ghost()
+                                                    .small()
+                                                    .compact()
+                                                    .icon(IconName::Ellipsis)
+                                                    .tooltip("More")
+                                                    .dropdown_menu_with_anchor(Corner::TopRight, move |menu, _, _| {
+                                                        let on_show_notes = on_show_notes.clone();
+                                                        menu.item(
+                                                            PopupMenuItem::new("Release Notes")
+                                                                .on_click(move |event, window, cx| {
+                                                                    (on_show_notes)(event, window, cx);
+                                                                }),
+                                                        )
+                                                    }),
                                             )
                                             .when(has_update, |e| {
                                                 e.child(

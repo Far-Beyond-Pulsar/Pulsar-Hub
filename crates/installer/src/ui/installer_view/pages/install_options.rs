@@ -183,7 +183,7 @@ impl InstallerView {
                             .outline()
                             .label("← Back")
                             .on_click(cx.listener(|this, _, window, cx| {
-                                this.navigate_to(Page::ReleaseNotes, window, cx);
+                                this.navigate_to(Page::VersionSelection, window, cx);
                             })),
                     )
                     .child(
