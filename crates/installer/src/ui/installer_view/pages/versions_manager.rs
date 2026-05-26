@@ -6,13 +6,13 @@ use gpui::{
 };
 use gpui_component::{
     ActiveTheme, Sizable as _,
+    ContextModal as _,
     button::{Button, ButtonVariants as _},
     h_flex, v_flex,
     menu::PopupMenuItem,
     Icon, IconName,
 };
 use gpui::prelude::FluentBuilder;
-use std::rc::Rc;
 use std::path::Path;
 use crate::installed_versions::InstalledVersion;
 use super::super::{InstallerView, Page, SIDECAR_PACKAGES};
@@ -167,7 +167,6 @@ impl InstallerView {
             .enumerate()
             .map(|(idx, ver)| {
                 let path = ver.metadata.install_path.clone();
-                let version = ver.metadata.version.clone();
                 let path_open   = path.clone();
                 let path_launch = path.clone();
                 (
@@ -180,9 +179,6 @@ impl InstallerView {
                     cx.listener(move |this, _, _, cx| {
                         this.uninstall_confirm = Some(idx);
                         cx.notify();
-                    }),
-                    cx.listener(move |this, _, window, cx| {
-                        this.open_release_notes_modal_for_version(version.clone(), window, cx);
                     }),
                 )
             })
@@ -230,7 +226,7 @@ impl InstallerView {
                             .zip(listeners)
                             .zip(sidecar_actions)
                             .enumerate()
-                            .map(|(idx, ((ver, (on_launch, on_open, on_remove, on_show_notes)), sidecars))| {
+                            .map(|(idx, ((ver, (on_launch, on_open, on_remove)), sidecars))| {
                                 let size_str    = InstallerView::format_bytes(ver.disk_size_bytes);
                                 let version_str = ver.metadata.version.clone();
                                 let date_str    = if ver.metadata.install_date.is_empty() {
@@ -240,7 +236,8 @@ impl InstallerView {
                                 };
                                 let path_label = ver.metadata.install_path.display().to_string();
                                 let has_update = ver.update_available;
-                                let on_show_notes = Rc::new(on_show_notes);
+                                let notes_title = format!("Release Notes · {}", version_str);
+                                let notes_md = self.release_notes_markdown_for_version(&version_str);
 
                                 v_flex()
                                     .w(px(280.0))
@@ -323,11 +320,41 @@ impl InstallerView {
                                                     .icon(IconName::Ellipsis)
                                                     .tooltip("More")
                                                     .dropdown_menu_with_anchor(Corner::TopRight, move |menu, _, _| {
-                                                        let on_show_notes = on_show_notes.clone();
+                                                        tracing::debug!(
+                                                            "release-notes: building context menu for installed version card idx={} title='{}' markdown_len={}",
+                                                            idx,
+                                                            notes_title,
+                                                            notes_md.len()
+                                                        );
+                                                        let notes_title = notes_title.clone();
+                                                        let notes_md = notes_md.clone();
                                                         menu.item(
                                                             PopupMenuItem::new("Release Notes")
-                                                                .on_click(move |event, window, cx| {
-                                                                    (on_show_notes)(event, window, cx);
+                                                                .on_click(move |_, window, cx| {
+                                                                    tracing::info!(
+                                                                        "release-notes: context-menu click for idx={} title='{}' markdown_len={} has_active_modal_before={}",
+                                                                        idx,
+                                                                        notes_title,
+                                                                        notes_md.len(),
+                                                                        window.has_active_modal(cx)
+                                                                    );
+                                                                    let deferred_title = notes_title.clone();
+                                                                    let deferred_md = notes_md.clone();
+                                                                    window.defer(cx, move |window, cx| {
+                                                                        tracing::info!(
+                                                                            "release-notes: deferred modal open for idx={} title='{}' markdown_len={} has_active_modal_before={}",
+                                                                            idx,
+                                                                            deferred_title,
+                                                                            deferred_md.len(),
+                                                                            window.has_active_modal(cx)
+                                                                        );
+                                                                        InstallerView::show_release_notes_modal(
+                                                                            window,
+                                                                            cx,
+                                                                            deferred_title.clone(),
+                                                                            deferred_md.clone(),
+                                                                        );
+                                                                    });
                                                                 }),
                                                         )
                                                     }),

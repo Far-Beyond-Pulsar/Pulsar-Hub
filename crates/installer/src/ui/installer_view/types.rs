@@ -91,12 +91,6 @@ pub struct ReleaseInfo {
     pub prerelease: bool,
 }
 
-#[derive(Debug, Clone)]
-pub struct ReleaseNotesModal {
-    pub title: String,
-    pub markdown: String,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LogLevel {
     Info,

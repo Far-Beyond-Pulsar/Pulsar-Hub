@@ -397,6 +397,73 @@ impl Render for Root {
         let base_font_size = cx.theme().font_size;
         window.set_rem_size(base_font_size);
 
+        let drawer_layer = if let Some(active_drawer) = self.active_drawer.clone() {
+            let mut drawer = Drawer::new(window, cx);
+            drawer = (active_drawer.builder)(drawer, window, cx);
+            drawer.focus_handle = active_drawer.focus_handle.clone();
+            drawer.placement = active_drawer.placement;
+            self.drawer_size = Some(drawer.size);
+            Some(div().relative().child(drawer).into_any_element())
+        } else {
+            self.drawer_size = None;
+            None
+        };
+
+        let modal_layer = if self.active_modals.is_empty() {
+            None
+        } else {
+            let mut show_overlay_ix = None;
+            let mut modals = self
+                .active_modals
+                .iter()
+                .enumerate()
+                .map(|(i, active_modal)| {
+                    let mut modal = Modal::new(window, cx);
+                    modal = (active_modal.builder)(modal, window, cx);
+                    modal.focus_handle = active_modal.focus_handle.clone();
+                    modal.layer_ix = i;
+                    if modal.has_overlay() {
+                        show_overlay_ix = Some(i);
+                    }
+                    modal
+                })
+                .collect::<Vec<_>>();
+
+            if let Some(ix) = show_overlay_ix {
+                if let Some(modal) = modals.get_mut(ix) {
+                    modal.overlay_visible = true;
+                }
+            }
+
+            Some(
+                div()
+                    .absolute()
+                    .top_0()
+                    .left_0()
+                    .size_full()
+                    .child(div().size_full().children(modals))
+                    .into_any_element(),
+            )
+        };
+
+        let active_drawer_placement = self.active_drawer.clone().map(|d| d.placement);
+        let (mb, mr) = match active_drawer_placement {
+            Some(Placement::Right) => (None, self.drawer_size),
+            Some(Placement::Bottom) => (self.drawer_size, None),
+            _ => (None, None),
+        };
+
+        let notification_layer = Some(
+            div()
+                .absolute()
+                .bottom_0()
+                .right_0()
+                .when_some(mb, |this, offset| this.mb(offset))
+                .when_some(mr, |this, offset| this.mr(offset))
+                .child(self.notification.clone())
+                .into_any_element(),
+        );
+
         window_border().child(
             div()
                 .id("root")
@@ -408,7 +475,10 @@ impl Render for Root {
                 .font_family(".SystemUIFont")
                 // NO BACKGROUND - allow transparency for viewports. Individual views add their own backgrounds.
                 .text_color(cx.theme().foreground)
-                .child(self.view.clone()),
+                .child(self.view.clone())
+                .when_some(drawer_layer, |this, layer| this.child(layer))
+                .when_some(modal_layer, |this, layer| this.child(layer))
+                .when_some(notification_layer, |this, layer| this.child(layer)),
         )
     }
 }

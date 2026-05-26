@@ -9,14 +9,13 @@ pub use types::*;
 
 use gpui::{
     App, AppContext as _, Context, Entity, Focusable, FontWeight, IntoElement,
-    ParentElement, Render, Styled, Window, div, px, InteractiveElement as _, StatefulInteractiveElement,
+    ParentElement, Render, Styled, Window, div, px,
 };
 use gpui_component::{
     ActiveTheme, Sizable as _,
     button::{Button, ButtonVariants as _},
     h_flex, v_flex,
     Icon, IconName,
-    text::TextView,
 };
 use gpui::prelude::FluentBuilder;
 use crate::InstallerConfig;
@@ -62,7 +61,6 @@ pub struct InstallerView {
     pub loading_installed: bool,
     /// Index into `installed_versions` awaiting uninstall confirmation.
     pub uninstall_confirm: Option<usize>,
-    pub release_notes_modal: Option<ReleaseNotesModal>,
 
     /// IDs of optional sidecar packages to co-install (e.g. "pulsar-host").
     pub selected_sidecars: Vec<String>,
@@ -109,7 +107,6 @@ impl InstallerView {
             installed_versions: Vec::new(),
             loading_installed: true,
             uninstall_confirm: None,
-            release_notes_modal: None,
             selected_sidecars: Vec::new(),
         }
     }
@@ -124,7 +121,7 @@ impl Focusable for InstallerView {
 }
 
 impl Render for InstallerView {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .size_full()
             .bg(cx.theme().background)
@@ -136,7 +133,7 @@ impl Render for InstallerView {
                     .flex_1()
                     .overflow_hidden()
                     .child(self.render_sidebar(cx))
-                    .child(self.render_main_content(window, cx)),
+                    .child(self.render_main_content(cx)),
             )
     }
 }
@@ -406,7 +403,7 @@ impl InstallerView {
             )
     }
 
-    fn render_main_content(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render_main_content(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .flex_1()
             .h_full()
@@ -414,87 +411,14 @@ impl InstallerView {
             .flex()
             .flex_col()
             .bg(cx.theme().background)
-            .map(|el| {
-                let page = match self.current_page {
-                    Page::Welcome          => el.child(self.render_welcome(cx)),
-                    Page::License          => el.child(self.render_license(cx)),
-                    Page::VersionSelection => el.child(self.render_version_selection(cx)),
-                    Page::InstallOptions   => el.child(self.render_install_options(cx)),
-                    Page::Installing       => el.child(self.render_installing(cx)),
-                    Page::Complete         => el.child(self.render_complete(cx)),
-                    Page::VersionsManager  => el.child(self.render_versions_manager(cx)),
-                };
-
-                if let Some(modal) = self.release_notes_modal.clone() {
-                    page.child(self.render_release_notes_overlay(modal, window, cx))
-                } else {
-                    page
-                }
+            .map(|el| match self.current_page {
+                Page::Welcome          => el.child(self.render_welcome(cx)),
+                Page::License          => el.child(self.render_license(cx)),
+                Page::VersionSelection => el.child(self.render_version_selection(cx)),
+                Page::InstallOptions   => el.child(self.render_install_options(cx)),
+                Page::Installing       => el.child(self.render_installing(cx)),
+                Page::Complete         => el.child(self.render_complete(cx)),
+                Page::VersionsManager  => el.child(self.render_versions_manager(cx)),
             })
-    }
-
-    fn render_release_notes_overlay(
-        &self,
-        modal: ReleaseNotesModal,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
-        gpui::div()
-            .absolute()
-            .top_0()
-            .left_0()
-            .size_full()
-            .flex()
-            .items_center()
-            .justify_center()
-            .bg(gpui::black())
-            .child(
-                v_flex()
-                    .w(px(760.0))
-                    .max_h(px(560.0))
-                    .rounded(px(12.0))
-                    .border_1()
-                    .border_color(cx.theme().border)
-                    .bg(cx.theme().background)
-                    .child(
-                        h_flex()
-                            .px_5()
-                            .py_3()
-                            .justify_between()
-                            .items_center()
-                            .border_b_1()
-                            .border_color(cx.theme().border)
-                            .child(
-                                div()
-                                    .text_base()
-                                    .font_weight(FontWeight::SEMIBOLD)
-                                    .text_color(cx.theme().foreground)
-                                    .child(modal.title.clone()),
-                            )
-                            .child(
-                                Button::new("release-notes-overlay-close")
-                                    .ghost()
-                                    .small()
-                                    .label("Close")
-                                    .on_click(cx.listener(|this, _, _, cx| {
-                                        this.release_notes_modal = None;
-                                        cx.notify();
-                                    })),
-                            ),
-                    )
-                    .child(
-                        v_flex()
-                            .id("release-notes-overlay-content")
-                            .flex_1()
-                            .overflow_y_scroll()
-                            .p_5()
-                            .child(TextView::markdown(
-                                "release-notes-overlay-md",
-                                modal.markdown,
-                                window,
-                                cx,
-                            )),
-                    ),
-            )
     }
 }

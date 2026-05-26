@@ -1,7 +1,17 @@
 //! GitHub release fetching and asset selection.
 
-use gpui::{Context, Window};
+use gpui::{
+    Context, InteractiveElement as _, ParentElement as _, StatefulInteractiveElement as _,
+    Window, px, Styled,
+};
 use crate::download::{GitHubReleases, GitHubAsset};
+use gpui_component::{
+    ActiveTheme,
+    ContextModal as _,
+    modal::Modal,
+    text::TextView,
+    v_flex,
+};
 use super::super::{InstallerView, ReleaseInfo};
 
 const GITHUB_ORG:  &str = "Far-Beyond-Pulsar";
@@ -102,21 +112,31 @@ impl InstallerView {
     /// Open a centered release-notes modal for the currently selected release.
     pub fn open_release_notes_modal_for_selected(
         &mut self,
-        _window: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         let Some(idx) = self.selected_release_idx else {
+            tracing::warn!("release-notes: open requested from version selection with no selected_release_idx");
             return;
         };
         let Some(release) = self.releases.get(idx) else {
+            tracing::warn!("release-notes: selected_release_idx={} is out of bounds (len={})", idx, self.releases.len());
             return;
         };
 
-        self.release_notes_modal = Some(super::super::ReleaseNotesModal {
-            title: format!("Release Notes · {}", release.tag_name),
-            markdown: self.selected_release_notes_markdown(),
-        });
-        cx.notify();
+        tracing::info!(
+            "release-notes: opening from version selection tag={} idx={} body_len={}",
+            release.tag_name,
+            idx,
+            release.body.len()
+        );
+
+        Self::show_release_notes_modal(
+            window,
+            cx,
+            format!("Release Notes · {}", release.tag_name),
+            self.selected_release_notes_markdown(),
+        );
     }
 
     /// Release notes markdown for an installed version.
@@ -140,53 +160,89 @@ impl InstallerView {
     pub fn open_release_notes_modal_for_version(
         &mut self,
         version: String,
-        _window: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if let Some(idx) = self.find_release_index_by_version(&version) {
-            let release = &self.releases[idx];
-            self.release_notes_modal = Some(super::super::ReleaseNotesModal {
-                title: format!("Release Notes · {}", release.tag_name),
-                markdown: self.release_notes_markdown_for_version(&version),
-            });
-            cx.notify();
-            return;
-        }
+        tracing::info!(
+            "release-notes: open requested for installed version='{}' cached_releases={}",
+            version,
+            self.releases.len()
+        );
 
-        self.loading_releases = true;
-        cx.notify();
+        let title = if let Some(idx) = self.find_release_index_by_version(&version) {
+            tracing::info!(
+                "release-notes: matched installed version='{}' to cached tag='{}' at idx={}",
+                version,
+                self.releases[idx].tag_name,
+                idx
+            );
+            format!("Release Notes · {}", self.releases[idx].tag_name)
+        } else {
+            tracing::warn!(
+                "release-notes: no cached match for installed version='{}'; showing fallback content",
+                version
+            );
+            format!("Release Notes · {}", version)
+        };
 
-        cx.spawn(async move |this, cx| {
-            let github = GitHubReleases::new(GITHUB_ORG, GITHUB_REPO);
-            match github.get_all_releases().await {
-                Ok(releases) => {
-                    let infos = map_releases(releases);
-                    this.update(cx, |v, cx| {
-                        v.releases = infos;
-                        v.loading_releases = false;
-                        v.release_notes_modal = Some(super::super::ReleaseNotesModal {
-                            title: format!("Release Notes · {}", version),
-                            markdown: v.release_notes_markdown_for_version(&version),
-                        });
-                        cx.notify();
-                    })
-                    .ok();
-                }
-                Err(e) => {
-                    tracing::error!("Failed to fetch releases for release-notes modal: {e}");
-                    this.update(cx, |v, cx| {
-                        v.loading_releases = false;
-                        v.release_notes_modal = Some(super::super::ReleaseNotesModal {
-                            title: format!("Release Notes · {}", version),
-                            markdown: "Failed to fetch release notes from GitHub.".to_string(),
-                        });
-                        cx.notify();
-                    })
-                    .ok();
-                }
-            }
-        })
-        .detach();
+        Self::show_release_notes_modal(
+            window,
+            cx,
+            title,
+            self.release_notes_markdown_for_version(&version),
+        );
+    }
+
+    pub(crate) fn show_release_notes_modal(
+        window: &mut Window,
+        cx: &mut gpui::App,
+        title: String,
+        markdown: String,
+    ) {
+        tracing::info!(
+            "release-notes: invoking window.open_modal title='{}' markdown_len={} has_active_modal_before={}",
+            title,
+            markdown.len(),
+            window.has_active_modal(cx)
+        );
+
+        window.open_modal(cx, move |modal: Modal, window, cx| {
+            tracing::debug!("release-notes: modal builder running for title='{}'", title);
+            modal
+                .title(title.clone())
+                .width(px(760.0))
+                .max_w(px(960.0))
+                .overlay(true)
+                .overlay_closable(false)
+                .on_close(|_, _, _| {
+                    tracing::info!("release-notes: modal on_close fired");
+                })
+                .child(
+                    v_flex()
+                        .h(px(560.0))
+                        .rounded(px(8.0))
+                        .border_1()
+                        .border_color(cx.theme().border)
+                        .bg(cx.theme().background)
+                        .child(
+                            v_flex()
+                                .id("release-notes-modal-scroll")
+                                .overflow_y_scroll()
+                                .p_4()
+                                .child(TextView::markdown(
+                                    "release-notes-modal-md",
+                                    markdown.clone(),
+                                    window,
+                                    cx,
+                                )),
+                        ),
+                )
+        });
+
+        tracing::info!(
+            "release-notes: window.open_modal returned has_active_modal_after={}",
+            window.has_active_modal(cx)
+        );
     }
 
     fn find_release_index_by_version(&self, version: &str) -> Option<usize> {
