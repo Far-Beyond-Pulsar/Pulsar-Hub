@@ -148,19 +148,28 @@ pub struct InstallerView {
     pub loading_installed: bool,
     /// Index into `installed_versions` awaiting uninstall confirmation.
     pub uninstall_confirm: Option<usize>,
+
+    // ── macOS asset preference ────────────────────────────────────────────────
+    /// When true, prefer the pre-built .app.zip bundle; otherwise prefer the
+    /// bare binary (recommended — smaller, no Gatekeeper bundle issues).
+    pub macos_use_app_bundle: bool,
 }
 
 // ─── Constructor ──────────────────────────────────────────────────────────────
 
 impl InstallerView {
     pub fn view(_window: &mut Window, cx: &mut App) -> Entity<Self> {
-        cx.new(|cx| Self::new(cx))
+        let entity = cx.new(|cx| Self::new(cx));
+        entity.update(cx, |this, cx| {
+            this.load_installed_versions(cx);
+        });
+        entity
     }
 
     fn new(cx: &mut Context<Self>) -> Self {
         Self {
             focus_handle: cx.focus_handle(),
-            current_page: Page::Welcome,
+            current_page: Page::VersionsManager,
             // License
             license_text: None,
             loading_license: false,
@@ -185,8 +194,10 @@ impl InstallerView {
             installed_path: None,
             // Versions manager
             installed_versions: Vec::new(),
-            loading_installed: false,
+            loading_installed: true,
             uninstall_confirm: None,
+            // macOS asset preference
+            macos_use_app_bundle: false,
         }
     }
 
@@ -517,7 +528,9 @@ impl InstallerView {
 
 impl InstallerView {
     /// Pick the best asset from a release for the current OS + arch.
-    fn select_asset(assets: &[GitHubAsset]) -> Option<GitHubAsset> {
+    /// On macOS, `prefer_app_bundle` selects the `.app.zip` when `true`;
+    /// otherwise the bare binary is preferred (recommended).
+    fn select_asset(assets: &[GitHubAsset], #[allow(unused_variables)] prefer_app_bundle: bool) -> Option<GitHubAsset> {
         let os_token = match std::env::consts::OS {
             "linux"   => "linux",
             "macos"   => "macos",
@@ -548,8 +561,14 @@ impl InstallerView {
         );
         if candidates.is_empty() { return None; }
         #[cfg(target_os = "macos")]
-        if let Some(app_zip) = candidates.iter().find(|a| a.name.ends_with(".app.zip")) {
-            return Some((*app_zip).clone());
+        {
+            let app_zip = candidates.iter().find(|a| a.name.ends_with(".app.zip")).map(|a| (*a).clone());
+            let binary  = candidates.iter().find(|a| !a.name.ends_with(".app.zip") && !a.name.ends_with(".zip")).map(|a| (*a).clone());
+            return if prefer_app_bundle {
+                app_zip.or(binary)
+            } else {
+                binary.or(app_zip)
+            };
         }
         candidates.into_iter().next().cloned()
     }
@@ -576,6 +595,7 @@ impl InstallerView {
         self.install_failed = false;
         self.installed_path = None;
         let install_dir = self.install_config.install_path.clone();
+        let prefer_app_bundle = self.macos_use_app_bundle;
         cx.notify();
 
         cx.spawn(async move |this, cx| {
@@ -601,7 +621,7 @@ impl InstallerView {
                 Ok(releases) => {
                     match releases.into_iter().find(|r| r.tag_name == release_info.tag_name) {
                         Some(rel) => {
-                            match Self::select_asset(&rel.assets) {
+                            match Self::select_asset(&rel.assets, prefer_app_bundle) {
                                 Some(a) => (rel, a),
                                 None => {
                                     this.update(cx, |v, cx| {
@@ -1847,6 +1867,8 @@ impl InstallerView {
         let desktop_shortcut = self.install_config.create_desktop_shortcut;
         let start_menu = self.install_config.create_start_menu_shortcut;
         let add_to_path = self.install_config.add_to_path;
+        #[cfg(target_os = "macos")]
+        let use_app_bundle = self.macos_use_app_bundle;
 
         v_flex()
             .size_full()
@@ -1897,6 +1919,192 @@ impl InstallerView {
                                     ),
                             ),
                     )
+                    // macOS: Download format picker
+                    .when(cfg!(target_os = "macos"), |el| {
+                        #[cfg(target_os = "macos")]
+                        let use_bundle = use_app_bundle;
+                        #[cfg(not(target_os = "macos"))]
+                        let use_bundle = false;
+                        el.child(
+                            v_flex()
+                                .gap_3()
+                                .child(
+                                    div()
+                                        .text_sm()
+                                        .font_weight(FontWeight::SEMIBOLD)
+                                        .text_color(cx.theme().foreground)
+                                        .child("Download Format"),
+                                )
+                                .child(
+                                    v_flex()
+                                        .gap_2()
+                                        // Binary option (recommended)
+                                        .child(
+                                            h_flex()
+                                                .id("macos-format-binary")
+                                                .gap_3()
+                                                .p_3()
+                                                .rounded(px(8.0))
+                                                .border_1()
+                                                .border_color(
+                                                    if !use_bundle {
+                                                        cx.theme().accent.opacity(0.5)
+                                                    } else {
+                                                        cx.theme().border
+                                                    }
+                                                )
+                                                .bg(
+                                                    if !use_bundle {
+                                                        cx.theme().accent.opacity(0.05)
+                                                    } else {
+                                                        cx.theme().sidebar.opacity(0.3)
+                                                    }
+                                                )
+                                                .cursor_pointer()
+                                                .on_click(cx.listener(|this, _, _, cx| {
+                                                    this.macos_use_app_bundle = false;
+                                                    cx.notify();
+                                                }))
+                                                .child(
+                                                    div()
+                                                        .w(px(16.0))
+                                                        .h(px(16.0))
+                                                        .rounded_full()
+                                                        .border_2()
+                                                        .border_color(cx.theme().accent)
+                                                        .flex()
+                                                        .items_center()
+                                                        .justify_center()
+                                                        .when(!use_bundle, |e| {
+                                                            e.child(
+                                                                div()
+                                                                    .w(px(8.0))
+                                                                    .h(px(8.0))
+                                                                    .rounded_full()
+                                                                    .bg(cx.theme().accent),
+                                                            )
+                                                        }),
+                                                )
+                                                .child(
+                                                    v_flex()
+                                                        .flex_1()
+                                                        .gap(px(1.0))
+                                                        .child(
+                                                            h_flex()
+                                                                .gap_2()
+                                                                .items_center()
+                                                                .child(
+                                                                    div()
+                                                                        .text_sm()
+                                                                        .font_weight(FontWeight::MEDIUM)
+                                                                        .text_color(cx.theme().foreground)
+                                                                        .child("Binary"),
+                                                                )
+                                                                .child(
+                                                                    div()
+                                                                        .px_2()
+                                                                        .py(px(1.0))
+                                                                        .rounded(px(4.0))
+                                                                        .bg(cx.theme().success.opacity(0.15))
+                                                                        .text_xs()
+                                                                        .font_weight(FontWeight::MEDIUM)
+                                                                        .text_color(cx.theme().success)
+                                                                        .child("Recommended"),
+                                                                ),
+                                                        )
+                                                        .child(
+                                                            div()
+                                                                .text_xs()
+                                                                .text_color(cx.theme().muted_foreground)
+                                                                .child("Bare executable — smaller download, no Gatekeeper bundle issues."),
+                                                        ),
+                                                ),
+                                        )
+                                        // .app Bundle option
+                                        .child(
+                                            h_flex()
+                                                .id("macos-format-appbundle")
+                                                .gap_3()
+                                                .p_3()
+                                                .rounded(px(8.0))
+                                                .border_1()
+                                                .border_color(
+                                                    if use_bundle {
+                                                        cx.theme().accent.opacity(0.5)
+                                                    } else {
+                                                        cx.theme().border
+                                                    }
+                                                )
+                                                .bg(
+                                                    if use_bundle {
+                                                        cx.theme().accent.opacity(0.05)
+                                                    } else {
+                                                        cx.theme().sidebar.opacity(0.3)
+                                                    }
+                                                )
+                                                .cursor_pointer()
+                                                .on_click(cx.listener(|this, _, _, cx| {
+                                                    this.macos_use_app_bundle = true;
+                                                    cx.notify();
+                                                }))
+                                                .child(
+                                                    div()
+                                                        .w(px(16.0))
+                                                        .h(px(16.0))
+                                                        .rounded_full()
+                                                        .border_2()
+                                                        .border_color(cx.theme().accent)
+                                                        .flex()
+                                                        .items_center()
+                                                        .justify_center()
+                                                        .when(use_bundle, |e| {
+                                                            e.child(
+                                                                div()
+                                                                    .w(px(8.0))
+                                                                    .h(px(8.0))
+                                                                    .rounded_full()
+                                                                    .bg(cx.theme().accent),
+                                                            )
+                                                        }),
+                                                )
+                                                .child(
+                                                    v_flex()
+                                                        .flex_1()
+                                                        .gap(px(1.0))
+                                                        .child(
+                                                            h_flex()
+                                                                .gap_2()
+                                                                .items_center()
+                                                                .child(
+                                                                    div()
+                                                                        .text_sm()
+                                                                        .font_weight(FontWeight::MEDIUM)
+                                                                        .text_color(cx.theme().foreground)
+                                                                        .child(".app Bundle"),
+                                                                )
+                                                                .child(
+                                                                    div()
+                                                                        .px_2()
+                                                                        .py(px(1.0))
+                                                                        .rounded(px(4.0))
+                                                                        .bg(cx.theme().warning.opacity(0.15))
+                                                                        .text_xs()
+                                                                        .font_weight(FontWeight::MEDIUM)
+                                                                        .text_color(cx.theme().warning)
+                                                                        .child("Not Recommended"),
+                                                                ),
+                                                        )
+                                                        .child(
+                                                            div()
+                                                                .text_xs()
+                                                                .text_color(cx.theme().muted_foreground)
+                                                                .child("Pre-built .app bundle — larger download, may require Gatekeeper approval."),
+                                                        ),
+                                                ),
+                                        ),
+                                ),
+                        )
+                    })
                     // Options
                     .child(
                         v_flex()
@@ -2341,7 +2549,7 @@ impl InstallerView {
         v_flex()
             .size_full()
             .child(
-                // Header with refresh
+                // Header with count, refresh, and New Install CTA
                 h_flex()
                     .w_full()
                     .px_4()
@@ -2361,7 +2569,7 @@ impl InstallerView {
                                     .text_sm()
                                     .font_weight(FontWeight::SEMIBOLD)
                                     .text_color(cx.theme().foreground)
-                                    .child("Installed Versions"),
+                                    .child("Installed Engines"),
                             )
                             .when(!self.installed_versions.is_empty(), |el| {
                                 el.child(
@@ -2377,12 +2585,25 @@ impl InstallerView {
                             }),
                     )
                     .child(
-                        Button::new("vm-refresh-btn")
-                            .ghost()
-                            .label("Refresh")
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.load_installed_versions(cx);
-                            })),
+                        h_flex()
+                            .gap_2()
+                            .child(
+                                Button::new("vm-refresh-btn")
+                                    .ghost()
+                                    .label("Refresh")
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.load_installed_versions(cx);
+                                    })),
+                            )
+                            .child(
+                                Button::new("vm-new-install-btn")
+                                    .primary()
+                                    .label("+ New Install")
+                                    .on_click(cx.listener(|this, _, window, cx| {
+                                        this.navigate_to(Page::License, window, cx);
+                                        this.fetch_license(cx);
+                                    })),
+                            ),
                     ),
             )
             .child(
@@ -2392,7 +2613,7 @@ impl InstallerView {
                     .relative()
                     .map(|el| {
                         if self.loading_installed {
-                            el.child(self.render_loading_state("Scanning for installed versions…", cx))
+                            el.child(self.render_loading_state("Scanning for installed engines…", cx))
                         } else if self.installed_versions.is_empty() {
                             el.child(self.render_vm_empty(cx))
                         } else {
@@ -2439,9 +2660,10 @@ impl InstallerView {
             .child(
                 Button::new("vm-install-cta")
                     .primary()
-                    .label("Install Now →")
+                    .label("Install Engine →")
                     .on_click(cx.listener(|this, _, window, cx| {
-                        this.navigate_to(Page::Welcome, window, cx);
+                        this.navigate_to(Page::License, window, cx);
+                        this.fetch_license(cx);
                     })),
             )
     }
@@ -2449,130 +2671,171 @@ impl InstallerView {
     fn render_vm_list(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         let versions: Vec<InstalledVersion> = self.installed_versions.clone();
 
-        v_flex()
-            .id("vm-list-scroll")
+        div()
+            .id("vm-grid-scroll")
             .size_full()
             .overflow_y_scroll()
-            .px_4()
-            .py_3()
-            .gap_3()
-            .children(versions.into_iter().enumerate().map(|(idx, ver)| {
-                let path = ver.metadata.install_path.clone();
-                let path_for_open = path.clone();
-                let path_for_launch = path.clone();
-                let size_str = Self::format_bytes(ver.disk_size_bytes);
-                let version_str = ver.metadata.version.clone();
-                let date_str = if ver.metadata.install_date.is_empty() {
-                    "Date unknown".to_string()
-                } else {
-                    ver.metadata.install_date.chars().take(10).collect()
-                };
+            .p_6()
+            .child(
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .gap_4()
+                    .children(versions.into_iter().enumerate().map(|(idx, ver)| {
+                        let path = ver.metadata.install_path.clone();
+                        let path_for_open = path.clone();
+                        let path_for_launch = path.clone();
+                        let size_str = Self::format_bytes(ver.disk_size_bytes);
+                        let version_str = ver.metadata.version.clone();
+                        let date_str = if ver.metadata.install_date.is_empty() {
+                            "Unknown date".to_string()
+                        } else {
+                            ver.metadata.install_date.chars().take(10).collect()
+                        };
+                        let path_label = path.display().to_string();
 
-                h_flex()
-                    .px_4()
-                    .py_3()
-                    .rounded(px(8.0))
-                    .border_1()
-                    .border_color(cx.theme().border)
-                    .bg(cx.theme().sidebar.opacity(0.3))
-                    .gap_3()
-                    .items_center()
-                    // Version badge
-                    .child(
-                        div()
-                            .px_2()
-                            .py_1()
-                            .rounded(px(6.0))
-                            .bg(cx.theme().accent.opacity(0.12))
-                            .border_1()
-                            .border_color(cx.theme().accent.opacity(0.3))
-                            .text_xs()
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(cx.theme().accent)
-                            .child(version_str),
-                    )
-                    // Info
-                    .child(
                         v_flex()
-                            .flex_1()
-                            .gap(px(2.0))
+                            .w(px(280.0))
+                            .p_4()
+                            .gap_3()
+                            .rounded(px(10.0))
+                            .border_1()
+                            .border_color(cx.theme().border)
+                            .bg(cx.theme().sidebar.opacity(0.5))
+                            // Engine icon + version
                             .child(
                                 h_flex()
-                                    .gap_2()
+                                    .gap_3()
                                     .items_center()
                                     .child(
                                         div()
-                                            .text_xs()
-                                            .text_color(cx.theme().muted_foreground)
-                                            .child(path.display().to_string()),
+                                            .w(px(36.0))
+                                            .h(px(36.0))
+                                            .rounded(px(8.0))
+                                            .bg(cx.theme().accent.opacity(0.12))
+                                            .border_1()
+                                            .border_color(cx.theme().accent.opacity(0.3))
+                                            .flex()
+                                            .items_center()
+                                            .justify_center()
+                                            .child(
+                                                Icon::new(IconName::HardDrive)
+                                                    .with_size(px(18.0))
+                                                    .text_color(cx.theme().accent),
+                                            ),
+                                    )
+                                    .child(
+                                        v_flex()
+                                            .gap(px(1.0))
+                                            .child(
+                                                div()
+                                                    .text_sm()
+                                                    .font_weight(FontWeight::SEMIBOLD)
+                                                    .text_color(cx.theme().foreground)
+                                                    .child("Pulsar Engine"),
+                                            )
+                                            .child(
+                                                div()
+                                                    .px_2()
+                                                    .py(px(1.0))
+                                                    .rounded(px(4.0))
+                                                    .bg(cx.theme().accent.opacity(0.1))
+                                                    .text_xs()
+                                                    .font_weight(FontWeight::MEDIUM)
+                                                    .text_color(cx.theme().accent)
+                                                    .child(version_str),
+                                            ),
                                     )
                                     .when(ver.update_available, |e| {
                                         e.child(
                                             div()
+                                                .ml_auto()
                                                 .px_2()
-                                                .py(px(1.0))
+                                                .py(px(2.0))
                                                 .rounded(px(4.0))
                                                 .bg(cx.theme().warning.opacity(0.15))
                                                 .text_xs()
                                                 .text_color(cx.theme().warning)
-                                                .child("Update Available"),
+                                                .child("Update"),
                                         )
                                     }),
                             )
+                            // Path + meta
+                            .child(
+                                v_flex()
+                                    .gap(px(2.0))
+                                    .child(
+                                        div()
+                                            .text_xs()
+                                            .text_color(cx.theme().muted_foreground)
+                                            .overflow_hidden()
+                                            .child(path_label),
+                                    )
+                                    .child(
+                                        h_flex()
+                                            .gap_2()
+                                            .child(
+                                                div()
+                                                    .text_xs()
+                                                    .text_color(cx.theme().muted_foreground.opacity(0.6))
+                                                    .child(size_str),
+                                            )
+                                            .child(
+                                                div()
+                                                    .text_xs()
+                                                    .text_color(cx.theme().muted_foreground.opacity(0.4))
+                                                    .child("·"),
+                                            )
+                                            .child(
+                                                div()
+                                                    .text_xs()
+                                                    .text_color(cx.theme().muted_foreground.opacity(0.6))
+                                                    .child(date_str),
+                                            ),
+                                    ),
+                            )
+                            // Divider
+                            .child(
+                                div()
+                                    .w_full()
+                                    .h(px(1.0))
+                                    .bg(cx.theme().border),
+                            )
+                            // Actions
                             .child(
                                 h_flex()
-                                    .gap_3()
+                                    .gap_1()
                                     .child(
-                                        div()
-                                            .text_xs()
-                                            .text_color(cx.theme().muted_foreground.opacity(0.6))
-                                            .child(size_str),
+                                        Button::new(format!("vm-launch-{idx}"))
+                                            .primary()
+                                            .small()
+                                            .label("Launch")
+                                            .on_click(cx.listener(move |this, _, _, cx| {
+                                                this.launch_version_path(path_for_launch.clone(), cx);
+                                            })),
                                     )
                                     .child(
-                                        div()
-                                            .text_xs()
-                                            .text_color(cx.theme().muted_foreground.opacity(0.6))
-                                            .child("·"),
+                                        Button::new(format!("vm-open-{idx}"))
+                                            .ghost()
+                                            .small()
+                                            .label("Show in Finder")
+                                            .on_click(cx.listener(move |this, _, _, cx| {
+                                                this.open_folder_path(path_for_open.clone(), cx);
+                                            })),
                                     )
                                     .child(
-                                        div()
-                                            .text_xs()
-                                            .text_color(cx.theme().muted_foreground.opacity(0.6))
-                                            .child(date_str),
+                                        Button::new(format!("vm-uninstall-{idx}"))
+                                            .danger()
+                                            .small()
+                                            .label("Remove")
+                                            .on_click(cx.listener(move |this, _, _, cx| {
+                                                this.uninstall_confirm = Some(idx);
+                                                cx.notify();
+                                            })),
                                     ),
-                            ),
-                    )
-                    // Actions
-                    .child(
-                        h_flex()
-                            .gap_2()
-                            .child(
-                                Button::new(format!("vm-launch-{idx}"))
-                                    .ghost()
-                                    .label("Launch")
-                                    .on_click(cx.listener(move |this, _, _, cx| {
-                                        this.launch_version_path(path_for_launch.clone(), cx);
-                                    })),
                             )
-                            .child(
-                                Button::new(format!("vm-open-{idx}"))
-                                    .ghost()
-                                    .label("Open Folder")
-                                    .on_click(cx.listener(move |this, _, _, cx| {
-                                        this.open_folder_path(path_for_open.clone(), cx);
-                                    })),
-                            )
-                            .child(
-                                Button::new(format!("vm-uninstall-{idx}"))
-                                    .danger()
-                                    .label("Uninstall")
-                                    .on_click(cx.listener(move |this, _, _, cx| {
-                                        this.uninstall_confirm = Some(idx);
-                                        cx.notify();
-                                    })),
-                            ),
-                    )
-            }))
+                    }))
+            )
     }
 
     fn render_uninstall_confirm(&self, idx: usize, cx: &mut Context<Self>) -> impl IntoElement {
