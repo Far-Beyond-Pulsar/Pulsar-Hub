@@ -537,10 +537,14 @@ impl InstallerView {
 // ─── Asset selection ──────────────────────────────────────────────────────────
 
 impl InstallerView {
-    /// Pick the best asset from a release for the current OS + arch.
-    /// On macOS, `prefer_app_bundle` selects the `.app.zip` when `true`;
-    /// otherwise the bare binary is preferred (recommended).
-    fn select_asset_for(prefix: &str, assets: &[GitHubAsset], #[allow(unused_variables)] prefer_app_bundle: bool) -> Option<GitHubAsset> {
+    /// Pick the best asset for a specific package prefix + current OS/arch.
+    /// Resolution is exact-name first, then a conservative prefix fallback.
+    fn select_asset_for(
+        prefix: &str,
+        assets: &[GitHubAsset],
+        #[allow(unused_variables)] prefer_app_bundle: bool,
+        #[allow(unused_variables)] allow_app_bundle: bool,
+    ) -> Option<GitHubAsset> {
         let os_token = match std::env::consts::OS {
             "linux"   => "linux",
             "macos"   => "macos",
@@ -558,6 +562,52 @@ impl InstallerView {
                 return None;
             }
         };
+
+        // Try exact expected filenames first to avoid cross-package mis-selection.
+        let base = format!("{prefix}-{os_token}-{arch_token}");
+        let mut expected_names: Vec<String> = Vec::new();
+
+        #[cfg(target_os = "macos")]
+        {
+            if allow_app_bundle {
+                if prefer_app_bundle {
+                    expected_names.push(format!("{base}.app.zip"));
+                    expected_names.push(base.clone());
+                } else {
+                    expected_names.push(base.clone());
+                    expected_names.push(format!("{base}.app.zip"));
+                }
+            } else {
+                expected_names.push(base.clone());
+            }
+        }
+
+        #[cfg(target_os = "windows")]
+        {
+            expected_names.push(format!("{base}.exe"));
+            expected_names.push(base.clone());
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            expected_names.push(base.clone());
+            expected_names.push(format!("{base}.tar.gz"));
+            expected_names.push(format!("{base}.tgz"));
+            expected_names.push(format!("{base}.zip"));
+        }
+
+        #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+        {
+            expected_names.push(base.clone());
+        }
+
+        if let Some(found) = expected_names
+            .iter()
+            .find_map(|name| assets.iter().find(|a| !a.name.ends_with(".sig") && a.name == *name))
+        {
+            return Some(found.clone());
+        }
+
         let candidates: Vec<&GitHubAsset> = assets
             .iter()
             .filter(|a| {
@@ -574,12 +624,18 @@ impl InstallerView {
         {
             let app_zip = candidates.iter().find(|a| a.name.ends_with(".app.zip")).map(|a| (*a).clone());
             let binary  = candidates.iter().find(|a| !a.name.ends_with(".app.zip") && !a.name.ends_with(".zip")).map(|a| (*a).clone());
-            return if prefer_app_bundle {
-                app_zip.or(binary)
+            return if allow_app_bundle {
+                if prefer_app_bundle {
+                    app_zip.or(binary)
+                } else {
+                    binary.or(app_zip)
+                }
             } else {
-                binary.or(app_zip)
+                binary
             };
         }
+
+        #[cfg(not(target_os = "macos"))]
         candidates.into_iter().next().cloned()
     }
 }
@@ -640,7 +696,7 @@ impl InstallerView {
                 Ok(releases) => {
                     match releases.into_iter().find(|r| r.tag_name == release_info.tag_name) {
                         Some(rel) => {
-                            match Self::select_asset_for("pulsar_engine", &rel.assets, prefer_app_bundle) {
+                            match Self::select_asset_for("pulsar_engine", &rel.assets, prefer_app_bundle, true) {
                                 Some(a) => (rel, a),
                                 None => {
                                     this.update(cx, |v, cx| {
@@ -732,7 +788,7 @@ impl InstallerView {
 
                             // Install optional sidecar packages sequentially
                             for (sidecar_id, sidecar_dir) in &sidecar_specs {
-                                match Self::select_asset_for(sidecar_id, &full_release.assets, false) {
+                                match Self::select_asset_for(sidecar_id, &full_release.assets, false, false) {
                                     Some(scar_asset) => {
                                         let scar_name = scar_asset.name.clone();
                                         let scar_url = scar_asset.browser_download_url.clone();
@@ -938,6 +994,14 @@ impl InstallerView {
                     let _ = std::process::Command::new("xattr")
                         .args(["-d", "com.apple.quarantine", &dest.to_string_lossy().as_ref()])
                         .output();
+
+                    // Validate linked libraries to catch non-portable release artifacts early.
+                    if let Ok(output) = std::process::Command::new("otool").arg("-L").arg(&dest).output() {
+                        let linked = String::from_utf8_lossy(&output.stdout);
+                        if linked.contains("libssl.1.1.dylib") || linked.contains("openssl@1.1") {
+                            Self::ensure_macos_openssl_runtime().await?;
+                        }
+                    }
                 }
             }
         }
@@ -988,6 +1052,89 @@ impl InstallerView {
             }
             Ok(())
         }).await
+    }
+
+    #[cfg(target_os = "macos")]
+    async fn ensure_macos_openssl_runtime() -> crate::error::Result<()> {
+        smol::unblock(move || {
+            use std::path::Path;
+            use std::process::Command;
+
+            let has_ssl = Path::new("/opt/homebrew/opt/openssl@1.1/lib/libssl.1.1.dylib").exists()
+                || Path::new("/usr/local/opt/openssl@1.1/lib/libssl.1.1.dylib").exists();
+            if has_ssl {
+                return Ok(());
+            }
+
+            let prompt = Command::new("osascript")
+                .args([
+                    "-e",
+                    "display dialog \"This Pulsar engine binary requires OpenSSL 1.1. Install Homebrew (if needed) and OpenSSL 1.1 now?\" buttons {\"Cancel\", \"Install\"} default button \"Install\" with icon caution",
+                ])
+                .output()
+                .map_err(crate::error::InstallerError::Io)?;
+
+            let prompt_out = String::from_utf8_lossy(&prompt.stdout).to_string();
+            if !prompt.status.success() || !prompt_out.contains("Install") {
+                return Err(crate::error::InstallerError::Other(
+                    "OpenSSL 1.1 dependency setup was cancelled by user.".to_string(),
+                ));
+            }
+
+            let has_brew = Command::new("/bin/bash")
+                .args(["-lc", "command -v brew >/dev/null 2>&1"])
+                .status()
+                .map_err(crate::error::InstallerError::Io)?
+                .success();
+
+            if has_brew {
+                let install = Command::new("/bin/bash")
+                    .args([
+                        "-lc",
+                        "brew install openssl@1.1 || brew install rbenv/tap/openssl@1.1",
+                    ])
+                    .output()
+                    .map_err(crate::error::InstallerError::Io)?;
+
+                let has_ssl_after = Path::new("/opt/homebrew/opt/openssl@1.1/lib/libssl.1.1.dylib").exists()
+                    || Path::new("/usr/local/opt/openssl@1.1/lib/libssl.1.1.dylib").exists();
+
+                if has_ssl_after {
+                    return Ok(());
+                }
+
+                let stderr = String::from_utf8_lossy(&install.stderr);
+                return Err(crate::error::InstallerError::Other(format!(
+                    "Failed to install OpenSSL 1.1 via Homebrew: {}",
+                    stderr.trim()
+                )));
+            }
+
+            // Homebrew is missing. Open Terminal to let the user complete install interactively.
+            let terminal_cmd = "NONINTERACTIVE=1 /bin/bash -c \\\"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\\\"; brew install openssl@1.1 || brew install rbenv/tap/openssl@1.1; echo; echo 'Dependency setup finished. Return to Pulsar Installer and retry installation.'";
+            let escaped = terminal_cmd
+                .replace('\\', "\\\\")
+                .replace('"', "\\\"");
+            let script_line = format!("do script \"{}\"", escaped);
+
+            let _ = Command::new("osascript")
+                .args([
+                    "-e",
+                    "tell application \"Terminal\"",
+                    "-e",
+                    script_line.as_str(),
+                    "-e",
+                    "activate",
+                    "-e",
+                    "end tell",
+                ])
+                .status();
+
+            Err(crate::error::InstallerError::Other(
+                "Homebrew is required for OpenSSL 1.1. A Terminal setup script was launched; complete it, then retry install.".to_string(),
+            ))
+        })
+        .await
     }
 }
 
