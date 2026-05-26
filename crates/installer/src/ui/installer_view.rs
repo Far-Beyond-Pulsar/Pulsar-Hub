@@ -809,8 +809,9 @@ impl InstallerView {
 
                     match Self::install_release(&file_path, &install_dir, &release_info.tag_name).await {
                         Ok(()) => {
+                            let final_install_path = Self::resolve_installed_path(&install_dir, &file_path);
                             // Write install metadata
-                            let _ = write_metadata(&install_dir, &release_info.tag_name);
+                            let _ = write_metadata(&final_install_path, &release_info.tag_name);
 
                             // Install optional sidecar packages sequentially
                             for (sidecar_id, sidecar_dir) in &sidecar_specs {
@@ -857,8 +858,8 @@ impl InstallerView {
                             this.update(cx, |v, cx| {
                                 v.install_progress = 100.0;
                                 v.install_message = "Installation complete!".to_string();
-                                v.installed_path = Some(install_dir.clone());
-                                v.log(LogLevel::Success, format!("Installed → {}", install_dir.display()), cx);
+                                v.installed_path = Some(final_install_path.clone());
+                                v.log(LogLevel::Success, format!("Installed → {}", final_install_path.display()), cx);
                                 v.log(LogLevel::Success, "All done! Pulsar is ready.", cx);
                                 v.current_page = Page::Complete;
                                 cx.notify();
@@ -985,8 +986,9 @@ impl InstallerView {
             // just ensure the binary is executable.
             if is_app_zip {
                 use std::os::unix::fs::PermissionsExt;
+                let app_dir = Self::resolve_installed_path(install_dir, archive_path);
                 // Walk Contents/MacOS/ and chmod +x every file there.
-                let macos_dir = install_dir.join("Contents").join("MacOS");
+                let macos_dir = app_dir.join("Contents").join("MacOS");
                 if let Ok(entries) = fs::read_dir(&macos_dir) {
                     for entry in entries.flatten() {
                         let p = entry.path();
@@ -1045,6 +1047,45 @@ impl InstallerView {
         }
 
         Ok(())
+    }
+
+    fn resolve_installed_path(expected_install_dir: &PathBuf, archive_path: &PathBuf) -> PathBuf {
+        let archive_name = archive_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("");
+
+        #[cfg(target_os = "macos")]
+        {
+            if archive_name.ends_with(".app.zip") {
+                if expected_install_dir.exists() {
+                    return expected_install_dir.clone();
+                }
+
+                if let Some(parent) = expected_install_dir.parent() {
+                    if let Ok(entries) = std::fs::read_dir(parent) {
+                        // Prefer the newest .app in the version folder.
+                        let mut apps: Vec<(std::time::SystemTime, PathBuf)> = entries
+                            .flatten()
+                            .map(|e| e.path())
+                            .filter(|p| p.extension() == Some(std::ffi::OsStr::new("app")))
+                            .filter_map(|p| {
+                                let modified = std::fs::metadata(&p)
+                                    .and_then(|m| m.modified())
+                                    .ok()?;
+                                Some((modified, p))
+                            })
+                            .collect();
+                        apps.sort_by(|a, b| b.0.cmp(&a.0));
+                        if let Some((_, p)) = apps.into_iter().next() {
+                            return p;
+                        }
+                    }
+                }
+            }
+        }
+
+        expected_install_dir.clone()
     }
 
     /// Install a sidecar binary into `install_dir/{binary_name}` (or `.exe` on Windows).

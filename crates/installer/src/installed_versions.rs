@@ -51,7 +51,7 @@ pub fn scan_installed_versions() -> Vec<InstalledVersion> {
                 continue;
             };
             if let Some(ver) = try_load_from_dir(dir) {
-                let key = ver.metadata.install_path.clone();
+                let key = canonical_or_same(&ver.metadata.install_path);
                 if seen.insert(key) {
                     results.push(ver);
                 }
@@ -60,7 +60,7 @@ pub fn scan_installed_versions() -> Vec<InstalledVersion> {
 
         // Legacy layout fallback: allow direct root install without metadata walk hit.
         if let Some(ver) = try_load_from_dir(&root) {
-            let key = ver.metadata.install_path.clone();
+            let key = canonical_or_same(&ver.metadata.install_path);
             if seen.insert(key) {
                 results.push(ver);
             }
@@ -94,7 +94,17 @@ fn try_load_from_dir(dir: &Path) -> Option<InstalledVersion> {
         let content = std::fs::read_to_string(&meta_path).ok()?;
         serde_json::from_str(&content).ok()?
     } else {
-        // Infer minimal metadata from the directory name when no JSON present.
+        // Infer minimal metadata only for legacy single-install layouts.
+        // Do not treat container roots (e.g. a versions parent folder) as installs.
+        let looks_like_legacy_install =
+            dir.join("Contents").join("Info.plist").exists()
+                || dir.join("Contents").join("MacOS").exists()
+                || dir.join("pulsar").is_file()
+                || dir.join("pulsar.exe").is_file();
+        if !looks_like_legacy_install {
+            return None;
+        }
+
         PulsarInstallMetadata {
             version: dir
                 .file_name()
@@ -160,4 +170,8 @@ fn dir_size(path: &Path) -> u64 {
         .filter(|m| m.is_file())
         .map(|m| m.len())
         .sum()
+}
+
+fn canonical_or_same(path: &Path) -> PathBuf {
+    std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
