@@ -48,6 +48,7 @@ tree-sitter-languages = [
 
 [dependencies]
 gpui-ce.workspace = true
+wgpu.workspace = true
 # rope.workspace = true
 anyhow.workspace = true
 gpui-component-macros.workspace = true
