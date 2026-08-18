@@ -151,7 +151,7 @@ fn looks_like_install_dir(dir: &Path) -> bool {
 
 // ── GitHub Releases ─────────────────────────────────────────────────────────
 
-const GITHUB_API: &str = "https://api.github.com/repos/Far-Beyond-Pulsar/Pulsar/releases";
+const GITHUB_API: &str = "https://api.github.com/repos/Far-Beyond-Pulsar/Pulsar-Native/releases";
 
 pub fn fetch_releases_blocking() -> Result<Vec<GitHubRelease>, String> {
     let client = reqwest::blocking::Client::builder()
@@ -170,6 +170,8 @@ pub fn fetch_releases_blocking() -> Result<Vec<GitHubRelease>, String> {
 pub fn find_platform_asset(release: &GitHubRelease) -> Option<&GitHubAsset> {
     let (os, arch, ext) = platform_info();
     let candidates = [
+        format!("pulsar_engine-{}-{}.{}", os, arch, ext),
+        format!("pulsar_engine_{}_{}.{}", os, arch, ext),
         format!("pulsar-{}-{}.{}", os, arch, ext),
         format!("pulsar_{}_{}.{}", os, arch, ext),
         format!("{}-{}.{}", os, arch, ext),
