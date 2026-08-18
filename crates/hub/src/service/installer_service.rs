@@ -1,5 +1,8 @@
+use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::Instant;
 use walkdir::WalkDir;
 
 // ── Data Types ──────────────────────────────────────────────────────────────
@@ -154,17 +157,35 @@ fn looks_like_install_dir(dir: &Path) -> bool {
 const GITHUB_API: &str = "https://api.github.com/repos/Far-Beyond-Pulsar/Pulsar-Native/releases";
 
 pub fn fetch_releases_blocking() -> Result<Vec<GitHubRelease>, String> {
+    use std::time::Duration;
+
     let client = reqwest::blocking::Client::builder()
         .user_agent("Pulsar-Hub/1.0")
+        .timeout(Duration::from_secs(30))
+        .connect_timeout(Duration::from_secs(10))
         .build()
         .map_err(|e| e.to_string())?;
 
-    let resp = client.get(GITHUB_API).send().map_err(|e| e.to_string())?;
-    if !resp.status().is_success() {
-        return Err(format!("HTTP {}", resp.status()));
+    let mut last_err = String::new();
+    for attempt in 1..=3 {
+        match client.get(GITHUB_API).send() {
+            Ok(resp) if resp.status().is_success() => {
+                return resp.json::<Vec<GitHubRelease>>().map_err(|e| e.to_string());
+            }
+            Ok(resp) if resp.status().is_server_error() => {
+                last_err = format!("HTTP {} (attempt {}/3)", resp.status(), attempt);
+                std::thread::sleep(Duration::from_secs(2 * attempt as u64));
+            }
+            Ok(resp) => {
+                return Err(format!("HTTP {}", resp.status()));
+            }
+            Err(e) => {
+                last_err = format!("{} (attempt {}/3)", e, attempt);
+                std::thread::sleep(Duration::from_secs(2 * attempt as u64));
+            }
+        }
     }
-    let releases: Vec<GitHubRelease> = resp.json().map_err(|e| e.to_string())?;
-    Ok(releases)
+    Err(last_err)
 }
 
 pub fn find_platform_asset(release: &GitHubRelease) -> Option<&GitHubAsset> {
@@ -268,6 +289,168 @@ pub fn download_and_extract_blocking(
     }
 
     progress_cb(100.0);
+    Ok(())
+}
+
+// ── Download Progress ──────────────────────────────────────────────────────
+
+#[derive(Clone, Debug)]
+pub struct DownloadProgress {
+    pub bytes_downloaded: u64,
+    pub total_bytes: u64,
+    pub speed_bps: u64,
+    pub done: bool,
+    pub error: Option<String>,
+}
+
+impl Default for DownloadProgress {
+    fn default() -> Self {
+        Self {
+            bytes_downloaded: 0,
+            total_bytes: 0,
+            speed_bps: 0,
+            done: false,
+            error: None,
+        }
+    }
+}
+
+pub fn download_and_extract_with_progress(
+    url: &str,
+    dest_dir: &Path,
+    version: &str,
+    progress: Arc<Mutex<DownloadProgress>>,
+) {
+    let client = match reqwest::blocking::Client::builder()
+        .user_agent("Pulsar-Hub/1.0")
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            let mut p = progress.lock();
+            p.error = Some(e.to_string());
+            p.done = true;
+            return;
+        }
+    };
+
+    let resp = match client.get(url).send() {
+        Ok(r) => r,
+        Err(e) => {
+            let mut p = progress.lock();
+            p.error = Some(e.to_string());
+            p.done = true;
+            return;
+        }
+    };
+    if !resp.status().is_success() {
+        let mut p = progress.lock();
+        p.error = Some(format!("HTTP {}", resp.status()));
+        p.done = true;
+        return;
+    }
+
+    let total = resp.content_length().unwrap_or(0);
+    {
+        let mut p = progress.lock();
+        p.total_bytes = total;
+    }
+
+    if let Err(e) = std::fs::create_dir_all(dest_dir) {
+        let mut p = progress.lock();
+        p.error = Some(e.to_string());
+        p.done = true;
+        return;
+    }
+
+    let (_, _, ext) = platform_info();
+    let write_result = if ext == "exe" {
+        download_file_with_progress(resp, dest_dir.join("pulsar.exe"), &progress)
+    } else {
+        let archive_path = dest_dir
+            .parent()
+            .unwrap_or(dest_dir)
+            .join(format!("pulsar-{}.tar.gz", version));
+        let r = download_file_with_progress(resp, archive_path.clone(), &progress);
+        if r.is_ok() {
+            {
+                let mut p = progress.lock();
+                p.speed_bps = 0;
+            }
+            match std::fs::File::open(&archive_path) {
+                Ok(f) => {
+                    let dec = flate2::read::GzDecoder::new(f);
+                    let mut ar = tar::Archive::new(dec);
+                    if let Err(e) = ar.unpack(dest_dir) {
+                        let mut p = progress.lock();
+                        p.error = Some(format!("Extract failed: {}", e));
+                        p.done = true;
+                        return;
+                    }
+                    let _ = std::fs::remove_file(&archive_path);
+                }
+                Err(e) => {
+                    let mut p = progress.lock();
+                    p.error = Some(e.to_string());
+                    p.done = true;
+                    return;
+                }
+            }
+        }
+        r
+    };
+
+    match write_result {
+        Ok(()) => {
+            let _ = write_metadata(dest_dir, version);
+            let mut p = progress.lock();
+            p.bytes_downloaded = p.total_bytes;
+            p.done = true;
+        }
+        Err(e) => {
+            let mut p = progress.lock();
+            p.error = Some(e);
+            p.done = true;
+        }
+    }
+}
+
+fn download_file_with_progress(
+    mut reader: reqwest::blocking::Response,
+    dest: PathBuf,
+    progress: &Arc<Mutex<DownloadProgress>>,
+) -> Result<(), String> {
+    let mut file = std::fs::File::create(&dest).map_err(|e| e.to_string())?;
+    let mut downloaded: u64 = 0;
+    let mut last_bytes: u64 = 0;
+    let mut last_time = Instant::now();
+    use std::io::Read;
+    let mut buf = [0u8; 8192];
+    loop {
+        let n = reader.read(&mut buf).map_err(|e| e.to_string())?;
+        if n == 0 {
+            break;
+        }
+        std::io::Write::write_all(&mut file, &buf[..n]).map_err(|e| e.to_string())?;
+        downloaded += n as u64;
+        let now = Instant::now();
+        let elapsed = now.duration_since(last_time).as_secs_f64();
+        if elapsed >= 0.15 {
+            let bytes_since = downloaded - last_bytes;
+            let speed = (bytes_since as f64 / elapsed) as u64;
+            let mut p = progress.lock();
+            p.bytes_downloaded = downloaded;
+            p.speed_bps = speed;
+            last_bytes = downloaded;
+            last_time = now;
+        }
+    }
+    {
+        let mut p = progress.lock();
+        p.bytes_downloaded = downloaded;
+        p.speed_bps = 0;
+    }
     Ok(())
 }
 

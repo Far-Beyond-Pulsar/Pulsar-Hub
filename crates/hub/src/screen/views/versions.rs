@@ -2,9 +2,11 @@ use gpui::prelude::*;
 use gpui::*;
 use ui::{
     button::{Button, ButtonVariants as _},
-    h_flex, v_flex, ActiveTheme as _, Icon, IconName,
+    h_flex, scroll::ScrollbarAxis, spinner::Spinner, v_flex, ActiveTheme as _, Icon, IconName,
+    StyledExt as _,
 };
 
+use crate::core::types::{DownloadItem, DownloadKind, format_bytes};
 use crate::service::installer_service;
 use crate::EntryScreen;
 
@@ -13,10 +15,19 @@ pub fn render_versions(
     window: &mut Window,
     cx: &mut Context<EntryScreen>,
 ) -> impl IntoElement {
+    if screen.state.ui.show_install_modal {
+        return render_install_modal(screen, cx).into_any_element();
+    }
+
+    render_installed_grid(screen, cx).into_any_element()
+}
+
+fn render_installed_grid(
+    screen: &mut EntryScreen,
+    cx: &mut Context<EntryScreen>,
+) -> impl IntoElement {
     let theme = cx.theme();
     let installed = screen.state.versions.installed.clone();
-    let releases = screen.state.versions.available_releases.clone();
-    let is_fetching = screen.state.versions.fetching;
 
     v_flex()
         .size_full()
@@ -56,11 +67,15 @@ pub fn render_versions(
                                 })),
                         )
                         .child(
-                            Button::new("btn-install-new")
-                                .label("Install Latest")
-                                .icon(IconName::Plus)
+                            Button::new("btn-install")
+                                .label("Install")
+                                .icon(IconName::Download)
                                 .on_click(cx.listener(|this, _, _, cx| {
-                                    this.install_latest_version(cx);
+                                    this.state.ui.show_install_modal = true;
+                                    if this.state.versions.available_releases.is_empty() {
+                                        this.refresh_versions(cx);
+                                    }
+                                    cx.notify();
                                 })),
                         ),
                 ),
@@ -68,9 +83,10 @@ pub fn render_versions(
         .child(div().w_full().h(px(1.0)).bg(theme.border))
         .child(
             v_flex()
+                .id("installed-versions-list")
                 .w_full()
                 .flex_1()
-                .overflow_y_scroll()
+                .scrollable(ScrollbarAxis::Vertical)
                 .gap_3()
                 .when(installed.is_empty(), |this| {
                     this.child(
@@ -80,22 +96,12 @@ pub fn render_versions(
                             .justify_center()
                             .py_12()
                             .gap_3()
-                            .child(
-                                Icon::new(IconName::Package)
-                                    .size(px(48.))
-                                    .text_color(theme.muted_foreground),
-                            )
-                            .child(
-                                div()
-                                    .text_base()
-                                    .text_color(theme.foreground)
-                                    .child("No Pulsar installations found"),
-                            )
+                            .child(Spinner::new().color(theme.muted_foreground))
                             .child(
                                 div()
                                     .text_sm()
                                     .text_color(theme.muted_foreground)
-                                    .child("Click \"Install Latest\" to get started"),
+                                    .child("Click \"Install\" to get started"),
                             ),
                     )
                 })
@@ -104,68 +110,68 @@ pub fn render_versions(
                     let date = ver.metadata.install_date.clone();
                     let size = format_bytes(ver.disk_size_bytes);
                     let path = ver.metadata.install_path.clone();
-
                     let path_clone = path.clone();
 
-                    h_flex()
-                        .id(format!("version-{}", idx))
-                        .w_full()
-                        .items_center()
-                        .justify_between()
+                    v_flex()
+                        .id(format!("version-card-{}", idx))
+                        .w(px(280.))
                         .p_4()
                         .rounded_lg()
                         .border_1()
                         .border_color(theme.border)
                         .hover(|this| this.bg(theme.accent.opacity(0.05)))
+                        .gap_3()
                         .child(
                             h_flex()
-                                .gap_3()
                                 .items_center()
+                                .gap_2()
                                 .child(
                                     Icon::new(IconName::Package)
-                                        .size(px(20.))
+                                        .size(px(18.))
                                         .text_color(theme.accent),
                                 )
                                 .child(
-                                    v_flex()
-                                        .gap_0p5()
-                                        .child(
-                                            h_flex()
-                                                .gap_2()
-                                                .items_center()
-                                                .child(
-                                                    div()
-                                                        .text_sm()
-                                                        .font_weight(gpui::FontWeight::SEMIBOLD)
-                                                        .text_color(theme.foreground)
-                                                        .child(format!("v{}", version)),
-                                                )
-                                                .child(
-                                                    div()
-                                                        .text_xs()
-                                                        .px_2()
-                                                        .py_0p5()
-                                                        .rounded_md()
-                                                        .bg(theme.accent.opacity(0.12))
-                                                        .text_color(theme.accent)
-                                                         .child(size),
-                                                ),
-                                        )
-                                        .child(
-                                            h_flex()
-                                                .gap_2()
-                                                .text_xs()
-                                                .text_color(theme.muted_foreground)
-                                                .child(if date.is_empty() {
-                                                    "Unknown date".to_string()
-                                                } else {
-                                                    date
-                                                })
-                                                .child("·")
-                                                .child(path.display().to_string()),
-                                        ),
+                                    div()
+                                        .text_sm()
+                                        .font_weight(gpui::FontWeight::BOLD)
+                                        .text_color(theme.foreground)
+                                        .child(format!("v{}", version)),
                                 ),
                         )
+                        .child(
+                            h_flex()
+                                .items_center()
+                                .gap_2()
+                                .child(
+                                    div()
+                                        .text_xs()
+                                        .px_2()
+                                        .py_0p5()
+                                        .rounded_md()
+                                        .bg(theme.accent.opacity(0.12))
+                                        .text_color(theme.accent)
+                                        .child(size),
+                                )
+                                .child(
+                                    div()
+                                        .text_xs()
+                                        .text_color(theme.muted_foreground)
+                                        .child(if date.is_empty() {
+                                            "Unknown date".to_string()
+                                        } else {
+                                            date
+                                        }),
+                                ),
+                        )
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(theme.muted_foreground)
+                                .overflow_hidden()
+                                .text_ellipsis()
+                                .child(path.display().to_string()),
+                        )
+                        .child(div().w_full().h(px(1.0)).bg(theme.border))
                         .child(
                             h_flex()
                                 .gap_1()
@@ -211,40 +217,132 @@ pub fn render_versions(
                                 }),
                         )
                         .into_any_element()
-                }))
-                .when(!releases.is_empty(), |this| {
+                })),
+        )
+}
+
+fn render_install_modal(
+    screen: &mut EntryScreen,
+    cx: &mut Context<EntryScreen>,
+) -> impl IntoElement {
+    let theme = cx.theme();
+    let releases = screen.state.versions.available_releases.clone();
+    let installed = screen.state.versions.installed.clone();
+    let fetching = screen.state.versions.fetching;
+
+    v_flex()
+        .size_full()
+        .p_6()
+        .gap_4()
+        .child(
+            h_flex()
+                .w_full()
+                .items_center()
+                .justify_between()
+                .child(
+                    h_flex()
+                        .gap_3()
+                        .items_center()
+                        .child(
+                            Button::new("btn-back")
+                                .icon(IconName::ArrowLeft)
+                                .compact()
+                                .ghost()
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.state.ui.show_install_modal = false;
+                                    cx.notify();
+                                })),
+                        )
+                        .child(
+                            div()
+                                .text_xl()
+                                .font_weight(gpui::FontWeight::BOLD)
+                                .text_color(theme.foreground)
+                                .child("Install Engine"),
+                        ),
+                )
+                .child(
+                    Button::new("btn-refresh-releases")
+                        .label("Refresh")
+                        .icon(IconName::Refresh)
+                        .compact()
+                        .ghost()
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.refresh_versions(cx);
+                        })),
+                ),
+        )
+        .child(div().w_full().h(px(1.0)).bg(theme.border))
+        .child(
+            v_flex()
+                .id("install-releases-list")
+                .w_full()
+                .flex_1()
+                .scrollable(ScrollbarAxis::Vertical)
+                .gap_3()
+                .when(fetching && releases.is_empty(), |this| {
                     this.child(
                         v_flex()
                             .w_full()
-                            .gap_2()
-                            .pt_4()
+                            .items_center()
+                            .justify_center()
+                            .py_12()
+                            .gap_3()
+                            .child(Spinner::new().color(theme.muted_foreground))
                             .child(
                                 div()
                                     .text_sm()
-                                    .font_weight(gpui::FontWeight::SEMIBOLD)
                                     .text_color(theme.muted_foreground)
-                                    .child("Available Releases"),
-                            )
-                            .children(releases.iter().filter(|r| !r.prerelease).take(10).enumerate().map(
-                                |(idx, release)| {
-                                    let tag = release.tag_name.clone();
-                                    let name = release.name.clone();
-                                    let has_asset =
-                                        installer_service::find_platform_asset(release).is_some();
-                                    let already_installed = installed
-                                        .iter()
-                                        .any(|v| v.metadata.version == tag.trim_start_matches('v'));
+                                    .child("Fetching releases..."),
+                            ),
+                    )
+                })
+                .when(!fetching && releases.is_empty(), |this| {
+                    this.child(
+                        v_flex()
+                            .w_full()
+                            .items_center()
+                            .justify_center()
+                            .py_12()
+                            .gap_3()
+                            .child(Spinner::new().color(theme.muted_foreground))
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .text_color(theme.muted_foreground)
+                                    .child("Could not load releases. Click Refresh to try again."),
+                            ),
+                    )
+                })
+                .children(
+                    releases
+                        .iter()
+                        .filter(|r| !r.prerelease)
+                        .enumerate()
+                        .map(|(idx, release)| {
+                            let tag = release.tag_name.clone();
+                            let name = release.name.clone();
+                            let body = release.body.clone();
+                            let has_asset =
+                                installer_service::find_platform_asset(release).is_some();
+                            let already_installed = installed
+                                .iter()
+                                .any(|v| v.metadata.version == tag.trim_start_matches('v'));
 
+                            v_flex()
+                                .id(format!("release-{}", idx))
+                                .w_full()
+                                .p_4()
+                                .rounded_lg()
+                                .border_1()
+                                .border_color(theme.border)
+                                .hover(|this| this.bg(theme.accent.opacity(0.05)))
+                                .gap_2()
+                                .child(
                                     h_flex()
-                                        .id(format!("release-{}", idx))
                                         .w_full()
                                         .items_center()
                                         .justify_between()
-                                        .p_3()
-                                        .rounded_lg()
-                                        .border_1()
-                                        .border_color(theme.border)
-                                        .hover(|this| this.bg(theme.accent.opacity(0.05)))
                                         .child(
                                             h_flex()
                                                 .gap_2()
@@ -252,23 +350,20 @@ pub fn render_versions(
                                                 .child(
                                                     Icon::new(IconName::Label)
                                                         .size(px(16.))
-                                                        .text_color(theme.muted_foreground),
+                                                        .text_color(theme.accent),
                                                 )
                                                 .child(
-                                                    v_flex()
-                                                        .child(
-                                                            div()
-                                                                .text_sm()
-                                                                .font_weight(gpui::FontWeight::MEDIUM)
-                                                                .text_color(theme.foreground)
-                                                                  .child(tag.clone()),
-                                                        )
-                                                        .child(
-                                                            div()
-                                                                .text_xs()
-                                                                .text_color(theme.muted_foreground)
-                                                                 .child(name),
-                                                        ),
+                                                    div()
+                                                        .text_sm()
+                                                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                                                        .text_color(theme.foreground)
+                                                        .child(tag.clone()),
+                                                )
+                                                .child(
+                                                    div()
+                                                        .text_xs()
+                                                        .text_color(theme.muted_foreground)
+                                                        .child(name),
                                                 ),
                                         )
                                         .child({
@@ -280,11 +375,10 @@ pub fn render_versions(
                                                     .into_any_element()
                                             } else if has_asset {
                                                 let tag_clone = tag.clone();
-                                                Button::new(format!("install-release-{}", idx))
+                                                Button::new(format!("install-{}", idx))
                                                     .label("Install")
                                                     .icon(IconName::Download)
                                                     .compact()
-                                                    .ghost()
                                                     .on_click(cx.listener(move |this, _, _, cx| {
                                                         let tag = tag_clone.clone();
                                                         if let Some(release) = this
@@ -301,11 +395,35 @@ pub fn render_versions(
                                                                 )
                                                             {
                                                                 let url =
-                                                                    asset.browser_download_url.clone();
+                                                                    asset.browser_download_url
+                                                                        .clone();
                                                                 let dest =
-                                                                    installer_service::default_install_path()
-                                                                        .join(tag.trim_start_matches('v'));
+                                                                    installer_service::default_install_path(
+                                                                    )
+                                                                    .join(
+                                                                        tag.trim_start_matches('v'),
+                                                                    );
 
+                                                                let dl_id = format!(
+                                                                    "engine-{}",
+                                                                    tag
+                                                                );
+                                                                let dm_view = this.state.download_manager_view.clone();
+                                                                dm_view.update(cx, |view, cx| {
+                                                                    view.add_item(DownloadItem {
+                                                                        id: dl_id.clone(),
+                                                                        kind: DownloadKind::EngineVersion {
+                                                                            version: tag.clone(),
+                                                                        },
+                                                                        status: crate::core::types::DownloadStatus::Downloading {
+                                                                            bytes_downloaded: 0,
+                                                                            total_bytes: 0,
+                                                                            speed_bps: 0,
+                                                                        },
+                                                                        started_at: std::time::Instant::now(),
+                                                                    });
+                                                                    cx.notify();
+                                                                });
                                                                 this.state.versions.install_state =
                                                                     installer_service::VersionInstallState::Downloading {
                                                                         version: tag.clone(),
@@ -315,35 +433,76 @@ pub fn render_versions(
 
                                                                 cx.spawn(async move |entity, cx| {
                                                                     let dl_tag = tag.clone();
-                                                                    let result = cx
+                                                                    let dl_id = dl_id.clone();
+                                                                    let progress = std::sync::Arc::new(parking_lot::Mutex::new(
+                                                                        installer_service::DownloadProgress::default(),
+                                                                    ));
+                                                                    let progress_clone = progress.clone();
+                                                                    let dm_view = dm_view;
+
+                                                                    let download_task = cx
                                                                         .background_executor()
                                                                         .spawn(async move {
-                                                                            installer_service::download_and_extract_blocking(
+                                                                            installer_service::download_and_extract_with_progress(
                                                                                 &url,
                                                                                 &dest,
                                                                                 &dl_tag,
-                                                                                |_| {},
+                                                                                progress_clone,
                                                                             )
-                                                                        })
-                                                                        .await;
+                                                                        });
+
+                                                                    loop {
+                                                                        cx.background_executor()
+                                                                            .timer(std::time::Duration::from_millis(150))
+                                                                            .await;
+
+                                                                        let snapshot = {
+                                                                            let p = progress.lock();
+                                                                            (p.bytes_downloaded, p.total_bytes, p.speed_bps, p.done, p.error.clone())
+                                                                        };
+
+                                                                        let (bytes, total, speed, done, error) = snapshot;
+                                                                        let _ = cx.update(|cx| {
+                                                                            let _ = entity.update(cx, |this, cx| {
+                                                                                if !done {
+                                                                                    dm_view.update(cx, |view, cx| {
+                                                                                        view.update_progress(&dl_id, bytes, total, speed);
+                                                                                        cx.notify();
+                                                                                    });
+                                                                                }
+                                                                                cx.notify();
+                                                                            });
+                                                                        });
+
+                                                                        if done {
+                                                                            break;
+                                                                        }
+                                                                    }
+
                                                                     let _ = cx.update(|cx| {
-                                                                        entity.update(cx, |this, cx| {
-                                                                            match result {
-                                                                                Ok(()) => {
-                                                                                    this.state.versions.install_state =
-                                                                                        installer_service::VersionInstallState::Complete {
-                                                                                            version: tag,
-                                                                                        };
-                                                                                    this.state.versions.installed =
-                                                                                        installer_service::scan_installed_versions();
-                                                                                }
-                                                                                Err(e) => {
-                                                                                    this.state.versions.install_state =
-                                                                                        installer_service::VersionInstallState::Error {
-                                                                                            version: tag,
-                                                                                            message: e,
-                                                                                        };
-                                                                                }
+                                                                        let _ = entity.update(cx, |this, cx| {
+                                                                            let p = progress.lock();
+                                                                            if let Some(ref e) = p.error {
+                                                                                dm_view.update(cx, |view, cx| {
+                                                                                    view.fail(&dl_id, e.clone());
+                                                                                    cx.notify();
+                                                                                });
+                                                                                this.state.versions.install_state =
+                                                                                    installer_service::VersionInstallState::Error {
+                                                                                        version: tag,
+                                                                                        message: e.clone(),
+                                                                                    };
+                                                                            } else {
+                                                                                dm_view.update(cx, |view, cx| {
+                                                                                    view.complete(&dl_id);
+                                                                                    cx.notify();
+                                                                                });
+                                                                                this.state.versions.install_state =
+                                                                                    installer_service::VersionInstallState::Complete {
+                                                                                        version: tag,
+                                                                                    };
+                                                                                this.state.versions.installed =
+                                                                                    installer_service::scan_installed_versions();
                                                                             }
                                                                             cx.notify();
                                                                         });
@@ -361,27 +520,21 @@ pub fn render_versions(
                                                     .child("No binary")
                                                     .into_any_element()
                                             }
-                                        })
-                                        .into_any_element()
-                                },
-                            ),
-                    )
-                )
-            }),
+                                        }),
+                                )
+                                .when(!body.is_empty(), |this| {
+                                    this.child(
+                                        div()
+                                            .text_xs()
+                                            .text_color(theme.muted_foreground)
+                                            .max_h_48()
+                                            .overflow_y_scroll()
+                                            .child(body),
+                                    )
+                                })
+                                .into_any_element()
+                        }),
+                ),
         )
 }
 
-fn format_bytes(bytes: u64) -> String {
-    const KB: u64 = 1024;
-    const MB: u64 = 1024 * KB;
-    const GB: u64 = 1024 * MB;
-    if bytes >= GB {
-        format!("{:.1} GB", bytes as f64 / GB as f64)
-    } else if bytes >= MB {
-        format!("{:.1} MB", bytes as f64 / MB as f64)
-    } else if bytes >= KB {
-        format!("{:.1} KB", bytes as f64 / KB as f64)
-    } else {
-        format!("{} B", bytes)
-    }
-}

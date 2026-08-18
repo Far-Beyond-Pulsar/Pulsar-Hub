@@ -27,6 +27,7 @@ pub struct UiState {
     pub auth_device_modal_shown: bool,
     pub show_add_server: bool,
     pub show_create_project: bool,
+    pub show_install_modal: bool,
 }
 
 impl UiState {
@@ -42,6 +43,7 @@ impl UiState {
             auth_device_modal_shown: false,
             show_add_server: false,
             show_create_project: false,
+            show_install_modal: false,
         }
     }
 }
@@ -363,6 +365,7 @@ pub struct AppState {
     pub template_thumbnail_queue: VecDeque<Template>,
 
     pub versions: crate::core::types::VersionState,
+    pub download_manager_view: Entity<crate::screen::views::download_manager::DownloadManagerView>,
 }
 
 impl AppState {
@@ -454,6 +457,8 @@ impl AppState {
                 installed: crate::service::installer_service::scan_installed_versions(),
                 ..Default::default()
             },
+            download_manager_view: cx
+                .new(|cx| crate::screen::views::download_manager::DownloadManagerView::new(cx)),
         }
     }
 }

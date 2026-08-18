@@ -1,6 +1,7 @@
 pub mod clone_git;
 pub mod cloud_projects;
 pub mod dependency_setup;
+pub mod download_manager;
 pub mod new_project;
 pub mod onboarding;
 pub mod project_settings;
@@ -13,6 +14,7 @@ pub mod versions;
 pub use clone_git::render_clone_git;
 pub use cloud_projects::render_cloud_projects;
 pub use dependency_setup::render_dependency_setup;
+pub use download_manager::DownloadManagerView;
 pub use new_project::render_new_project;
 pub use onboarding::render_onboarding;
 pub use project_settings::*;

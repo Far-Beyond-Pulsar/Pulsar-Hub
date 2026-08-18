@@ -444,7 +444,22 @@ impl EntryScreen {
                     let _ = cx.update(|cx| {
                         let _ = entity.update(cx, |this, cx| {
                             this.state.clone_progress = None;
-                            this.state.clone_error = Some(err);
+                            this.state.clone_error = Some(err.clone());
+                            this.state.download_manager_view.update(cx, |view, cx| {
+                                for item in &mut view.items {
+                                    if matches!(
+                                        item.kind,
+                                        DownloadKind::TemplateClone { .. }
+                                    ) && matches!(
+                                        item.status,
+                                        DownloadStatus::Downloading { .. }
+                                    ) {
+                                        item.status =
+                                            DownloadStatus::Failed(err.clone());
+                                    }
+                                }
+                                cx.notify();
+                            });
                             cx.notify();
                         });
                     });
@@ -457,6 +472,20 @@ impl EntryScreen {
                         this.state.clone_progress = None;
                         this.state.clone_error = None;
                         this.state.input.new_project_path = Some(target.clone());
+                        this.state.download_manager_view.update(cx, |view, cx| {
+                            for item in &mut view.items {
+                                if matches!(
+                                    item.kind,
+                                    DownloadKind::TemplateClone { .. }
+                                ) && matches!(
+                                    item.status,
+                                    DownloadStatus::Downloading { .. }
+                                ) {
+                                    item.status = DownloadStatus::Complete;
+                                }
+                            }
+                            cx.notify();
+                        });
                         if show_upstream {
                             let n = target
                                 .file_name()
@@ -491,6 +520,23 @@ impl EntryScreen {
     }
 
     pub(crate) fn clone_template(&mut self, template: Template, cx: &mut Context<Self>) {
+        let dl_id = format!("template-{}", template.name);
+        self.state.download_manager_view.update(cx, |view, cx| {
+            view.add_item(DownloadItem {
+                id: dl_id,
+                kind: DownloadKind::TemplateClone {
+                    name: template.name.clone(),
+                },
+                status: DownloadStatus::Downloading {
+                    bytes_downloaded: 0,
+                    total_bytes: 0,
+                    speed_bps: 0,
+                },
+                started_at: std::time::Instant::now(),
+            });
+            cx.notify();
+        });
+        cx.notify();
         self.clone_git_repo(Some(template.repo_url), cx);
     }
 

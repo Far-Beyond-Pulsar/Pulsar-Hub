@@ -313,6 +313,105 @@ pub struct PendingInvite {
     pub notification_id: String,
 }
 
+// ── Download Manager ────────────────────────────────────────────────────
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum DownloadKind {
+    EngineVersion { version: String },
+    TemplateClone { name: String },
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum DownloadStatus {
+    Downloading {
+        bytes_downloaded: u64,
+        total_bytes: u64,
+        speed_bps: u64,
+    },
+    Complete,
+    Failed(String),
+}
+
+#[derive(Clone, Debug)]
+pub struct DownloadItem {
+    pub id: String,
+    pub kind: DownloadKind,
+    pub status: DownloadStatus,
+    pub started_at: std::time::Instant,
+}
+
+impl DownloadItem {
+    pub fn label(&self) -> String {
+        match &self.kind {
+            DownloadKind::EngineVersion { version } => format!("Engine v{}", version),
+            DownloadKind::TemplateClone { name } => format!("Template: {}", name),
+        }
+    }
+
+    pub fn progress_fraction(&self) -> f32 {
+        match &self.status {
+            DownloadStatus::Downloading {
+                bytes_downloaded,
+                total_bytes,
+                ..
+            } => {
+                if *total_bytes > 0 {
+                    (*bytes_downloaded as f32 / *total_bytes as f32).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                }
+            }
+            _ => 0.0,
+        }
+    }
+
+    pub fn downloaded_display(&self) -> String {
+        match &self.status {
+            DownloadStatus::Downloading {
+                bytes_downloaded,
+                total_bytes,
+                ..
+            } => format!("{} / {}", format_bytes(*bytes_downloaded), format_bytes(*total_bytes)),
+            DownloadStatus::Complete => "Complete".to_string(),
+            DownloadStatus::Failed(e) => e.clone(),
+        }
+    }
+
+    pub fn speed_display(&self) -> String {
+        match &self.status {
+            DownloadStatus::Downloading { speed_bps, .. } => {
+                if *speed_bps > 0 {
+                    format!("{}/s", format_bytes(*speed_bps))
+                } else {
+                    String::new()
+                }
+            }
+            _ => String::new(),
+        }
+    }
+}
+
+pub fn format_bytes(bytes: u64) -> String {
+    const KB: u64 = 1024;
+    const MB: u64 = 1024 * KB;
+    const GB: u64 = 1024 * MB;
+    const TB: u64 = 1024 * GB;
+    const PB: u64 = 1024 * TB;
+    if bytes >= PB {
+        format!("{:.1} PB", bytes as f64 / PB as f64)
+    } else if bytes >= TB {
+        format!("{:.1} TB", bytes as f64 / TB as f64)
+    } else if bytes >= GB {
+        format!("{:.1} GB", bytes as f64 / GB as f64)
+    } else if bytes >= MB {
+        format!("{:.1} MB", bytes as f64 / MB as f64)
+    } else if bytes >= KB {
+        format!("{:.1} KB", bytes as f64 / KB as f64)
+    } else {
+        format!("{} B", bytes)
+    }
+}
+
 // ── Version Management ────────────────────────────────────────────────────
 
 #[derive(Clone, Debug)]
