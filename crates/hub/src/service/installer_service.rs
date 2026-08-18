@@ -881,14 +881,17 @@ pub fn launch_engine(install_dir: &Path) -> Result<(), String> {
     launch_engine_inner(install_dir, None)
 }
 
-/// Launch the installed engine, passing `project` as the CLI argument so it
-/// instantly opens that project.
+/// Launch the installed engine, using a `pulsar://open_project/<encoded>`
+/// URI argument so it instantly opens `project`.
 pub fn launch_engine_for_project(install_dir: &Path, project: &Path) -> Result<(), String> {
     launch_engine_inner(install_dir, Some(project))
 }
 
 fn launch_engine_inner(install_dir: &Path, project: Option<&Path>) -> Result<(), String> {
-    let project_arg: Option<String> = project.map(|p| p.to_string_lossy().to_string());
+    // The engine does not accept a positional project path. It opens projects
+    // via the `pulsar://open_project/<url-encoded-path>` URI scheme.
+    let project_arg: Option<String> = project
+        .map(|p| format!("pulsar://open_project/{}", percent_encode(&p.to_string_lossy())));
 
     // On macOS prefer launching the `.app` bundle when there is no project to
     // pass (bundle launches via `open` can't take CLI args).
@@ -955,6 +958,20 @@ fn platform_info() -> (String, String, String) {
         "tar.gz".to_string()
     };
     (os, arch, ext)
+}
+
+/// Percent-encode a path for use inside a `pulsar://open_project/…` URI.
+fn percent_encode(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    for byte in input.bytes() {
+        let c = byte as char;
+        if c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | '~') {
+            out.push(c);
+        } else {
+            out.push_str(&format!("%{:02X}", byte));
+        }
+    }
+    out
 }
 
 /// The real OS/CPU architecture for asset selection.
