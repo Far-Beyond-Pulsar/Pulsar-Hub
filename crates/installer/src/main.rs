@@ -39,7 +39,16 @@ fn main() {
 
     tracing::info!("Starting Pulsar Hub");
 
-    let app = Application::new().with_assets(Assets);
+    // Register a real HTTP client so GPUI's image/renderer can fetch remote
+    // assets (e.g. screenshots in release notes). The default is a null client.
+    let http_client = std::sync::Arc::new(
+        reqwest_client::ReqwestClient::user_agent("Pulsar-Installer/1.0")
+            .expect("failed to build HTTP client"),
+    );
+
+    let app = Application::new()
+        .with_http_client(http_client)
+        .with_assets(Assets);
 
     app.run(move |cx| {
         ui::init(cx);

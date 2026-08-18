@@ -354,6 +354,57 @@ pub fn fetch_repo_releases_blocking(
     Err(last_err)
 }
 
+/// The `(repo, tag)` GitHub identifiers for a given installed engine version.
+fn repo_tag_for_version(version: &str) -> (&'static str, String) {
+    if version.to_lowercase().starts_with("nightly-") {
+        ("Far-Beyond-Pulsar/Nightly", version.to_string())
+    } else {
+        let t = if version.starts_with(['v', 'V']) {
+            version.to_string()
+        } else {
+            format!("v{}", version)
+        };
+        ("Far-Beyond-Pulsar/Pulsar-Native", t)
+    }
+}
+
+/// Fetch the GitHub **release notes** (release `body`) for a given installed
+/// engine version. Falls back to a short message when unavailable.
+pub fn release_notes_for_version(version: &str) -> String {
+    let (repo, tag) = repo_tag_for_version(version);
+    let url = format!(
+        "{}/{}/releases/tags/{}",
+        GITHUB_API, repo, tag
+    );
+
+    let client = match reqwest::blocking::Client::builder()
+        .user_agent("Pulsar-Hub/1.0")
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+    {
+        Ok(c) => c,
+        Err(_) => return format!("Could not load release notes for **{}**.", version),
+    };
+
+    let resp = match client.get(&url).send() {
+        Ok(r) if r.status().is_success() => r,
+        _ => {
+            return format!(
+                "No release notes are available for engine version **{}**.",
+                version
+            )
+        }
+    };
+
+    match resp.json::<GitHubRelease>() {
+        Ok(release) if !release.body.trim().is_empty() => release.body,
+        _ => format!(
+            "No release notes are available for engine version **{}**.",
+            version
+        ),
+    }
+}
+
 pub fn find_platform_asset(release: &GitHubRelease) -> Option<&GitHubAsset> {
     let (os, arch, ext) = platform_info();
     let candidates = [

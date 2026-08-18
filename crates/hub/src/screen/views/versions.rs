@@ -105,7 +105,11 @@ fn render_installed_grid(
                             ),
                     )
                 })
-                .children(installed.iter().enumerate().map(|(idx, ver)| {
+                .child(
+                    h_flex()
+                        .flex_wrap()
+                        .gap_3()
+                        .children(installed.iter().enumerate().map(|(idx, ver)| {
                     let version = ver.metadata.version.clone();
                     let date = ver.metadata.install_date.clone();
                     let size = format_bytes(ver.disk_size_bytes);
@@ -174,50 +178,72 @@ fn render_installed_grid(
                         .child(div().w_full().h(px(1.0)).bg(theme.border))
                         .child(
                             h_flex()
-                                .gap_1()
-                                .child({
-                                    let p = path_clone.clone();
-                                    Button::new(format!("launch-{}", idx))
-                                        .label("Launch")
-                                        .icon(IconName::Play)
-                                        .compact()
-                                        .ghost()
-                                        .on_click(move |_, _, cx| {
-                                            let p = p.clone();
-                                            cx.spawn(async move |_| {
-                                                if let Err(e) =
-                                                    installer_service::launch_engine(&p)
-                                                {
-                                                    tracing::error!("Launch failed: {}", e);
-                                                }
-                                            })
-                                            .detach();
+                                .w_full()
+                                .items_center()
+                                .justify_between()
+                                .child(
+                                    h_flex()
+                                        .gap_1()
+                                        .child({
+                                            let p = path_clone.clone();
+                                            Button::new(format!("launch-{}", idx))
+                                                .label("Launch")
+                                                .icon(IconName::Play)
+                                                .compact()
+                                                .ghost()
+                                                .on_click(move |_, _, cx| {
+                                                    let p = p.clone();
+                                                    cx.spawn(async move |_| {
+                                                        if let Err(e) =
+                                                            installer_service::launch_engine(&p)
+                                                        {
+                                                            tracing::error!(
+                                                                "Launch failed: {}",
+                                                                e
+                                                            );
+                                                        }
+                                                    })
+                                                    .detach();
+                                                })
                                         })
-                                })
-                                .child({
-                                    let p = path_clone.clone();
-                                    Button::new(format!("folder-{}", idx))
-                                        .icon(IconName::FolderOpen)
-                                        .compact()
-                                        .ghost()
-                                        .tooltip("Open folder")
-                                        .on_click(move |_, _, _| {
-                                            installer_service::open_install_dir(&p);
+                                        .child({
+                                            let p = path_clone.clone();
+                                            Button::new(format!("folder-{}", idx))
+                                                .icon(IconName::FolderOpen)
+                                                .compact()
+                                                .ghost()
+                                                .tooltip("Open folder")
+                                                .on_click(move |_, _, _| {
+                                                    installer_service::open_install_dir(&p);
+                                                })
                                         })
-                                })
+                                        .child({
+                                            let v = version.clone();
+                                            Button::new(format!("remove-{}", idx))
+                                                .icon(IconName::Trash)
+                                                .compact()
+                                                .ghost()
+                                                .tooltip("Remove engine")
+                                                .on_click(cx.listener(move |this, _, _, cx| {
+                                                    this.remove_version(&v, cx);
+                                                }))
+                                        }),
+                                )
                                 .child({
                                     let v = version.clone();
-                                    Button::new(format!("remove-{}", idx))
-                                        .icon(IconName::Trash)
+                                    Button::new(format!("info-{}", idx))
+                                        .icon(IconName::Settings)
                                         .compact()
                                         .ghost()
+                                        .tooltip("View release notes")
                                         .on_click(cx.listener(move |this, _, _, cx| {
-                                            this.remove_version(&v, cx);
+                                            this.open_release_notes(v.clone(), cx);
                                         }))
                                 }),
                         )
-                        .into_any_element()
-                })),
+                                .into_any_element()
+                    })),
+                ),
         )
 }
 

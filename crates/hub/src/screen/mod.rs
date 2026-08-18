@@ -1877,6 +1877,39 @@ impl EntryScreen {
         None
     }
 
+    /// Open the full-screen release-notes modal for the given installed engine version.
+    pub(crate) fn open_release_notes(&mut self, version: String, cx: &mut Context<Self>) {
+        self.state.ui.release_notes_modal = Some(crate::core::types::ReleaseNotesModal {
+            title: format!("Release Notes · {}", version),
+            body: "Loading release notes…".to_string(),
+        });
+        cx.notify();
+
+        cx.spawn(async move |entity, cx| {
+            let version = version.clone();
+            let body = cx
+                .background_executor()
+                .spawn(async move {
+                    crate::service::installer_service::release_notes_for_version(&version)
+                })
+                .await;
+            let _ = cx.update(|cx| {
+                entity.update(cx, |this, cx| {
+                    if let Some(modal) = &mut this.state.ui.release_notes_modal {
+                        modal.body = body;
+                    }
+                    cx.notify();
+                });
+            });
+        })
+        .detach();
+    }
+
+    pub(crate) fn close_release_notes_modal(&mut self, cx: &mut Context<Self>) {
+        self.state.ui.release_notes_modal = None;
+        cx.notify();
+    }
+
     /// Start downloading + extracting the given release, driven by the tag name.
     pub(crate) fn install_release_by_tag(&mut self, tag: String, cx: &mut Context<Self>) {
         let Some(release) = self

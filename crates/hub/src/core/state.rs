@@ -30,6 +30,7 @@ pub struct UiState {
     pub show_install_modal: bool,
     pub engine_prompt: Option<crate::core::types::EnginePrompt>,
     pub pending_engine_install: Option<String>,
+    pub release_notes_modal: Option<crate::core::types::ReleaseNotesModal>,
 }
 
 impl UiState {
@@ -48,6 +49,7 @@ impl UiState {
             show_install_modal: false,
             engine_prompt: None,
             pending_engine_install: None,
+            release_notes_modal: None,
         }
     }
 }

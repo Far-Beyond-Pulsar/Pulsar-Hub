@@ -9,8 +9,10 @@ use gpui_component::{
     ActiveTheme,
     ContextModal as _,
     modal::Modal,
+    scroll::ScrollbarAxis,
     text::TextView,
     v_flex,
+    StyledExt as _,
 };
 use super::super::{InstallerView, ReleaseInfo};
 
@@ -227,7 +229,7 @@ impl InstallerView {
                         .child(
                             v_flex()
                                 .id("release-notes-modal-scroll")
-                                .overflow_y_scroll()
+                                .scrollable(ScrollbarAxis::Vertical)
                                 .p_4()
                                 .child(TextView::markdown(
                                     "release-notes-modal-md",

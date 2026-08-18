@@ -40,6 +40,13 @@ pub fn render_layout(
         .into_any_element();
     }
 
+    if screen.state.ui.release_notes_modal.is_some() {
+        return crate::screen::views::release_notes_modal::render_release_notes_modal(
+            screen, window, cx,
+        )
+        .into_any_element();
+    }
+
     let view = screen.state.ui.view;
     let active_downloads = screen.state.download_manager_view.read(cx).active_count();
     let accent_color = cx.theme().accent;

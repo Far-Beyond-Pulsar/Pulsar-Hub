@@ -3,6 +3,15 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use ui::IconName;
 
+// ── Engine Release Notes Modal ────────────────────────────────────────────
+
+/// A full-screen modal showing a particular engine version's release notes.
+#[derive(Clone, Debug)]
+pub struct ReleaseNotesModal {
+    pub title: String,
+    pub body: String,
+}
+
 // ── Engine Prompt ─────────────────────────────────────────────────────────
 
 /// A pending prompt asking the user whether to auto-install a missing engine

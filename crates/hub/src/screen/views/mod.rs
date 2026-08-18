@@ -10,6 +10,7 @@ pub mod project_settings;
 pub mod recent_projects;
 pub mod release_details;
 pub mod release_list;
+pub mod release_notes_modal;
 pub mod sidebar;
 pub mod templates;
 pub mod upstream_prompt;
