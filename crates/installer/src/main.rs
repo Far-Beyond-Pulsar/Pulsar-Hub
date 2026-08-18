@@ -2,6 +2,7 @@ use gpui::{prelude::*, *};
 use pulsar_hub::EntryWindow;
 use ui::Assets;
 use ui::Root;
+use ui::theme::Theme;
 
 fn main() {
     tracing_subscriber::fmt()
@@ -17,6 +18,7 @@ fn main() {
 
     app.run(move |cx| {
         ui::init(cx);
+        Theme::change(WindowAppearance::Dark, None, cx);
         cx.activate(true);
 
         let window_size = size(px(1200.0), px(800.0));
@@ -26,11 +28,7 @@ fn main() {
 
         let options = WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(window_bounds)),
-            titlebar: Some(TitlebarOptions {
-                title: Some(window_title),
-                appears_transparent: true,
-                traffic_light_position: Some(point(px(12.0), px(10.0))),
-            }),
+            titlebar: None,
             window_min_size: Some(Size {
                 width: px(960.0),
                 height: px(640.0),
