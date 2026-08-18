@@ -21,7 +21,7 @@ fn main() {
         Theme::change(WindowAppearance::Dark, None, cx);
         cx.activate(true);
 
-        let window_size = size(px(1200.0), px(800.0));
+        let window_size = size(px(1300.0), px(800.0));
         let window_bounds = Bounds::centered(None, window_size, cx);
 
         let window_title = gpui::SharedString::from("Pulsar Engine");
@@ -33,6 +33,7 @@ fn main() {
                 width: px(960.0),
                 height: px(640.0),
             }),
+            window_decorations: Some(WindowDecorations::Client),
             kind: WindowKind::Normal,
             ..Default::default()
         };
