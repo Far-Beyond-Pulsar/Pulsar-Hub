@@ -32,6 +32,10 @@ chrono = "0.4"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 zip = "2.2"
 dirs = "5.0"
+bsdiff.workspace = true
+zstd.workspace = true
+reqwest.workspace = true
+tokio.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 windows.workspace = true

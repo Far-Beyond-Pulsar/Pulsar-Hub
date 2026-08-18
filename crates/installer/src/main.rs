@@ -12,6 +12,31 @@ fn main() {
         )
         .init();
 
+    let args: Vec<String> = std::env::args().collect();
+    let skip_update_check = args.iter().any(|a| a == "--updated");
+
+    if !skip_update_check {
+        let rt = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
+        let should_relaunch = rt.block_on(async {
+            match pulsar_installer::updater::check_and_update().await {
+                Ok(relaunch) => relaunch,
+                Err(e) => {
+                    tracing::warn!("Update check failed: {}", e);
+                    false
+                }
+            }
+        });
+
+        if should_relaunch {
+            if let Ok(exe) = std::env::current_exe() {
+                let _ = std::process::Command::new(exe)
+                    .arg("--updated")
+                    .spawn();
+            }
+            std::process::exit(0);
+        }
+    }
+
     tracing::info!("Starting Pulsar Hub");
 
     let app = Application::new().with_assets(Assets);
@@ -23,8 +48,6 @@ fn main() {
 
         let window_size = size(px(1300.0), px(800.0));
         let window_bounds = Bounds::centered(None, window_size, cx);
-
-        let window_title = gpui::SharedString::from("Pulsar Engine");
 
         let options = WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(window_bounds)),

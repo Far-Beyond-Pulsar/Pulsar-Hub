@@ -3,6 +3,7 @@ default-members = ["crates/installer"]
 members = [
     "crates/installer",
     "crates/hub",
+    "crates/patch-tool",
 ]
 resolver = "2"
 
@@ -102,6 +103,9 @@ open = "5.0"
 rfd = "0.17"
 flate2 = "1.0"
 tar = "0.4"
+bsdiff = "0.2.1"
+zstd = "0.13"
+clap = { version = "4", features = ["derive"] }
 
 [workspace.dependencies.windows]
 features = ["Wdk", "Wdk_System", "Wdk_System_SystemServices"]

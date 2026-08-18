@@ -48,6 +48,7 @@ pub mod download;
 pub mod config;
 pub mod error;
 pub mod installed_versions;
+pub mod updater;
 
 pub use traits::*;
 pub use config::InstallerConfig;

@@ -13,6 +13,8 @@ jobs:
     outputs:
       should_release: ${{ steps.check.outputs.should_release }}
       version: ${{ steps.check.outputs.version }}
+      previous_version: ${{ steps.check.outputs.previous_version }}
+      has_previous: ${{ steps.check.outputs.has_previous }}
       package_name: ${{ steps.get-name.outputs.package_name }}
     steps:
       - uses: actions/checkout@v3
@@ -36,9 +38,14 @@ jobs:
           if [ "$CURRENT_VERSION" != "$PREVIOUS_VERSION" ]; then
             echo "should_release=true" >> $GITHUB_OUTPUT
             echo "version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+            echo "previous_version=$PREVIOUS_VERSION" >> $GITHUB_OUTPUT
+            echo "has_previous=true" >> $GITHUB_OUTPUT
             echo "Version changed: $PREVIOUS_VERSION -> $CURRENT_VERSION"
           else
             echo "should_release=false" >> $GITHUB_OUTPUT
+            echo "version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+            echo "previous_version=" >> $GITHUB_OUTPUT
+            echo "has_previous=false" >> $GITHUB_OUTPUT
             echo "Version unchanged: $CURRENT_VERSION"
           fi
 
@@ -299,3 +306,158 @@ jobs:
           asset_path: ${{ env.BIN_PATH }}.sha256
           asset_name: ${{ env.ASSET_NAME }}.sha256
           asset_content_type: text/plain
+
+  generate-patches:
+    needs: [check-version, create-release, build-release, cross-builds]
+    if: needs.check-version.outputs.should_release == 'true' && needs.check-version.outputs.has_previous == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+
+      - name: Build patch tool
+        run: cargo build --release -p pulsar-patch-tool
+
+      - name: Set variables
+        id: vars
+        run: |
+          VERSION="${{ needs.check-version.outputs.version }}"
+          PREV_VERSION="${{ needs.check-version.outputs.previous_version }}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "prev_version=$PREV_VERSION" >> $GITHUB_OUTPUT
+          echo "patch_tool=target/release/pulsar-patch-tool" >> $GITHUB_OUTPUT
+
+          cat > platforms.json << 'EOF'
+          {
+            "targets": [
+              {"triple": "x86_64-pc-windows-msvc", "asset": "pulsar-installer-windows-x86_64.exe", "ext": ".exe"},
+              {"triple": "i686-pc-windows-msvc", "asset": "pulsar-installer-windows-i686.exe", "ext": ".exe"},
+              {"triple": "aarch64-pc-windows-msvc", "asset": "pulsar-installer-windows-arm64.exe", "ext": ".exe"},
+              {"triple": "aarch64-apple-darwin", "asset": "pulsar-installer-macos-arm64", "ext": ""},
+              {"triple": "x86_64-unknown-linux-gnu", "asset": "pulsar-installer-linux-x86_64", "ext": ""},
+              {"triple": "aarch64-unknown-linux-gnu", "asset": "pulsar-installer-linux-arm64", "ext": ""},
+              {"triple": "i686-unknown-linux-gnu", "asset": "pulsar-installer-linux-i686", "ext": ""},
+              {"triple": "armv7-unknown-linux-gnueabihf", "asset": "pulsar-installer-linux-armv7", "ext": ""}
+            ]
+          }
+          EOF
+
+      - name: Download current release binaries
+        run: gh release download "v${{ needs.check-version.outputs.version }}" --dir ./current-binaries --pattern "pulsar-installer-*" --skip-existing
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download previous release binaries
+        run: gh release download "v${{ needs.check-version.outputs.previous_version }}" --dir ./prev-binaries --pattern "pulsar-installer-*" --skip-existing
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate patches and manifest
+        run: |
+          mkdir -p ./patches
+          VERSION="${{ needs.check-version.outputs.version }}"
+          PREV_VERSION="${{ needs.check-version.outputs.previous_version }}"
+          PATCH_TOOL="./target/release/pulsar-patch-tool"
+          RELEASE_BASE="https://github.com/${{ github.repository }}/releases/download/v${VERSION}"
+
+          MANIFEST=$(cat << 'MANIFEST_START'
+          {
+            "schema_version": 1,
+            "latest_version": "${VERSION}",
+            "generated_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "platforms": {}
+          }
+          MANIFEST_START
+          )
+          # Replace version and date
+          MANIFEST=$(echo "$MANIFEST" | sed "s|\${VERSION}|${VERSION}|g")
+          MANIFEST=$(echo "$MANIFEST" | sed "s|\$(date -u +%Y-%m-%dT%H:%M:%SZ)|$(date -u +%Y-%m-%dT%H:%M:%SZ)|g")
+
+          PLATFORMS="{}"
+
+          for TRIPLE in x86_64-pc-windows-msvc i686-pc-windows-msvc aarch64-pc-windows-msvc aarch64-apple-darwin x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu i686-unknown-linux-gnu armv7-unknown-linux-gnueabihf; do
+            case "$TRIPLE" in
+              *windows*) ASSET="pulsar-installer-${TRIPLE##*-}-${TRIPLE%%-*}"; EXT=".exe" ;;
+              *x86_64-pc-windows*) ASSET="pulsar-installer-windows-x86_64.exe"; EXT=".exe" ;;
+              *i686-pc-windows*) ASSET="pulsar-installer-windows-i686.exe"; EXT=".exe" ;;
+              *aarch64-pc-windows*) ASSET="pulsar-installer-windows-arm64.exe"; EXT=".exe" ;;
+              *aarch64-apple*) ASSET="pulsar-installer-macos-arm64"; EXT="" ;;
+              *x86_64-linux*) ASSET="pulsar-installer-linux-x86_64"; EXT="" ;;
+              *aarch64-linux*) ASSET="pulsar-installer-linux-arm64"; EXT="" ;;
+              *i686-linux*) ASSET="pulsar-installer-linux-i686"; EXT="" ;;
+              *armv7*) ASSET="pulsar-installer-linux-armv7"; EXT="" ;;
+              *) continue ;;
+            esac
+
+            CURRENT_FILE="./current-binaries/${ASSET}"
+            PREV_FILE="./prev-binaries/${ASSET}"
+
+            if [ ! -f "$CURRENT_FILE" ] || [ ! -f "$PREV_FILE" ]; then
+              echo "Skipping ${TRIPLE}: missing binary (current=${CURRENT_FILE}, prev=${PREV_FILE})"
+              continue
+            fi
+
+            echo "Generating patch: ${TRIPLE}"
+            PATCH_ASSET="pulsar-installer-patch-${PREV_VERSION}-${VERSION}-${ASSET}.zst"
+
+            if "$PATCH_TOOL" generate-patch \
+              --old-binary "$PREV_FILE" \
+              --new-binary "$CURRENT_FILE" \
+              --output "./patches/${PATCH_ASSET}" 2>/dev/null; then
+
+              PATCH_SHA256=$("$PATCH_TOOL" sha256 --file "./patches/${PATCH_ASSET}")
+              PATCH_SIZE=$(stat -c%s "./patches/${PATCH_ASSET}" 2>/dev/null || stat -f%z "./patches/${PATCH_ASSET}")
+
+              FULL_SHA256=""
+              FULL_SIZE=$(stat -c%s "$CURRENT_FILE" 2>/dev/null || stat -f%z "$CURRENT_FILE")
+              if [ -f "${CURRENT_FILE}.sha256" ]; then
+                FULL_SHA256=$(cat "${CURRENT_FILE}.sha256" | awk '{print $1}')
+              else
+                FULL_SHA256=$("$PATCH_TOOL" sha256 --file "$CURRENT_FILE")
+              fi
+
+              PATCH_ENTRY="{\"from_version\": \"${PREV_VERSION}\", \"to_version\": \"${VERSION}\", \"asset_name\": \"${PATCH_ASSET}\", \"url\": \"${RELEASE_BASE}/${PATCH_ASSET}\", \"sha256\": \"${PATCH_SHA256}\", \"size_bytes\": ${PATCH_SIZE}}"
+
+              PLATFORM_ENTRY=$(echo "$PLATFORMS" | jq --arg t "$TRIPLE" --arg an "$ASSET" --arg fu "${RELEASE_BASE}/${ASSET}" --arg fs "$FULL_SHA256" --argjson fsize "$FULL_SIZE" \
+                '.[$t] = {full_asset_name: $an, full_url: $fu, full_sha256: $fs, full_size_bytes: $fsize, patches: []}')
+
+              PLATFORMS=$(echo "$PLATFORMS" | jq --arg t "$TRIPLE" --argjson entry "$PATCH_ENTRY" '.[$t].patches += [$entry]')
+
+              echo "Uploaded patch: ${PATCH_ASSET}"
+            else
+              echo "Patch generation failed for ${TRIPLE}, skipping"
+            fi
+          done
+
+          MANIFEST=$(jq -n \
+            --arg v "$VERSION" \
+            --arg d "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --argjson p "$PLATFORMS" \
+            '{schema_version: 1, latest_version: $v, generated_at: $d, platforms: $p}')
+
+          echo "$MANIFEST" > update-manifest.json
+          echo "Generated update-manifest.json:"
+          cat update-manifest.json
+
+      - name: Upload patches
+        run: |
+          for f in ./patches/pulsar-installer-patch-*.zst; do
+            if [ -f "$f" ]; then
+              gh release upload "v${{ needs.check-version.outputs.version }}" "$f" --clobber || true
+            fi
+          done
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload update manifest
+        run: gh release upload "v${{ needs.check-version.outputs.version }}" update-manifest.json --clobber
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
