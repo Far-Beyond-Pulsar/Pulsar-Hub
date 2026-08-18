@@ -33,6 +33,10 @@ pub struct UiState {
     pub release_notes_modal: Option<crate::core::types::ReleaseNotesModal>,
     /// True while the "src" engine is being compiled from a local source checkout.
     pub building_src: bool,
+    /// Live cargo build progress for the source-build overlay.
+    pub build_progress: Option<
+        std::sync::Arc<parking_lot::Mutex<crate::service::installer_service::BuildProgress>>,
+    >,
     pub show_cloud_intro_modal: bool,
     pub cloud_intro_page: usize,
 }
@@ -55,6 +59,7 @@ impl UiState {
             pending_engine_install: None,
             release_notes_modal: None,
             building_src: false,
+            build_progress: None,
             show_cloud_intro_modal: false,
             cloud_intro_page: 0,
         }

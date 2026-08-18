@@ -976,25 +976,111 @@ pub fn launch_engine_binary(binary: &Path, current_dir: &Path) -> Result<(), Str
     launch_binary(binary, current_dir, None)
 }
 
-/// Compile the engine from a local source checkout (`cargo build --release`)
-/// and return the path to the produced binary.
-pub fn compile_engine_src(src: &Path) -> Result<PathBuf, String> {
+/// Live progress of a `cargo build` running in the background, surfaced to the
+/// source-build overlay.
+#[derive(Clone, Debug)]
+pub struct BuildProgress {
+    /// Number of crates that have finished compiling.
+    pub done: usize,
+    /// Total number of crates expected to build.
+    pub total: usize,
+    /// The crate currently (or most recently) being compiled.
+    pub current: String,
+    /// Recent compiler output lines (newest last), capped.
+    pub logs: Vec<String>,
+    /// Distinct crates that have compiled (from `compiler-artifact` messages).
+    pub crates: std::collections::HashSet<String>,
+    /// True once the cargo process has exited.
+    pub finished: bool,
+    pub error: Option<String>,
+}
+
+impl Default for BuildProgress {
+    fn default() -> Self {
+        Self {
+            done: 0,
+            total: 0,
+            current: String::new(),
+            logs: Vec::new(),
+            crates: std::collections::HashSet::new(),
+            finished: false,
+            error: None,
+        }
+    }
+}
+
+/// Number of compiler log lines we retain in [`BuildProgress::logs`].
+const MAX_BUILD_LOGS: usize = 200;
+
+/// Compile the engine from a local source checkout (`cargo build --release`),
+/// streaming progress into `progress`, and return the produced binary path.
+pub fn compile_engine_src_with_progress(
+    src: &Path,
+    progress: Arc<Mutex<BuildProgress>>,
+) -> Result<PathBuf, String> {
+    use std::io::{BufRead, BufReader};
+    use std::process::Stdio as S;
+
     tracing::info!("Building engine from source at {:?}", src);
-    let output = std::process::Command::new("cargo")
+
+    {
+        let mut p = progress.lock();
+        p.total = src_crate_count(src).unwrap_or(0);
+    }
+
+    let mut child = match std::process::Command::new("cargo")
         .arg("build")
         .arg("--release")
+        .arg("--message-format=json-render-diagnostics")
         .current_dir(src)
-        .output()
-        .map_err(|e| format!("Failed to run cargo: {}", e))?;
-
-    if !output.status.success() {
-        let mut err = String::from_utf8_lossy(&output.stderr).into_owned();
-        if err.trim().is_empty() {
-            err = String::from_utf8_lossy(&output.stdout).into_owned();
+        .stdin(S::null())
+        .stdout(S::piped())
+        .stderr(S::piped())
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            let mut p = progress.lock();
+            p.finished = true;
+            p.error = Some(format!("Failed to run cargo: {}", e));
+            return Err(format!("Failed to run cargo: {}", e));
         }
-        let first_line = err.lines().next().unwrap_or("").to_string();
-        return Err(format!("cargo build failed: {}", first_line));
+    };
+
+    // stdout carries the machine-readable JSON messages (crate artifacts,
+    // rendered diagnostics, build-finished).
+    if let Some(stdout) = child.stdout.take() {
+        let p = progress.clone();
+        std::thread::spawn(move || stream_cargo_json(stdout, &p));
     }
+    // stderr may still carry human-friendly noise (index updates, downloads).
+    if let Some(stderr) = child.stderr.take() {
+        let p = progress.clone();
+        std::thread::spawn(move || stream_cargo_text(stderr, &p));
+    }
+
+    let status = match child.wait() {
+        Ok(s) => s,
+        Err(e) => {
+            let mut p = progress.lock();
+            p.finished = true;
+            p.error = Some(e.to_string());
+            return Err(e.to_string());
+        }
+    };
+
+    let mut p = progress.lock();
+    p.finished = true;
+    if !status.success() {
+        let msg = p
+            .error
+            .clone()
+            .or_else(|| p.logs.last().cloned())
+            .unwrap_or_else(|| "cargo build failed".to_string());
+        p.error = Some(msg.clone());
+        return Err(msg);
+    }
+    drop(p);
 
     for candidate in src_binary_candidates(src) {
         if candidate.exists() {
@@ -1003,6 +1089,135 @@ pub fn compile_engine_src(src: &Path) -> Result<PathBuf, String> {
         }
     }
     Err("cargo build succeeded but produced binary could not be found".to_string())
+}
+
+/// Read cargo's `--message-format=json` stream from stdout and fold the exact
+/// per-crate events into `progress`.
+fn stream_cargo_json(reader: impl std::io::Read + Send + 'static, progress: &Arc<Mutex<BuildProgress>>) {
+    use std::io::{BufRead, BufReader};
+    let mut reader = BufReader::new(reader);
+    let mut line = String::new();
+    loop {
+        line.clear();
+        match reader.read_line(&mut line) {
+            Ok(0) | Err(_) => break,
+            Ok(_) => {
+                let trimmed = line.trim();
+                if trimmed.is_empty() {
+                    continue;
+                }
+                let Ok(msg) = serde_json::from_str::<serde_json::Value>(trimmed) else {
+                    // Not JSON (rare) — surface as-is.
+                    push_log(progress, trimmed.to_string());
+                    continue;
+                };
+                let reason = msg.get("reason").and_then(|r| r.as_str()).unwrap_or("");
+                match reason {
+                    "compiler-artifact" => {
+                        // A crate finished compiling.
+                        let name = msg
+                            .get("target")
+                            .and_then(|t| t.get("name"))
+                            .and_then(|n| n.as_str())
+                            .unwrap_or("crate");
+                        let mut p = progress.lock();
+                        if p.crates.insert(name.to_string()) {
+                            p.done += 1;
+                        }
+                        p.current = format!("Compiling {}", name);
+                        push_log_locked(&mut p, format!("Compiled {}", name));
+                    }
+                    "build-finished" => {
+                        let success = msg
+                            .get("success")
+                            .and_then(|s| s.as_bool())
+                            .unwrap_or(false);
+                        let mut p = progress.lock();
+                        p.finished = true;
+                        if !success {
+                            p.error = Some(
+                                p.logs
+                                    .last()
+                                    .cloned()
+                                    .unwrap_or_else(|| "cargo build failed".to_string()),
+                            );
+                        }
+                        p.current = if success { "Done".to_string() } else { "Build failed".to_string() };
+                    }
+                    "compiler-message" => {
+                        // Rendered diagnostics (errors/warnings) as plain text.
+                        if let Some(rendered) = msg
+                            .get("message")
+                            .and_then(|m| m.get("rendered"))
+                            .and_then(|r| r.as_str())
+                        {
+                            push_log(progress, rendered.trim_end().to_string());
+                        }
+                    }
+                    "build-script-executed" | "build-plan" => {}
+                    _ => {
+                        if let Some(m) = msg.get("message") {
+                            push_log(progress, m.to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Read human-facing cargo output (stderr) and surface it as activity/noise.
+fn stream_cargo_text(reader: impl std::io::Read + Send + 'static, progress: &Arc<Mutex<BuildProgress>>) {
+    use std::io::{BufRead, BufReader};
+    let mut reader = BufReader::new(reader);
+    let mut line = String::new();
+    loop {
+        line.clear();
+        match reader.read_line(&mut line) {
+            Ok(0) | Err(_) => break,
+            Ok(_) => {
+                let trimmed = line.trim().to_string();
+                if trimmed.is_empty() {
+                    continue;
+                }
+                let mut p = progress.lock();
+                if p.current.is_empty() || !p.current.starts_with("Compiling") {
+                    p.current = trimmed.clone();
+                }
+                push_log_locked(&mut p, trimmed);
+            }
+        }
+    }
+}
+
+fn push_log(progress: &Arc<Mutex<BuildProgress>>, line: String) {
+    let mut p = progress.lock();
+    push_log_locked(&mut p, line);
+}
+
+fn push_log_locked(p: &mut BuildProgress, line: String) {
+    p.logs.push(line);
+    if p.logs.len() > MAX_BUILD_LOGS {
+        let excess = p.logs.len() - MAX_BUILD_LOGS;
+        p.logs.drain(0..excess);
+    }
+}
+
+/// Precompute the number of crates cargo will compile (workspace members +
+/// resolved dependencies), via `cargo metadata`.
+fn src_crate_count(src: &Path) -> Option<usize> {
+    let out = std::process::Command::new("cargo")
+        .args(["metadata", "--format-version", "1"])
+        .current_dir(src)
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    serde_json::from_slice::<serde_json::Value>(&out.stdout)
+        .ok()
+        .and_then(|v| v.get("packages").cloned())
+        .and_then(|packages| packages.as_array().map(|arr| arr.len()))
 }
 
 fn src_binary_candidates(src: &Path) -> Vec<PathBuf> {

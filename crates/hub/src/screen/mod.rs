@@ -679,62 +679,85 @@ impl EntryScreen {
         project: &Path,
         cx: &mut Context<Self>,
     ) {
-        self.state.ui.building_src = true;
-        cx.notify();
-
-        let project = project.to_path_buf();
-        cx.spawn(async move |entity, cx| {
-            let result = cx
-                .background_executor()
-                .spawn({
-                    let src = src.clone();
-                    async move { crate::service::installer_service::compile_engine_src(&src) }
-                })
-                .await;
-            let _ = cx.update(|cx| {
-                entity.update(cx, |this, cx| {
-                    this.state.ui.building_src = false;
-                    match result {
-                        Ok(binary) => {
-                            let _ = crate::service::installer_service::launch_engine_binary_for_project(
-                                &binary,
-                                &binary
-                                    .parent()
-                                    .map(|p| p.to_path_buf())
-                                    .unwrap_or_default(),
-                                &project,
-                            );
-                        }
-                        Err(e) => {
-                            tracing::error!("Failed to build the src engine: {}", e);
-                        }
-                    }
-                    cx.notify();
-                    let _ = cx.emit(crate::core::events::ProjectSelected { path: project });
-                });
-            });
-        })
-        .detach();
+        self.start_src_build(src, Some(project.to_path_buf()), cx);
     }
 
     /// Compile the `src` engine standalone (no project) and launch it.
     pub(crate) fn launch_src_standalone(&mut self, src: PathBuf, cx: &mut Context<Self>) {
+        self.start_src_build(src, None, cx);
+    }
+
+    /// Kick off a `cargo build --release` of the local `src` checkout, streaming
+    /// progress into `ui.build_progress` (re-rendering the overlay via a poll),
+    /// then launch the built engine — with `project` (and close the window) when
+    /// provided, otherwise standalone.
+    fn start_src_build(
+        &mut self,
+        src: PathBuf,
+        project: Option<PathBuf>,
+        cx: &mut Context<Self>,
+    ) {
+        use parking_lot::Mutex as PM;
+        let progress = std::sync::Arc::new(PM::new(
+            crate::service::installer_service::BuildProgress::default(),
+        ));
+        self.state.ui.build_progress = Some(progress.clone());
         self.state.ui.building_src = true;
         cx.notify();
+
         cx.spawn(async move |entity, cx| {
-            let result = cx
-                .background_executor()
-                .spawn(async move { crate::service::installer_service::compile_engine_src(&src) })
-                .await;
+            let progress_for_task = progress.clone();
+            let _build = cx.background_executor().spawn(async move {
+                crate::service::installer_service::compile_engine_src_with_progress(
+                    &src,
+                    progress_for_task,
+                )
+            });
+
+            // Poll so the overlay re-renders as compiler output arrives.
+            loop {
+                cx.background_executor()
+                    .timer(std::time::Duration::from_millis(150))
+                    .await;
+                let finished = progress.lock().finished;
+                let _ = cx.update(|cx| {
+                    let _ = entity.update(cx, |_, cx| cx.notify());
+                });
+                if finished {
+                    break;
+                }
+            }
+
+            let result = _build.await;
+            let project = project.clone();
             let _ = cx.update(|cx| {
                 entity.update(cx, |this, cx| {
                     this.state.ui.building_src = false;
-                    if let Ok(binary) = result {
-                        let current_dir = binary.parent().map(|p| p.to_path_buf()).unwrap_or_default();
-                        let _ = crate::service::installer_service::launch_engine_binary(
-                            &binary,
-                            &current_dir,
-                        );
+                    this.state.ui.build_progress = None;
+                    match result {
+                        Ok(binary) => {
+                            let current_dir = binary
+                                .parent()
+                                .map(|p| p.to_path_buf())
+                                .unwrap_or_default();
+                            if let Some(project) = &project {
+                                let _ =
+                                    crate::service::installer_service::launch_engine_binary_for_project(
+                                        &binary, &current_dir, project,
+                                    );
+                                let _ = cx
+                                    .emit(crate::core::events::ProjectSelected {
+                                        path: project.clone(),
+                                    });
+                            } else {
+                                let _ = crate::service::installer_service::launch_engine_binary(
+                                    &binary, &current_dir,
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            tracing::error!("Failed to build the src engine: {}", e);
+                        }
                     }
                     cx.notify();
                 });

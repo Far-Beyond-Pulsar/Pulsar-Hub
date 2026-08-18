@@ -48,7 +48,7 @@ pub fn render_layout(
     }
 
     if screen.state.ui.building_src {
-        return crate::screen::views::render_src_build_overlay(cx).into_any_element();
+        return crate::screen::views::render_src_build_overlay(screen, cx).into_any_element();
     }
 
     let view = screen.state.ui.view;
