@@ -651,10 +651,15 @@ fn place_engine_binary_at_root(dest: &Path) {
     if root_target.exists() {
         return;
     }
-    let candidates: &[&str] = if cfg!(windows) {
-        &["pulsar_engine.exe", "pulsar.exe"]
-    } else {
-        &["pulsar_engine", "pulsar"]
+    #[cfg(windows)]
+    let matches_binary = |name: &str| {
+        let lower = name.to_ascii_lowercase();
+        lower.starts_with("pulsar") && lower.ends_with(".exe")
+    };
+    #[cfg(not(windows))]
+    let matches_binary = |name: &str| {
+        let lower = name.to_ascii_lowercase();
+        lower == "pulsar" || (lower.starts_with("pulsar_") && !lower.contains('.'))
     };
     for entry in WalkDir::new(dest)
         .into_iter()
@@ -662,10 +667,7 @@ fn place_engine_binary_at_root(dest: &Path) {
         .filter(|e| e.file_type().is_file())
     {
         let name = entry.file_name().to_string_lossy();
-        if candidates
-            .iter()
-            .any(|c| name.eq_ignore_ascii_case(c))
-        {
+        if matches_binary(name.as_ref()) {
             let _ = std::fs::rename(entry.path(), &root_target);
             return;
         }
