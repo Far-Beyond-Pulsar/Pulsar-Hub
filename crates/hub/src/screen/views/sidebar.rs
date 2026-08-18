@@ -120,6 +120,20 @@ pub fn render_sidebar(screen: &mut EntryScreen, cx: &mut Context<EntryScreen>) -
                     }),
                 ))
                 .child(nav_item(
+                    "nav-cloud",
+                    IconName::Cloud,
+                    "Cloud Projects",
+                    is_cloud,
+                    accent,
+                    foreground,
+                    muted_fg,
+                    accent_bg,
+                    hover_bg,
+                    cx.listener(|this, _, _, cx| {
+                        this.open_cloud_projects_view(cx);
+                    }),
+                ))
+                .child(nav_item(
                     "nav-templates",
                     IconName::List,
                     "Templates",
@@ -194,39 +208,6 @@ pub fn render_sidebar(screen: &mut EntryScreen, cx: &mut Context<EntryScreen>) -
                     hover_bg,
                     cx.listener(|this, _, _, cx| {
                         this.state.ui.view = EntryScreenView::Versions;
-                        cx.notify();
-                    }),
-                )),
-        )
-        .child(
-            v_flex()
-                .w_full()
-                .px_3()
-                .pt_2()
-                .pb_2()
-                .gap_0p5()
-                .child(div().w_full().h(px(1.0)).bg(border).mb_2())
-                .child(
-                    div()
-                        .text_xs()
-                        .font_weight(gpui::FontWeight::SEMIBOLD)
-                        .text_color(muted_fg)
-                        .px_2()
-                        .pb_1p5()
-                        .child("CLOUD"),
-                )
-                .child(nav_item(
-                    "nav-cloud",
-                    IconName::Cloud,
-                    "Cloud Projects",
-                    is_cloud,
-                    accent,
-                    foreground,
-                    muted_fg,
-                    accent_bg,
-                    hover_bg,
-                    cx.listener(|this, _, _, cx| {
-                        this.state.ui.view = EntryScreenView::CloudProjects;
                         cx.notify();
                     }),
                 )),

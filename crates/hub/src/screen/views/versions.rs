@@ -77,6 +77,16 @@ fn render_installed_grid(
                                     }
                                     cx.notify();
                                 })),
+                        )
+                        .child(
+                            Button::new("btn-add-src")
+                                .label("Add src")
+                                .icon(IconName::Folder)
+                                .ghost()
+                                .tooltip("Add a local engine source checkout as the 'src' engine version")
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.prompt_add_src(cx);
+                                })),
                         ),
                 ),
         )
@@ -186,25 +196,32 @@ fn render_installed_grid(
                                         .gap_1()
                                         .child({
                                             let p = path_clone.clone();
+                                            let src = version.eq_ignore_ascii_case("src");
                                             Button::new(format!("launch-{}", idx))
                                                 .label("Launch")
                                                 .icon(IconName::Play)
                                                 .compact()
                                                 .ghost()
-                                                .on_click(move |_, _, cx| {
-                                                    let p = p.clone();
-                                                    cx.spawn(async move |_| {
-                                                        if let Err(e) =
-                                                            installer_service::launch_engine(&p)
-                                                        {
-                                                            tracing::error!(
-                                                                "Launch failed: {}",
-                                                                e
-                                                            );
-                                                        }
-                                                    })
-                                                    .detach();
-                                                })
+                                                .on_click(cx.listener(move |this, _, _, cx| {
+                                                    if src {
+                                                        this.launch_src_standalone(p.clone(), cx);
+                                                    } else {
+                                                        let p = p.clone();
+                                                        cx.spawn(async move |_, _| {
+                                                            if let Err(e) =
+                                                                installer_service::launch_engine(
+                                                                    &p,
+                                                                )
+                                                            {
+                                                                tracing::error!(
+                                                                    "Launch failed: {}",
+                                                                    e
+                                                                );
+                                                            }
+                                                        })
+                                                        .detach();
+                                                    }
+                                                }))
                                         })
                                         .child({
                                             let p = path_clone.clone();

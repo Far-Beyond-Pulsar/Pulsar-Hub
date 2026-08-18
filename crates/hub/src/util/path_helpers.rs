@@ -41,3 +41,19 @@ pub fn thumbnail_cache_dir() -> std::path::PathBuf {
         .map(|d| d.cache_dir().join("template_thumbnails"))
         .unwrap_or_else(|| std::path::PathBuf::from("template_thumbnails"))
 }
+
+pub fn cloud_intro_seen_path() -> std::path::PathBuf {
+    appdata_dir().join("cloud_intro_seen")
+}
+
+pub fn is_cloud_intro_seen() -> bool {
+    cloud_intro_seen_path().exists()
+}
+
+pub fn mark_cloud_intro_seen() {
+    let path = cloud_intro_seen_path();
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let _ = std::fs::write(&path, "1");
+}

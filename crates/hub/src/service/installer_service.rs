@@ -162,6 +162,9 @@ pub fn required_min_version(required: &str) -> Option<(u64, u64, u64)> {
 /// minimum `x.y.z` requirement.
 pub fn installed_satisfies(installed_version: &str, required: &str) -> bool {
     let req = required.trim();
+    if req.eq_ignore_ascii_case("src") {
+        return installed_version.trim().eq_ignore_ascii_case("src");
+    }
     if req.to_lowercase().starts_with("nightly-") {
         return installed_version.trim() == req;
     }
@@ -172,6 +175,27 @@ pub fn installed_satisfies(installed_version: &str, required: &str) -> bool {
 }
 
 /// Whether an installed set contains at least one version satisfying `required`.
+/// Scanned installed versions plus the special local "src" engine (if a source
+/// checkout is configured). The `src` entry ties projects that opt into the
+/// `src` engine version to a local source checkout.
+pub fn installed_versions_with_src(src: Option<&std::path::Path>) -> Vec<InstalledVersion> {
+    let mut versions = scan_installed_versions();
+    if let Some(src) = src {
+        versions.retain(|v| v.metadata.version != "src");
+        versions.push(InstalledVersion {
+            metadata: PulsarInstallMetadata {
+                version: "src".to_string(),
+                install_date: chrono::Utc::now().to_rfc3339(),
+                install_path: src.to_path_buf(),
+            },
+            disk_size_bytes: 0,
+            update_available: false,
+        });
+        versions.sort_by(|a, b| b.metadata.install_date.cmp(&a.metadata.install_date));
+    }
+    versions
+}
+
 pub fn any_installed_satisfies(installed: &[InstalledVersion], required: &str) -> bool {
     installed
         .iter()
@@ -938,12 +962,63 @@ pub fn launch_engine_for_project(install_dir: &Path, project: &Path) -> Result<(
     launch_engine_inner(install_dir, Some(project))
 }
 
-fn launch_engine_inner(install_dir: &Path, project: Option<&Path>) -> Result<(), String> {
-    // The engine does not accept a positional project path. It opens projects
-    // via the `pulsar://open_project/<url-encoded-path>` URI scheme.
-    let project_arg: Option<String> = project
-        .map(|p| format!("pulsar://open_project/{}", percent_encode(&p.to_string_lossy())));
+/// Launch an engine binary (from a local source build) with a project.
+pub fn launch_engine_binary_for_project(
+    binary: &Path,
+    current_dir: &Path,
+    project: &Path,
+) -> Result<(), String> {
+    launch_binary(binary, current_dir, Some(project))
+}
 
+/// Launch an engine binary (from a local source build) standalone.
+pub fn launch_engine_binary(binary: &Path, current_dir: &Path) -> Result<(), String> {
+    launch_binary(binary, current_dir, None)
+}
+
+/// Compile the engine from a local source checkout (`cargo build --release`)
+/// and return the path to the produced binary.
+pub fn compile_engine_src(src: &Path) -> Result<PathBuf, String> {
+    tracing::info!("Building engine from source at {:?}", src);
+    let output = std::process::Command::new("cargo")
+        .arg("build")
+        .arg("--release")
+        .current_dir(src)
+        .output()
+        .map_err(|e| format!("Failed to run cargo: {}", e))?;
+
+    if !output.status.success() {
+        let mut err = String::from_utf8_lossy(&output.stderr).into_owned();
+        if err.trim().is_empty() {
+            err = String::from_utf8_lossy(&output.stdout).into_owned();
+        }
+        let first_line = err.lines().next().unwrap_or("").to_string();
+        return Err(format!("cargo build failed: {}", first_line));
+    }
+
+    for candidate in src_binary_candidates(src) {
+        if candidate.exists() {
+            tracing::info!("Built engine binary: {:?}", candidate);
+            return Ok(candidate);
+        }
+    }
+    Err("cargo build succeeded but produced binary could not be found".to_string())
+}
+
+fn src_binary_candidates(src: &Path) -> Vec<PathBuf> {
+    let release = src.join("target").join("release");
+    let mut names: Vec<&str> = if cfg!(windows) {
+        vec!["pulsar_engine.exe", "pulsar.exe"]
+    } else if cfg!(target_os = "macos") {
+        vec!["pulsar_engine", "pulsar"]
+    } else {
+        vec!["pulsar_engine", "pulsar"]
+    };
+    names.dedup();
+    names.iter().map(|n| release.join(n)).collect()
+}
+
+fn launch_engine_inner(install_dir: &Path, project: Option<&Path>) -> Result<(), String> {
     // On macOS prefer launching the `.app` bundle when there is no project to
     // pass (bundle launches via `open` can't take CLI args).
     #[cfg(target_os = "macos")]
@@ -975,8 +1050,17 @@ fn launch_engine_inner(install_dir: &Path, project: Option<&Path>) -> Result<(),
         return Err(format!("Binary not found in {}", install_dir.display()));
     };
 
-    let mut cmd = std::process::Command::new(&exe);
-    cmd.current_dir(install_dir)
+    launch_binary(&exe, install_dir, project)
+}
+
+fn launch_binary(exe: &Path, current_dir: &Path, project: Option<&Path>) -> Result<(), String> {
+    // The engine does not accept a positional project path. It opens projects
+    // via the `pulsar://open_project/<url-encoded-path>` URI scheme.
+    let project_arg: Option<String> = project
+        .map(|p| format!("pulsar://open_project/{}", percent_encode(&p.to_string_lossy())));
+
+    let mut cmd = std::process::Command::new(exe);
+    cmd.current_dir(current_dir)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null());

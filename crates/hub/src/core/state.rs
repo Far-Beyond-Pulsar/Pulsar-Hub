@@ -31,6 +31,10 @@ pub struct UiState {
     pub engine_prompt: Option<crate::core::types::EnginePrompt>,
     pub pending_engine_install: Option<String>,
     pub release_notes_modal: Option<crate::core::types::ReleaseNotesModal>,
+    /// True while the "src" engine is being compiled from a local source checkout.
+    pub building_src: bool,
+    pub show_cloud_intro_modal: bool,
+    pub cloud_intro_page: usize,
 }
 
 impl UiState {
@@ -50,6 +54,9 @@ impl UiState {
             engine_prompt: None,
             pending_engine_install: None,
             release_notes_modal: None,
+            building_src: false,
+            show_cloud_intro_modal: false,
+            cloud_intro_page: 0,
         }
     }
 }
@@ -374,6 +381,10 @@ pub struct AppState {
     pub download_manager_view: Entity<crate::screen::views::download_manager::DownloadManagerView>,
     pub release_details_view:
         Entity<crate::screen::views::release_details::ReleaseDetailsView>,
+    /// Local engine source checkout used for the special `src` engine version.
+    pub src_engine_path: Option<PathBuf>,
+    /// Config file path that persists `src_engine_path`.
+    pub src_engine_config_path: PathBuf,
 }
 
 impl AppState {
@@ -398,6 +409,12 @@ impl AppState {
             .unwrap_or_else(|| PathBuf::from("."));
         let plugins_path = appdata.join("plugins");
         let registries_path = appdata.join("registries");
+        let src_engine_config_path = appdata.join("src_engine.txt");
+        let src_engine_path: Option<PathBuf> = std::fs::read_to_string(&src_engine_config_path)
+            .ok()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .map(PathBuf::from);
         let installed_plugins: Vec<InstalledPlugin> =
             std::fs::read_to_string(plugins_path.join("plugins.json"))
                 .ok()
@@ -462,7 +479,9 @@ impl AppState {
             template_thumbnail_inflight: 0,
             template_thumbnail_queue: VecDeque::new(),
             versions: crate::core::types::VersionState {
-                installed: crate::service::installer_service::scan_installed_versions(),
+                installed: crate::service::installer_service::installed_versions_with_src(
+                    src_engine_path.as_deref(),
+                ),
                 ..Default::default()
             },
             download_manager_view: cx
@@ -470,6 +489,8 @@ impl AppState {
             release_details_view: cx.new(|cx| {
                 crate::screen::views::release_details::ReleaseDetailsView::new(cx)
             }),
+            src_engine_path,
+            src_engine_config_path,
         }
     }
 }

@@ -636,6 +636,18 @@ impl EntryScreen {
 
         let required = self.required_engine_for_project(&path);
         match required {
+            Some(req) if req.eq_ignore_ascii_case("src") => {
+                // Projects pinned to `src` use a local engine source checkout.
+                if let Some(src) = self.state.src_engine_path.clone() {
+                    self.launch_src_project(src, &path, cx);
+                } else {
+                    tracing::warn!(
+                        "Project '{}' targets the 'src' engine but no source checkout is configured",
+                        path.display()
+                    );
+                }
+                return;
+            }
             Some(req) if self.engine_requirement_satisfied(&req) => {
                 if let Some(dir) = self.installed_engine_dir_satisfying(&req) {
                     self.launch_project_with_engine(dir, &path);
@@ -656,6 +668,107 @@ impl EntryScreen {
             self.launch_project_with_engine(dir, &path);
         }
         cx.emit(ProjectSelected { path });
+    }
+
+    /// Compile the engine from the local `src` checkout in the background, then
+    /// launch the target project in it. Keeps the hub window open (showing the
+    /// build overlay) until the build finishes so the task isn't cancelled.
+    fn launch_src_project(
+        &mut self,
+        src: PathBuf,
+        project: &Path,
+        cx: &mut Context<Self>,
+    ) {
+        self.state.ui.building_src = true;
+        cx.notify();
+
+        let project = project.to_path_buf();
+        cx.spawn(async move |entity, cx| {
+            let result = cx
+                .background_executor()
+                .spawn({
+                    let src = src.clone();
+                    async move { crate::service::installer_service::compile_engine_src(&src) }
+                })
+                .await;
+            let _ = cx.update(|cx| {
+                entity.update(cx, |this, cx| {
+                    this.state.ui.building_src = false;
+                    match result {
+                        Ok(binary) => {
+                            let _ = crate::service::installer_service::launch_engine_binary_for_project(
+                                &binary,
+                                &binary
+                                    .parent()
+                                    .map(|p| p.to_path_buf())
+                                    .unwrap_or_default(),
+                                &project,
+                            );
+                        }
+                        Err(e) => {
+                            tracing::error!("Failed to build the src engine: {}", e);
+                        }
+                    }
+                    cx.notify();
+                    let _ = cx.emit(crate::core::events::ProjectSelected { path: project });
+                });
+            });
+        })
+        .detach();
+    }
+
+    /// Compile the `src` engine standalone (no project) and launch it.
+    pub(crate) fn launch_src_standalone(&mut self, src: PathBuf, cx: &mut Context<Self>) {
+        self.state.ui.building_src = true;
+        cx.notify();
+        cx.spawn(async move |entity, cx| {
+            let result = cx
+                .background_executor()
+                .spawn(async move { crate::service::installer_service::compile_engine_src(&src) })
+                .await;
+            let _ = cx.update(|cx| {
+                entity.update(cx, |this, cx| {
+                    this.state.ui.building_src = false;
+                    if let Ok(binary) = result {
+                        let current_dir = binary.parent().map(|p| p.to_path_buf()).unwrap_or_default();
+                        let _ = crate::service::installer_service::launch_engine_binary(
+                            &binary,
+                            &current_dir,
+                        );
+                    }
+                    cx.notify();
+                });
+            });
+        })
+        .detach();
+    }
+
+    /// The installed-version list, including the special local "src" engine.
+    pub(crate) fn installed_versions(&self) -> Vec<crate::service::installer_service::InstalledVersion> {
+        crate::service::installer_service::installed_versions_with_src(
+            self.state.src_engine_path.as_deref(),
+        )
+    }
+
+    /// Prompt the user for a local engine source checkout and register it as
+    /// the special "src" engine version.
+    pub(crate) fn prompt_add_src(&mut self, cx: &mut Context<Self>) {
+        let config_path = self.state.src_engine_config_path.clone();
+        cx.spawn(async move |entity, cx| {
+            if let Some(folder) = rfd::AsyncFileDialog::new().pick_folder().await {
+                let path = folder.path().to_path_buf();
+                let path_string = path.to_string_lossy().to_string();
+                let _ = cx.update(|cx| {
+                    entity.update(cx, |this, cx| {
+                        this.state.src_engine_path = Some(PathBuf::from(&path_string));
+                        let _ = std::fs::write(&config_path, path_string.as_bytes());
+                        this.state.versions.installed = this.installed_versions();
+                        cx.notify();
+                    });
+                });
+            }
+        })
+        .detach();
     }
 
     fn launch_project_with_engine(&self, install_dir: PathBuf, project: &Path) {
@@ -1026,6 +1139,48 @@ impl EntryScreen {
             });
         })
         .detach();
+    }
+
+    pub(crate) fn open_cloud_projects_view(&mut self, cx: &mut Context<Self>) {
+        self.state.ui.view = EntryScreenView::CloudProjects;
+        if !crate::util::path_helpers::is_cloud_intro_seen() {
+            self.state.ui.show_cloud_intro_modal = true;
+            self.state.ui.cloud_intro_page = 0;
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn open_cloud_intro_modal(&mut self, cx: &mut Context<Self>) {
+        self.state.ui.show_cloud_intro_modal = true;
+        self.state.ui.cloud_intro_page = 0;
+        cx.notify();
+    }
+
+    pub(crate) fn close_cloud_intro_modal(&mut self, cx: &mut Context<Self>) {
+        self.state.ui.show_cloud_intro_modal = false;
+        crate::util::path_helpers::mark_cloud_intro_seen();
+        cx.notify();
+    }
+
+    pub(crate) fn next_cloud_intro_page(&mut self, cx: &mut Context<Self>) {
+        if self.state.ui.cloud_intro_page < 2 {
+            self.state.ui.cloud_intro_page += 1;
+        } else {
+            self.close_cloud_intro_modal(cx);
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn prev_cloud_intro_page(&mut self, cx: &mut Context<Self>) {
+        if self.state.ui.cloud_intro_page > 0 {
+            self.state.ui.cloud_intro_page -= 1;
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn set_cloud_intro_page(&mut self, page: usize, cx: &mut Context<Self>) {
+        self.state.ui.cloud_intro_page = page.min(2);
+        cx.notify();
     }
 
     pub(crate) fn select_cloud_server(&mut self, index: usize, cx: &mut Context<Self>) {
@@ -1517,8 +1672,7 @@ impl EntryScreen {
     }
 
     pub(crate) fn refresh_versions(&mut self, cx: &mut Context<Self>) {
-        self.state.versions.installed =
-            crate::service::installer_service::scan_installed_versions();
+        self.state.versions.installed = self.installed_versions();
         self.state.versions.fetching = true;
         self.state.versions.loading_more = false;
         for src in &mut self.state.versions.channel_sources {
@@ -2018,8 +2172,7 @@ impl EntryScreen {
                             crate::service::installer_service::VersionInstallState::Complete {
                                 version: tag.clone(),
                             };
-                        this.state.versions.installed =
-                            crate::service::installer_service::scan_installed_versions();
+                        this.state.versions.installed = this.installed_versions();
                     }
                     cx.notify();
                 });
@@ -2064,8 +2217,7 @@ impl EntryScreen {
                                         crate::service::installer_service::VersionInstallState::Complete {
                                             version: tag,
                                         };
-                                    this.state.versions.installed =
-                                        crate::service::installer_service::scan_installed_versions();
+                                    this.state.versions.installed = this.installed_versions();
                                 }
                                 Err(e) => {
                                     this.state.versions.install_state =
@@ -2085,6 +2237,14 @@ impl EntryScreen {
     }
 
     pub(crate) fn remove_version(&mut self, version: &str, cx: &mut Context<Self>) {
+        if version.eq_ignore_ascii_case("src") {
+            // The "src" entry is a configured path, not a directory to delete.
+            self.state.src_engine_path = None;
+            let _ = std::fs::remove_file(&self.state.src_engine_config_path);
+            self.state.versions.installed = self.installed_versions();
+            cx.notify();
+            return;
+        }
         let installed = &self.state.versions.installed;
         if let Some(ver) = installed.iter().find(|v| v.metadata.version == version) {
             let path = ver.metadata.install_path.clone();
@@ -2096,8 +2256,7 @@ impl EntryScreen {
                     .await;
                 let _ = cx.update(|cx| {
                     entity.update(cx, |this, cx| {
-                        this.state.versions.installed =
-                            crate::service::installer_service::scan_installed_versions();
+                        this.state.versions.installed = this.installed_versions();
                         cx.notify();
                     });
                 });

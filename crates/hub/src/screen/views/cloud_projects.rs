@@ -14,7 +14,10 @@ pub fn render_cloud_projects(
     _window: &mut Window,
     cx: &mut Context<EntryScreen>,
 ) -> impl IntoElement {
-    let theme = cx.theme();
+    if !crate::util::path_helpers::is_cloud_intro_seen() && !screen.state.ui.show_cloud_intro_modal {
+        screen.state.ui.show_cloud_intro_modal = true;
+        screen.state.ui.cloud_intro_page = 0;
+    }
 
     if screen.state.ui.show_add_server {
         return render_add_server_form(screen, cx).into_any_element();
@@ -61,6 +64,16 @@ fn render_server_list(screen: &mut EntryScreen, cx: &mut Context<EntryScreen>) -
                                 .text_color(theme.muted_foreground)
                                 .child("Connect to a remote Pulsar Host server"),
                         ),
+                )
+                .child(
+                    Button::new("cloud-info-btn")
+                        .icon(IconName::Info)
+                        .ghost()
+                        .compact()
+                        .tooltip("About Pulsar Studio")
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.open_cloud_intro_modal(cx);
+                        })),
                 )
                 .child(
                     Button::new("add-server-btn")
