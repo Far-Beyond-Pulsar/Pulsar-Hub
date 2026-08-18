@@ -330,6 +330,17 @@ fn render_install_modal(
                                 .unwrap_or_else(|| div().into_any_element()),
                         )
                         .child(
+                            Button::new("btn-debug-install-all")
+                                .label("Debug: install all")
+                                .icon(IconName::Package)
+                                .compact()
+                                .ghost()
+                                .tooltip("Install every available engine version (debug)")
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.install_all_versions(cx);
+                                })),
+                        )
+                        .child(
                             Button::new("btn-refresh-releases")
                                 .label("Refresh")
                                 .icon(IconName::Refresh)

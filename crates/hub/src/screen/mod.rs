@@ -2087,6 +2087,17 @@ impl EntryScreen {
         cx.notify();
     }
 
+    /// Debug helper: install every available release that has a platform asset.
+    pub(crate) fn install_all_versions(&mut self, cx: &mut Context<Self>) {
+        use crate::service::installer_service as svc;
+        let releases = self.state.versions.available_releases.clone();
+        for release in &releases {
+            if svc::find_platform_asset(release).is_some() {
+                self.install_release_by_tag(release.tag_name.clone(), cx);
+            }
+        }
+    }
+
     /// Start downloading + extracting the given release, driven by the tag name.
     pub(crate) fn install_release_by_tag(&mut self, tag: String, cx: &mut Context<Self>) {
         let Some(release) = self
