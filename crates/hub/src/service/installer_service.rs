@@ -156,7 +156,10 @@ fn looks_like_install_dir(dir: &Path) -> bool {
 
 const GITHUB_API: &str = "https://api.github.com/repos/Far-Beyond-Pulsar/Pulsar-Native/releases";
 
-pub fn fetch_releases_blocking() -> Result<Vec<GitHubRelease>, String> {
+/// Number of releases returned per page by the GitHub releases API.
+pub const RELEASES_PER_PAGE: u32 = 30;
+
+pub fn fetch_releases_blocking(page: u32) -> Result<Vec<GitHubRelease>, String> {
     use std::time::Duration;
 
     let client = reqwest::blocking::Client::builder()
@@ -166,9 +169,10 @@ pub fn fetch_releases_blocking() -> Result<Vec<GitHubRelease>, String> {
         .build()
         .map_err(|e| e.to_string())?;
 
+    let url = format!("{}?page={}&per_page={}", GITHUB_API, page, RELEASES_PER_PAGE);
     let mut last_err = String::new();
     for attempt in 1..=3 {
-        match client.get(GITHUB_API).send() {
+        match client.get(&url).send() {
             Ok(resp) if resp.status().is_success() => {
                 return resp.json::<Vec<GitHubRelease>>().map_err(|e| e.to_string());
             }
@@ -521,6 +525,7 @@ pub fn default_install_path() -> PathBuf {
     }
 }
 
+// TODO: Ensure the launched instance doesnt also open a shell window on Windows. This is a known issue with the `open` crate, and may require a different approach to launching the executable on Windows.
 pub fn launch_engine(install_dir: &Path) -> Result<(), String> {
     let exe = if cfg!(windows) {
         install_dir.join("pulsar.exe")

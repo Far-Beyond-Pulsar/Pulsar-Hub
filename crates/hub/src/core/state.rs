@@ -366,6 +366,8 @@ pub struct AppState {
 
     pub versions: crate::core::types::VersionState,
     pub download_manager_view: Entity<crate::screen::views::download_manager::DownloadManagerView>,
+    pub release_details_view:
+        Entity<crate::screen::views::release_details::ReleaseDetailsView>,
 }
 
 impl AppState {
@@ -459,6 +461,9 @@ impl AppState {
             },
             download_manager_view: cx
                 .new(|cx| crate::screen::views::download_manager::DownloadManagerView::new(cx)),
+            release_details_view: cx.new(|cx| {
+                crate::screen::views::release_details::ReleaseDetailsView::new(cx)
+            }),
         }
     }
 }

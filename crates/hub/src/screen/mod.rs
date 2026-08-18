@@ -89,6 +89,12 @@ fn git_fetch_paths(
 pub struct EntryScreen {
     pub state: AppState,
     pub inputs: InputEntities,
+    /// Component list view for the engine release list (infinite scroll).
+    pub(crate) release_list: Option<
+        gpui::Entity<
+            ui::list::List<crate::screen::views::release_list::ReleaseListDelegate>,
+        >,
+    >,
 }
 
 impl EntryScreen {
@@ -96,6 +102,20 @@ impl EntryScreen {
         let mut state = AppState::new(window, cx);
         let inputs = InputEntities::new(window, cx);
         let self_entity = cx.entity().clone();
+        let release_delegate_weak = self_entity.downgrade();
+        let release_list = cx.new(|cx| {
+            let delegate =
+                crate::screen::views::release_list::ReleaseListDelegate::new(
+                    release_delegate_weak,
+                );
+            ui::list::List::new(delegate, window, cx)
+                .no_query()
+                .paddings(gpui::Edges::<gpui::Pixels> {
+                    top: gpui::px(12.).into(),
+                    bottom: gpui::px(12.).into(),
+                    ..gpui::Edges::default()
+                })
+        });
 
         cx.subscribe_in(
             &state.auth.profile_dropdown,
@@ -144,7 +164,11 @@ impl EntryScreen {
         )
         .detach();
 
-        let mut this = Self { state, inputs };
+        let mut this = Self {
+            state,
+            inputs,
+            release_list: Some(release_list),
+        };
         this.state.git_auto_fetch_task = Some(Self::start_git_auto_fetch_task(cx));
         this.load_thumbnails(cx);
         if this.state.ui.show_onboarding {
@@ -1386,23 +1410,208 @@ impl EntryScreen {
         self.state.versions.installed =
             crate::service::installer_service::scan_installed_versions();
         self.state.versions.fetching = true;
+        self.state.versions.release_page = 0;
+        self.state.versions.has_more = true;
         cx.notify();
 
         cx.spawn(async move |entity, cx| {
             let result = cx
                 .background_executor()
-                .spawn(async { crate::service::installer_service::fetch_releases_blocking() })
+                .spawn(async {
+                    crate::service::installer_service::fetch_releases_blocking(1)
+                })
                 .await;
             let _ = cx.update(|cx| {
                 entity.update(cx, |this, cx| {
                     this.state.versions.fetching = false;
                     match result {
                         Ok(releases) => {
+                            let has_more = releases
+                                .len()
+                                == crate::service::installer_service::RELEASES_PER_PAGE as usize;
                             this.state.versions.available_releases = releases;
+                            this.state.versions.release_page = 1;
+                            this.state.versions.has_more = has_more;
                         }
                         Err(e) => {
                             tracing::warn!("Failed to fetch releases: {}", e);
                         }
+                    }
+                    cx.notify();
+                });
+            });
+        })
+        .detach();
+    }
+
+    /// Fetch the next page of releases, appending to `available_releases`.
+    pub(crate) fn load_more_releases(&mut self, cx: &mut Context<Self>) {
+        let next_page = self.state.versions.release_page + 1;
+        if self.state.versions.fetching
+            || self.state.versions.loading_more
+            || !self.state.versions.has_more
+        {
+            return;
+        }
+        self.state.versions.loading_more = true;
+        cx.notify();
+
+        let current_idents: std::collections::HashSet<String> = self
+            .state
+            .versions
+            .available_releases
+            .iter()
+            .map(|r| r.tag_name.clone())
+            .collect();
+
+        cx.spawn(async move |entity, cx| {
+            let result = cx
+                .background_executor()
+                .spawn(async move {
+                    crate::service::installer_service::fetch_releases_blocking(next_page)
+                })
+                .await;
+            let _ = cx.update(|cx| {
+                entity.update(cx, |this, cx| {
+                    let v = &mut this.state.versions;
+                    v.loading_more = false;
+                    match result {
+                        Ok(releases) => {
+                            let mut appended = Vec::new();
+                            for release in releases {
+                                if current_idents.contains(&release.tag_name) {
+                                    continue;
+                                }
+                                appended.push(release);
+                            }
+                            v.available_releases.extend(appended);
+                            v.release_page = next_page;
+                            v.has_more =
+                                v.available_releases.len()
+                                    >= (next_page * crate::service::installer_service::RELEASES_PER_PAGE) as usize
+                            ;
+                        }
+                        Err(e) => {
+                            tracing::warn!("Failed to fetch more releases (page {}): {}", next_page, e);
+                        }
+                    }
+                    cx.notify();
+                });
+            });
+        })
+        .detach();
+    }
+
+    /// Start downloading + extracting the given release, driven by the tag name.
+    pub(crate) fn install_release_by_tag(&mut self, tag: String, cx: &mut Context<Self>) {
+        let Some(release) = self
+            .state
+            .versions
+            .available_releases
+            .iter()
+            .find(|r| r.tag_name == tag)
+            .cloned()
+        else {
+            return;
+        };
+        let Some(asset) = crate::service::installer_service::find_platform_asset(&release) else {
+            return;
+        };
+        let url = asset.browser_download_url.clone();
+        let dest = crate::service::installer_service::default_install_path()
+            .join(tag.trim_start_matches('v'));
+        let dl_id = format!("engine-{}", tag);
+
+        let dm_view = self.state.download_manager_view.clone();
+        dm_view.update(cx, |view, cx| {
+            view.add_item(crate::core::types::DownloadItem {
+                id: dl_id.clone(),
+                kind: crate::core::types::DownloadKind::EngineVersion {
+                    version: tag.clone(),
+                },
+                status: crate::core::types::DownloadStatus::Downloading {
+                    bytes_downloaded: 0,
+                    total_bytes: 0,
+                    speed_bps: 0,
+                },
+                started_at: std::time::Instant::now(),
+            });
+            cx.notify();
+        });
+        self.state.versions.install_state =
+            crate::service::installer_service::VersionInstallState::Downloading {
+                version: tag.clone(),
+                progress: 0.0,
+            };
+        cx.notify();
+
+        cx.spawn(async move |entity, cx| {
+            let dl_tag = tag.clone();
+            let progress = std::sync::Arc::new(parking_lot::Mutex::new(
+                crate::service::installer_service::DownloadProgress::default(),
+            ));
+            let progress_clone = progress.clone();
+
+            let _download_task = cx.background_executor().spawn(async move {
+                crate::service::installer_service::download_and_extract_with_progress(
+                    &url,
+                    &dest,
+                    &dl_tag,
+                    progress_clone,
+                )
+            });
+
+            loop {
+                cx.background_executor()
+                    .timer(std::time::Duration::from_millis(150))
+                    .await;
+
+                let snapshot = {
+                    let p = progress.lock();
+                    (p.bytes_downloaded, p.total_bytes, p.speed_bps, p.done, p.error.clone())
+                };
+                let (bytes, total, speed, done, _error) = snapshot;
+                let _ = cx.update(|cx| {
+                    let _ = entity.update(cx, |this, cx| {
+                        if !done {
+                            dm_view.update(cx, |view, cx| {
+                                view.update_progress(&dl_id, bytes, total, speed);
+                                cx.notify();
+                            });
+                        }
+                        cx.notify();
+                    });
+                });
+
+                if done {
+                    break;
+                }
+            }
+
+            let _ = cx.update(|cx| {
+                let _ = entity.update(cx, |this, cx| {
+                    let p = progress.lock();
+                    if let Some(ref e) = p.error {
+                        dm_view.update(cx, |view, cx| {
+                            view.fail(&dl_id, e.clone());
+                            cx.notify();
+                        });
+                        this.state.versions.install_state =
+                            crate::service::installer_service::VersionInstallState::Error {
+                                version: tag.clone(),
+                                message: e.clone(),
+                            };
+                    } else {
+                        dm_view.update(cx, |view, cx| {
+                            view.complete(&dl_id);
+                            cx.notify();
+                        });
+                        this.state.versions.install_state =
+                            crate::service::installer_service::VersionInstallState::Complete {
+                                version: tag.clone(),
+                            };
+                        this.state.versions.installed =
+                            crate::service::installer_service::scan_installed_versions();
                     }
                     cx.notify();
                 });
