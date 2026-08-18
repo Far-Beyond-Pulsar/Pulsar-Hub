@@ -131,6 +131,53 @@ fn version_major(tag: &str) -> Option<i64> {
     }
 }
 
+/// Parse a leading `x.y.z` from a release tag / version string.
+pub fn parse_version(tag: &str) -> Option<(u64, u64, u64)> {
+    let t = tag
+        .trim()
+        .trim_start_matches(['v', 'V', '>', '<', '=', ' ']);
+    let first: &str = t.split_whitespace().next().unwrap_or(t);
+    let mut parts = first
+        .split('.')
+        .map(|p| p.trim_end_matches(|c: char| !c.is_ascii_digit()));
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next().unwrap_or("0").parse().unwrap_or(0);
+    let patch = parts.next().unwrap_or("0").parse().unwrap_or(0);
+    Some((major, minor, patch))
+}
+
+/// Parse the minimum version a project requires out of an `engine_version`
+/// string. `">0.1.0"` → `0.1.0`; a `nightly-…` tag yields `None`.
+pub fn required_min_version(required: &str) -> Option<(u64, u64, u64)> {
+    let t = required.trim();
+    if t.to_lowercase().starts_with("nightly-") {
+        return None;
+    }
+    parse_version(t)
+}
+
+/// Whether `installed_version` satisfies a project's `required` engine version.
+///
+/// Exact `nightly-…` tags must match exactly; everything else is treated as a
+/// minimum `x.y.z` requirement.
+pub fn installed_satisfies(installed_version: &str, required: &str) -> bool {
+    let req = required.trim();
+    if req.to_lowercase().starts_with("nightly-") {
+        return installed_version.trim() == req;
+    }
+    let Some(min) = required_min_version(req) else {
+        return false;
+    };
+    parse_version(installed_version).map(|v| v >= min).unwrap_or(false)
+}
+
+/// Whether an installed set contains at least one version satisfying `required`.
+pub fn any_installed_satisfies(installed: &[InstalledVersion], required: &str) -> bool {
+    installed
+        .iter()
+        .any(|v| installed_satisfies(&v.metadata.version, required))
+}
+
 /// Sort `releases` newest-first by their publish date.
 pub fn sort_releases_newest_first(releases: &mut Vec<GitHubRelease>) {
     releases.sort_by(|a, b| release_date_millis(b).cmp(&release_date_millis(a)));
@@ -254,6 +301,8 @@ fn try_load_from_dir(dir: &Path) -> Option<InstalledVersion> {
 fn looks_like_install_dir(dir: &Path) -> bool {
     dir.join("pulsar").is_file()
         || dir.join("pulsar.exe").is_file()
+        || dir.join("pulsar_engine").is_file()
+        || dir.join("pulsar_engine.exe").is_file()
         || dir.join("Contents").join("Info.plist").exists()
         || dir.join(".pulsar-install.json").is_file()
 }
@@ -829,53 +878,64 @@ pub fn default_install_path() -> PathBuf {
 
 // TODO: Ensure the launched instance doesnt also open a shell window on Windows. This is a known issue and may require a different approach to launching the executable on Windows.
 pub fn launch_engine(install_dir: &Path) -> Result<(), String> {
-    // On macOS prefer launching the `.app` bundle so the app is activated
-    // properly; otherwise fall through to the raw binary.
+    launch_engine_inner(install_dir, None)
+}
+
+/// Launch the installed engine, passing `project` as the CLI argument so it
+/// instantly opens that project.
+pub fn launch_engine_for_project(install_dir: &Path, project: &Path) -> Result<(), String> {
+    launch_engine_inner(install_dir, Some(project))
+}
+
+fn launch_engine_inner(install_dir: &Path, project: Option<&Path>) -> Result<(), String> {
+    let project_arg: Option<String> = project.map(|p| p.to_string_lossy().to_string());
+
+    // On macOS prefer launching the `.app` bundle when there is no project to
+    // pass (bundle launches via `open` can't take CLI args).
     #[cfg(target_os = "macos")]
-    {
+    if project.is_none() {
         let bundle = install_dir.join("pulsar.app");
         if bundle.exists() {
             return open::that(&bundle).map_err(|e| e.to_string());
         }
     }
 
-    let exe = if cfg!(windows) {
-        install_dir.join("pulsar.exe")
+    // Resolve the engine binary, tolerating the alternate `pulsar_engine.*`
+    // name that Nightly archives ship and older installs may still use.
+    let candidate_names: &[&str] = if cfg!(windows) {
+        &["pulsar.exe", "pulsar_engine.exe"]
     } else if cfg!(target_os = "macos") {
-        install_dir
-            .join("Contents")
-            .join("MacOS")
-            .join("pulsar")
+        &[
+            "Contents/MacOS/pulsar",
+            "pulsar",
+            "pulsar_engine",
+        ]
     } else {
-        install_dir.join("pulsar")
+        &["pulsar", "pulsar_engine"]
     };
-    if !exe.exists() {
-        return Err(format!("Binary not found: {}", exe.display()));
-    }
+    let Some(exe) = candidate_names
+        .iter()
+        .map(|n| install_dir.join(n))
+        .find(|p| p.exists())
+    else {
+        return Err(format!("Binary not found in {}", install_dir.display()));
+    };
 
+    let mut cmd = std::process::Command::new(&exe);
+    cmd.current_dir(install_dir)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    if let Some(arg) = project_arg {
+        cmd.arg(&arg);
+    }
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        let mut cmd = std::process::Command::new(&exe);
-        cmd.current_dir(install_dir)
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            // DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
-            .creation_flags(0x0000_0008 | 0x0000_0200);
-        cmd.spawn().map(|_| ()).map_err(|e| e.to_string())
+        // DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+        cmd.creation_flags(0x0000_0008 | 0x0000_0200);
     }
-    #[cfg(not(windows))]
-    {
-        std::process::Command::new(&exe)
-            .current_dir(install_dir)
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn()
-            .map(|_| ())
-            .map_err(|e| e.to_string())
-    }
+    cmd.spawn().map(|_| ()).map_err(|e| e.to_string())
 }
 
 // ── Internals ───────────────────────────────────────────────────────────────

@@ -28,6 +28,8 @@ pub struct UiState {
     pub show_add_server: bool,
     pub show_create_project: bool,
     pub show_install_modal: bool,
+    pub engine_prompt: Option<crate::core::types::EnginePrompt>,
+    pub pending_engine_install: Option<String>,
 }
 
 impl UiState {
@@ -44,6 +46,8 @@ impl UiState {
             show_add_server: false,
             show_create_project: false,
             show_install_modal: false,
+            engine_prompt: None,
+            pending_engine_install: None,
         }
     }
 }

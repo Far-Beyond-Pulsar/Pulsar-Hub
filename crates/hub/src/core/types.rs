@@ -3,6 +3,17 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use ui::IconName;
 
+// ── Engine Prompt ─────────────────────────────────────────────────────────
+
+/// A pending prompt asking the user whether to auto-install a missing engine
+/// that a project requires.
+#[derive(Clone, Debug)]
+pub struct EnginePrompt {
+    pub project_name: String,
+    pub project_path: String,
+    pub required: String,
+}
+
 // ── Navigation ────────────────────────────────────────────────────────────
 
 #[derive(Clone, Copy, PartialEq, Eq)]

@@ -610,6 +610,13 @@ impl EntryScreen {
         .detach();
     }
 
+    /// Launch a project with the engine declared in its `Pulsar.toml`.
+    ///
+    /// If the declared engine is installed, it is launched with the project
+    /// path as a CLI argument (instant open). If it's required but missing, an
+    /// auto-install prompt is shown instead. With no declared requirement it
+    /// falls back to the newest installed engine, or emits `ProjectSelected`
+    /// for the embedder to handle when none is installed.
     pub(crate) fn launch_project(&mut self, path: PathBuf, cx: &mut Context<Self>) {
         let name = path
             .file_name()
@@ -626,7 +633,63 @@ impl EntryScreen {
         self.state
             .recent_projects
             .save(&self.state.recent_projects_path);
+
+        let required = self.required_engine_for_project(&path);
+        match required {
+            Some(req) if self.engine_requirement_satisfied(&req) => {
+                if let Some(dir) = self.installed_engine_dir_satisfying(&req) {
+                    self.launch_project_with_engine(dir, &path);
+                    cx.emit(ProjectSelected { path });
+                    return;
+                }
+            }
+            Some(req) => {
+                // Declared but not installed → ask to auto-install.
+                self.request_engine_install(path, req, cx);
+                return;
+            }
+            None => {}
+        }
+
+        // No usable engine requirement → open with the newest installed engine if any.
+        if let Some(dir) = self.newest_installed_engine_dir() {
+            self.launch_project_with_engine(dir, &path);
+        }
         cx.emit(ProjectSelected { path });
+    }
+
+    fn launch_project_with_engine(&self, install_dir: PathBuf, project: &Path) {
+        // Spawn synchronously: the caller closes the hub window right after
+        // (`ProjectSelected`), so a spawned task would be cancelled before
+        // the engine process starts.
+        if let Err(e) =
+            crate::service::installer_service::launch_engine_for_project(&install_dir, project)
+        {
+            tracing::error!("Failed to launch engine for project: {}", e);
+        }
+    }
+
+    /// The newest installed engine dir that satisfies `required`.
+    fn installed_engine_dir_satisfying(&self, required: &str) -> Option<PathBuf> {
+        use crate::service::installer_service as svc;
+        self.state
+            .versions
+            .installed
+            .iter()
+            .filter(|v| svc::installed_satisfies(&v.metadata.version, required))
+            .max_by(|a, b| {
+                svc::parse_version(&a.metadata.version).cmp(&svc::parse_version(&b.metadata.version))
+            })
+            .map(|v| v.metadata.install_path.clone())
+    }
+
+    /// The newest installed engine dir, if any.
+    fn newest_installed_engine_dir(&self) -> Option<PathBuf> {
+        self.state
+            .versions
+            .installed
+            .first()
+            .map(|v| v.metadata.install_path.clone())
     }
 
     pub(crate) fn remove_recent_project(&mut self, path: &str, cx: &mut Context<Self>) {
@@ -1516,6 +1579,7 @@ impl EntryScreen {
                     }
                     this.rebuild_available_releases();
                     this.recompute_has_more();
+                    this.try_install_pending_engine(cx);
                     cx.notify();
                 });
             });
@@ -1696,6 +1760,121 @@ impl EntryScreen {
             .detach();
         }
         cx.notify();
+    }
+
+    /// The engine version a project requires, if its `Pulsar.toml` declares one.
+    pub(crate) fn required_engine_for_project(&self, path: &std::path::Path) -> Option<String> {
+        ProjectService::project_engine_version(path)
+    }
+
+    /// Whether the currently installed engine(s) satisfy the project requirement.
+    pub(crate) fn engine_requirement_satisfied(&self, required: &str) -> bool {
+        crate::service::installer_service::any_installed_satisfies(
+            &self.state.versions.installed,
+            required,
+        )
+    }
+
+    /// `Some(required)` if `path` needs an engine version we don't have installed.
+    pub(crate) fn missing_engine_for_project(&self, path: &std::path::Path) -> Option<String> {
+        let required = self.required_engine_for_project(path)?;
+        if self.engine_requirement_satisfied(&required) {
+            None
+        } else {
+            Some(required)
+        }
+    }
+
+    pub(crate) fn request_engine_install(
+        &mut self,
+        project_path: std::path::PathBuf,
+        required: String,
+        cx: &mut Context<Self>,
+    ) {
+        let project_name = project_path
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| project_path.to_string_lossy().to_string());
+        self.state.ui.engine_prompt = Some(crate::core::types::EnginePrompt {
+            project_name,
+            project_path: project_path.to_string_lossy().to_string(),
+            required,
+        });
+        cx.notify();
+    }
+
+    pub(crate) fn close_engine_prompt(&mut self, cx: &mut Context<Self>) {
+        self.state.ui.engine_prompt = None;
+        cx.notify();
+    }
+
+    /// Close the prompt and begin installing an engine that satisfies `required`.
+    pub(crate) fn install_engine_from_prompt(&mut self, cx: &mut Context<Self>) {
+        let Some(prompt) = self.state.ui.engine_prompt.take() else {
+            return;
+        };
+        let required = prompt.required.clone();
+        // If the project pins a nightly, make sure the nightly channel is enabled.
+        if required.to_lowercase().starts_with("nightly-")
+            && !self
+                .state
+                .versions
+                .selected_channels
+                .contains(&crate::service::installer_service::ReleaseChannel::Nightly)
+        {
+            self.toggle_channel(
+                crate::service::installer_service::ReleaseChannel::Nightly,
+                true,
+                cx,
+            );
+        }
+        self.state.ui.pending_engine_install = Some(required);
+        if self.state.versions.available_releases.is_empty() && !self.state.versions.fetching {
+            self.refresh_versions(cx);
+        }
+        self.try_install_pending_engine(cx);
+        cx.notify();
+    }
+
+    /// If there's a pending engine install and a satisfying release is loaded,
+    /// install it.
+    fn try_install_pending_engine(&mut self, cx: &mut Context<Self>) {
+        let Some(required) = self.state.ui.pending_engine_install.clone() else {
+            return;
+        };
+        if self.engine_requirement_satisfied(&required) {
+            self.state.ui.pending_engine_install = None;
+            return;
+        }
+        let Some(tag) = self.pick_engine_tag(&required) else {
+            return;
+        };
+        self.state.ui.pending_engine_install = None;
+        self.install_release_by_tag(tag, cx);
+    }
+
+    fn pick_engine_tag(&self, required: &str) -> Option<String> {
+        use crate::service::installer_service as svc;
+        let releases = &self.state.versions.available_releases;
+        // Exact tag match first (covers nightly hashes and exact versions).
+        if let Some(r) = releases.iter().find(|r| r.tag_name == required) {
+            return Some(r.tag_name.clone());
+        }
+        if required.to_lowercase().starts_with("nightly-") {
+            return None;
+        }
+        let min = svc::required_min_version(required)?;
+        // Releases are sorted newest-first, so the first satisfying release wins.
+        for r in releases {
+            if svc::find_platform_asset(r).is_some()
+                && svc::parse_version(&r.tag_name)
+                    .map(|v| v >= min)
+                    .unwrap_or(false)
+            {
+                return Some(r.tag_name.clone());
+            }
+        }
+        None
     }
 
     /// Start downloading + extracting the given release, driven by the tag name.

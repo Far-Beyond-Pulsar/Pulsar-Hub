@@ -1,6 +1,6 @@
 use gpui::prelude::*;
 use gpui::*;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use ui::{
     button::Button, button::ButtonVariants as _, h_flex, v_flex, ActiveTheme as _,
     Disableable as _, Icon, IconName, StyledExt,
@@ -157,6 +157,8 @@ fn render_project_card(
         .get(&path)
         .and_then(|t| t.clone());
 
+    let missing_engine = screen.missing_engine_for_project(Path::new(&path));
+
     v_flex()
         .id(SharedString::from(format!("project-card-{}", path)))
         .w(px(320.))
@@ -272,6 +274,44 @@ fn render_project_card(
                         .truncate()
                         .child(normalized),
                 )
+                .when_some(missing_engine, |this, required| {
+                    let p = path.clone();
+                    let req = required.clone();
+                    this.child(
+                        h_flex()
+                            .w_full()
+                            .gap_2()
+                            .items_center()
+                            .py_1()
+                            .px_2()
+                            .rounded_md()
+                            .bg(theme.warning.opacity(0.12))
+                            .child(
+                                Icon::new(IconName::WarningTriangle)
+                                    .size(px(14.))
+                                    .text_color(theme.warning),
+                            )
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(theme.warning)
+                                    .flex_1()
+                                    .child(format!("Engine {} needed", required)),
+                            )
+                            .child(
+                                Button::new(SharedString::from(format!("install-engine-{}", p)))
+                                    .label("Install")
+                                    .compact()
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        this.request_engine_install(
+                                            std::path::PathBuf::from(&p),
+                                            req.clone(),
+                                            cx,
+                                        );
+                                    })),
+                            ),
+                    )
+                })
                 .child(
                     h_flex()
                         .gap_2()

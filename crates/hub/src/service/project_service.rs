@@ -94,6 +94,24 @@ default_scene = "scenes/main.scene"
         buf
     }
 
+    /// The engine version a project requires, from its `Pulsar.toml`
+    /// `[project].engine_version` key (e.g. `">0.1.0"` or a `nightly-…` tag).
+    pub fn project_engine_version(project_path: &Path) -> Option<String> {
+        let config_path = project_path.join("Pulsar.toml");
+        if !config_path.exists() {
+            return None;
+        }
+        let content = std::fs::read_to_string(&config_path).ok()?;
+        let parsed: toml::Value = toml::from_str(&content).ok()?;
+        parsed
+            .get("project")
+            .and_then(|p| p.as_table())
+            .and_then(|t| t.get("engine_version"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+    }
+
     /// Read tool preferences from Pulsar.toml
     pub fn load_tool_preferences(project_path: &PathBuf) -> (Option<String>, Option<String>) {
         let config_path = project_path.join("Pulsar.toml");
