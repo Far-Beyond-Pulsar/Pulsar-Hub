@@ -1,6 +1,6 @@
 [package]
 name = "pulsar-installer"
-version = "0.1.5"
+version = "0.1.6"
 edition.workspace = true
 description = "Modern, cross-platform installer for the Pulsar game engine"
 license = "Apache-2.0"
