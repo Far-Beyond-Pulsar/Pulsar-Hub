@@ -1,0 +1,60 @@
+[package]
+name = "pulsar-hub"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Pulsar Engine Hub - project launcher, version manager, and installer"
+
+[dependencies]
+# UI framework - use Pulsar-Native's ui (wgpui-component) for consistency
+ui.workspace = true
+gpui-ce.workspace = true
+
+# Pulsar-Native crates
+pulsar_auth.workspace = true
+engine_state.workspace = true
+engine_fs = { workspace = true, features = ["remote"] }
+window_manager.workspace = true
+friends_engine.workspace = true
+ui_common.workspace = true
+ui_auth.workspace = true
+ui_git_manager.workspace = true
+ui_friends.workspace = true
+ui_types_common.workspace = true
+pulsar-multiplayer-core.workspace = true
+engine_backend = { workspace = true, default-features = false, features = ["networking"] }
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+
+# Async
+smol.workspace = true
+futures.workspace = true
+tokio.workspace = true
+reqwest = { workspace = true, features = ["blocking", "json"] }
+
+# Utilities
+anyhow.workspace = true
+chrono.workspace = true
+directories.workspace = true
+git2.workspace = true
+image.workspace = true
+open.workspace = true
+parking_lot.workspace = true
+rfd.workspace = true
+smallvec.workspace = true
+tracing.workspace = true
+which = "8.0"
+uuid = { version = "1.4", features = ["v4"] }
+walkdir.workspace = true
+flate2.workspace = true
+tar.workspace = true
+sha2 = "0.10"
+
+[target.'cfg(windows)'.dependencies]
+runas = "1.2"
+
+[lints]
+workspace = true

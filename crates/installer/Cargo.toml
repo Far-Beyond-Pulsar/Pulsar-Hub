@@ -9,8 +9,8 @@ publish = false
 [dependencies]
 anyhow.workspace = true
 gpui-ce.workspace = true
-gpui-component.workspace = true
-gpui-component-assets.workspace = true
+ui.workspace = true
+pulsar-hub = { path = "../hub" }
 serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true

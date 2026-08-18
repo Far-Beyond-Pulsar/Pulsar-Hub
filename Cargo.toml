@@ -1,11 +1,8 @@
 [workspace]
-default-members = ["crates/ui", "crates/installer", "crates/assets"]
+default-members = ["crates/installer"]
 members = [
-    "crates/macros",
-    "crates/pulsar_macros",
-    "crates/ui",
-    "crates/assets",
     "crates/installer",
+    "crates/hub",
 ]
 resolver = "2"
 
@@ -19,13 +16,13 @@ gpui-component-macros = { path = "crates/macros", version = "0.5.0" }
 gpui-component-assets = { path = "crates/assets", version = "0.5.0" }
 story = { path = "crates/story" }
 
+# GPUI fork (WGPUI) — must match what Pulsar-Native uses
 gpui-ce = { git = "https://github.com/Far-Beyond-Pulsar/WGPUI", rev = "0b555af11e80565429af9405ffd9d17fa832e3fe" }
 
 # Enable all platform wgpu backends (metal=macOS, vulkan+dx12=Linux/Windows)
 wgpu = { git = "https://github.com/Far-Beyond-Pulsar/wgpu", rev = "fce5b80e8017304449124b12637ec324417e40c8", default-features = false, features = ["metal", "vulkan", "dx12", "wgsl", "webgpu"] }
 gpui-macros = "0.2.2"
 sum-tree = { version = "0.2.0", package = "zed-sum-tree" }
-# reqwest = { version = "0.12.15-zed", package = "zed-reqwest" }
 reqwest = { git = "https://github.com/zed-industries/reqwest.git", rev = "c15662463bda39148ba154100dd44d3fba5873a4", default-features = false, features = [
     "charset",
     "http2",
@@ -36,6 +33,31 @@ reqwest = { git = "https://github.com/zed-industries/reqwest.git", rev = "c15662
     "stream",
 ], package = "zed-reqwest", version = "0.12.15-zed" }
 
+# ---------- Pulsar-Native crates (local path) ----------
+PULSAR_NATIVE = "C:/Users/redst/Documents/GitHub/Pulsar-Native"
+
+ui               = { path = "C:/Users/redst/Documents/GitHub/Pulsar-Native/crates/ui/wgpui-component/crates/ui", features = ["inspector", "flamegraph", "tree-sitter-languages"] }
+ui-macros        = { path = "C:/Users/redst/Documents/GitHub/Pulsar-Native/crates/ui/wgpui-component/crates/ui-macros" }
+ui_entry         = { path = "C:/Users/redst/Documents/GitHub/Pulsar-Native/crates/editor/ui_entry" }
+pulsar_auth      = { path = "C:/Users/redst/Documents/GitHub/Pulsar-Native/crates/core/pulsar_auth" }
+engine_state     = { path = "C:/Users/redst/Documents/GitHub/Pulsar-Native/crates/core/engine_state" }
+engine_fs        = { path = "C:/Users/redst/Documents/GitHub/Pulsar-Native/crates/core/engine_fs", default-features = false }
+window_manager   = { path = "C:/Users/redst/Documents/GitHub/Pulsar-Native/crates/core/window_manager" }
+friends_engine   = { path = "C:/Users/redst/Documents/GitHub/Pulsar-Native/crates/core/friends_engine" }
+ui_common        = { path = "C:/Users/redst/Documents/GitHub/Pulsar-Native/crates/editor/ui_common" }
+ui_auth          = { path = "C:/Users/redst/Documents/GitHub/Pulsar-Native/crates/editor/ui_auth" }
+ui_git_manager   = { path = "C:/Users/redst/Documents/GitHub/Pulsar-Native/crates/editor/ui_git_manager" }
+ui_friends       = { path = "C:/Users/redst/Documents/GitHub/Pulsar-Native/crates/editor/ui_friends" }
+ui_types_common  = { path = "C:/Users/redst/Documents/GitHub/Pulsar-Native/crates/editor/ui_types_common" }
+ui_gen_macros    = { path = "C:/Users/redst/Documents/GitHub/Pulsar-Native/crates/core/ui_gen_macros" }
+pulsar-config    = { path = "C:/Users/redst/Documents/GitHub/Pulsar-Native/crates/third-party/pulsar-config" }
+pulsar_settings  = { path = "C:/Users/redst/Documents/GitHub/Pulsar-Native/crates/core/pulsar_settings" }
+engine_backend   = { path = "C:/Users/redst/Documents/GitHub/Pulsar-Native/crates/core/engine_backend", default-features = false, features = ["networking"] }
+pulsar-multiplayer-core = { path = "C:/Users/redst/Documents/GitHub/Pulsar-Native/crates/core/pulsar-multiplayer-core" }
+pulsar_reflection       = { git = "https://github.com/Far-Beyond-Pulsar/Pulsar-Reflection", rev = "b0d9b957b00e695d005df4ab18becf82b377b740" }
+pulsar_reflection_derive = { git = "https://github.com/Far-Beyond-Pulsar/Pulsar-Reflection", rev = "b0d9b957b00e695d005df4ab18becf82b377b740" }
+
+# ---------- Third-party ----------
 anyhow = "1"
 image = { version = "0.25.9", default-features = false, features = ["png", "jpeg", "bmp", "tga", "gif", "webp"] }
 log = "0.4"
@@ -54,10 +76,46 @@ serde_repr = "0.1"
 smallvec = "1"
 smol = "2"
 tracing = "0.1.41"
+dashmap = "6.1.0"
+parking_lot = "0.12"
+directories = "6.0.0"
+toml = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+regex = "1"
+lazy_static = "1.4"
+event-listener = "5.4"
+inventory = "0.3"
+futures = "0.3"
+tokio = { version = "1", features = ["full"] }
+thiserror = "2.0"
+keyring = "3"
+dotenvy = "0.15"
+walkdir = "2.4"
+similar = "3"
+git2 = "0.21"
+syn = { version = "2.0", features = ["full", "extra-traits"] }
+quote = "1.0"
+proc-macro2 = { version = "1.0", features = ["span-locations"] }
+dirs = "6.0"
+once_cell = "1.20"
+open = "5.0"
+rfd = "0.17"
+flate2 = "1.0"
+tar = "0.4"
 
 [workspace.dependencies.windows]
 features = ["Wdk", "Wdk_System", "Wdk_System_SystemServices"]
 version = "0.58.0"
+
+[workspace.lints.rust]
+unused_imports = "allow"
+unused_variables = "allow"
+dead_code = "allow"
+unused_must_use = "allow"
+unused_mut = "allow"
+deprecated = "allow"
+non_upper_case_globals = "allow"
+improper_ctypes_definitions = "allow"
 
 [workspace.lints.clippy]
 almost_complete_range = "allow"
@@ -88,3 +146,38 @@ ttf-parser = { opt-level = 3 }
 
 [workspace.metadata.typos]
 files.extend-exclude = ["**/fixtures/*"]
+
+###################################
+# Patch: redirect external git deps
+# to Pulsar-Native's local vendored
+# copies so Cargo resolves a single
+# copy of each crate in-tree.
+###################################
+
+[patch."https://github.com/Far-Beyond-Pulsar/WGPUI"]
+gpui-ce = { path = "C:/Users/redst/Documents/GitHub/Pulsar-Native/crates/ui/wgpui" }
+
+[patch."https://github.com/Far-Beyond-Pulsar/WGPUI-Component"]
+ui = { path = "C:/Users/redst/Documents/GitHub/Pulsar-Native/crates/ui/wgpui-component/crates/ui" }
+ui-macros = { path = "C:/Users/redst/Documents/GitHub/Pulsar-Native/crates/ui/wgpui-component/crates/ui-macros" }
+
+[patch."https://github.com/Far-Beyond-Pulsar/Pulsar-Native"]
+gpui-ce          = { path = "C:/Users/redst/Documents/GitHub/Pulsar-Native/crates/ui/wgpui" }
+ui               = { path = "C:/Users/redst/Documents/GitHub/Pulsar-Native/crates/ui/wgpui-component/crates/ui" }
+ui-macros        = { path = "C:/Users/redst/Documents/GitHub/Pulsar-Native/crates/ui/wgpui-component/crates/ui-macros" }
+pulsar_std        = { path = "C:/Users/redst/Documents/GitHub/Pulsar-Native/crates/core/pulsar_std" }
+plugin_editor_api = { path = "C:/Users/redst/Documents/GitHub/Pulsar-Native/crates/core/plugin_editor_api" }
+ui_common         = { path = "C:/Users/redst/Documents/GitHub/Pulsar-Native/crates/editor/ui_common" }
+ui_auth           = { path = "C:/Users/redst/Documents/GitHub/Pulsar-Native/crates/editor/ui_auth" }
+engine_backend    = { path = "C:/Users/redst/Documents/GitHub/Pulsar-Native/crates/core/engine_backend" }
+engine_state      = { path = "C:/Users/redst/Documents/GitHub/Pulsar-Native/crates/core/engine_state" }
+ui_types_common   = { path = "C:/Users/redst/Documents/GitHub/Pulsar-Native/crates/editor/ui_types_common" }
+pulsar_reflection = { git = "https://github.com/Far-Beyond-Pulsar//Pulsar-Reflection", rev = "b0d9b957b00e695d005df4ab18becf82b377b740" }
+pulsar_reflection_derive = { git = "https://github.com/Far-Beyond-Pulsar//Pulsar-Reflection", rev = "b0d9b957b00e695d005df4ab18becf82b377b740" }
+
+[patch."https://github.com/Far-Beyond-Pulsar/Pulsar-Reflection"]
+pulsar_reflection = { git = "https://github.com/Far-Beyond-Pulsar//Pulsar-Reflection", rev = "b0d9b957b00e695d005df4ab18becf82b377b740" }
+pulsar_reflection_derive = { git = "https://github.com/Far-Beyond-Pulsar//Pulsar-Reflection", rev = "b0d9b957b00e695d005df4ab18becf82b377b740" }
+
+[patch."https://github.com/Far-Beyond-Pulsar/PulsarConfig"]
+pulsar-config = { path = "C:/Users/redst/Documents/GitHub/Pulsar-Native/crates/third-party/pulsar-config" }

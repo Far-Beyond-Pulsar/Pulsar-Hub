@@ -1,12 +1,7 @@
-//! Pulsar Engine Installer
-//!
-//! Downloads and installs Pulsar engine from GitHub releases.
-
 use gpui::{prelude::*, *};
-use pulsar_installer::ui::InstallerView;
-use gpui_component::Root;
-use gpui::Focusable;
-use gpui_component_assets::Assets;
+use pulsar_hub::EntryWindow;
+use ui::Assets;
+use ui::Root;
 
 fn main() {
     tracing_subscriber::fmt()
@@ -16,23 +11,18 @@ fn main() {
         )
         .init();
 
-    tracing::info!("Starting Pulsar Installer");
+    tracing::info!("Starting Pulsar Hub");
 
     let app = Application::new().with_assets(Assets);
 
     app.run(move |cx| {
-        gpui_component::init(cx);
-        // Force dark theme by default
-        {
-            use gpui_component::theme::{Theme, ThemeMode};
-            Theme::change(ThemeMode::Dark, None, cx);
-        }
+        ui::init(cx);
         cx.activate(true);
 
-        let window_size = size(px(960.0), px(640.0));
+        let window_size = size(px(1200.0), px(800.0));
         let window_bounds = Bounds::centered(None, window_size, cx);
 
-        let window_title = gpui::SharedString::from("Pulsar Engine Installer");
+        let window_title = gpui::SharedString::from("Pulsar Engine");
 
         let options = WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(window_bounds)),
@@ -42,23 +32,17 @@ fn main() {
                 traffic_light_position: Some(point(px(12.0), px(10.0))),
             }),
             window_min_size: Some(Size {
-                width: px(720.0),
-                height: px(500.0),
+                width: px(960.0),
+                height: px(640.0),
             }),
             kind: WindowKind::Normal,
             ..Default::default()
         };
 
         cx.open_window(options, |window, cx| {
-            let installer_view = InstallerView::view(window, cx);
-
-            let focus_handle = installer_view.focus_handle(cx);
-            window.defer(cx, move |window, cx| {
-                focus_handle.focus(window);
-            });
-
-            cx.new(|cx| Root::new(installer_view.into(), window, cx))
+            let entry_window = cx.new(|cx| EntryWindow::new(window, cx));
+            cx.new(|cx| Root::new(entry_window.into(), window, cx))
         })
-        .expect("Failed to open installer window");
+        .expect("Failed to open hub window");
     });
 }
