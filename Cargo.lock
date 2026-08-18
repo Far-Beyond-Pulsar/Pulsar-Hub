@@ -190,7 +190,7 @@ version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "40c48f72fd53cd289104fc64099abca73db4166ad86ea0b4341abe65af83dadc"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -201,7 +201,7 @@ checksum = "291e6a250ff86cd4a820112fb8898808a366d8f9f58ce16d1f538353ad55747d"
 dependencies = [
  "anstyle",
  "once_cell_polyfill",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -1953,7 +1953,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users 0.5.2",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -2128,6 +2128,7 @@ checksum = "66b7e2430c6dff6a955451e2cfc438f09cea1965a9d6f87f7e3b90decc014099"
 [[package]]
 name = "engine_backend"
 version = "0.1.34"
+source = "git+https://github.com/Far-Beyond-Pulsar/Pulsar-Native?rev=7232437266b2443330a78bad96027d0dfb8c2fa8#7232437266b2443330a78bad96027d0dfb8c2fa8"
 dependencies = [
  "PebbleVault",
  "anyhow",
@@ -2144,7 +2145,7 @@ dependencies = [
  "parking_lot",
  "profiling 0.1.0",
  "pulsar_events",
- "pulsar_reflection",
+ "pulsar_reflection 0.1.0 (git+https://github.com/Far-Beyond-Pulsar/Pulsar-Reflection?rev=b0d9b957b00e695d005df4ab18becf82b377b740)",
  "pulsar_scene",
  "pulsar_scenedb",
  "pulsar_world_registry",
@@ -2164,6 +2165,7 @@ dependencies = [
 [[package]]
 name = "engine_class_derive"
 version = "0.1.0"
+source = "git+https://github.com/Far-Beyond-Pulsar/Pulsar-Native?rev=7232437266b2443330a78bad96027d0dfb8c2fa8#7232437266b2443330a78bad96027d0dfb8c2fa8"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2173,6 +2175,7 @@ dependencies = [
 [[package]]
 name = "engine_fs"
 version = "0.1.0"
+source = "git+https://github.com/Far-Beyond-Pulsar/Pulsar-Native?rev=7232437266b2443330a78bad96027d0dfb8c2fa8#7232437266b2443330a78bad96027d0dfb8c2fa8"
 dependencies = [
  "anyhow",
  "base64 0.23.1",
@@ -2183,7 +2186,7 @@ dependencies = [
  "plugin_editor_api",
  "plugin_manager",
  "profiling 0.1.0",
- "pulsar_reflection",
+ "pulsar_reflection 0.1.0 (git+https://github.com/Far-Beyond-Pulsar/Pulsar-Reflection?rev=b0d9b957b00e695d005df4ab18becf82b377b740)",
  "serde",
  "serde_json",
  "tokio",
@@ -2200,6 +2203,7 @@ dependencies = [
 [[package]]
 name = "engine_state"
 version = "0.1.0"
+source = "git+https://github.com/Far-Beyond-Pulsar/Pulsar-Native?rev=7232437266b2443330a78bad96027d0dfb8c2fa8#7232437266b2443330a78bad96027d0dfb8c2fa8"
 dependencies = [
  "anyhow",
  "dashmap",
@@ -2225,6 +2229,7 @@ dependencies = [
 [[package]]
 name = "engine_subsystems"
 version = "0.1.0"
+source = "git+https://github.com/Far-Beyond-Pulsar/Pulsar-Native?rev=7232437266b2443330a78bad96027d0dfb8c2fa8#7232437266b2443330a78bad96027d0dfb8c2fa8"
 dependencies = [
  "thiserror 2.0.18",
  "tracing",
@@ -2315,7 +2320,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -2652,6 +2657,7 @@ dependencies = [
 [[package]]
 name = "friends_engine"
 version = "0.1.0"
+source = "git+https://github.com/Far-Beyond-Pulsar/Pulsar-Native?rev=7232437266b2443330a78bad96027d0dfb8c2fa8#7232437266b2443330a78bad96027d0dfb8c2fa8"
 dependencies = [
  "async-tungstenite",
  "base64 0.23.1",
@@ -3022,6 +3028,7 @@ dependencies = [
 [[package]]
 name = "gpui-ce"
 version = "1.0.0"
+source = "git+https://github.com/Far-Beyond-Pulsar/Pulsar-Native?rev=7232437266b2443330a78bad96027d0dfb8c2fa8#7232437266b2443330a78bad96027d0dfb8c2fa8"
 dependencies = [
  "anyhow",
  "arboard",
@@ -3541,6 +3548,7 @@ dependencies = [
 [[package]]
 name = "helio_component"
 version = "0.1.0"
+source = "git+https://github.com/Far-Beyond-Pulsar/Pulsar-Native?rev=7232437266b2443330a78bad96027d0dfb8c2fa8#7232437266b2443330a78bad96027d0dfb8c2fa8"
 dependencies = [
  "bytemuck",
  "engine_class_derive",
@@ -3556,7 +3564,7 @@ dependencies = [
  "libhelio",
  "plugin_editor_api",
  "pulsar_events",
- "pulsar_reflection",
+ "pulsar_reflection 0.1.0 (git+https://github.com/Far-Beyond-Pulsar/Pulsar-Reflection?rev=b0d9b957b00e695d005df4ab18becf82b377b740)",
  "pulsar_scenedb",
  "pulsar_terrain",
  "pulsar_world_registry",
@@ -3720,7 +3728,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.6.3",
+ "socket2 0.5.10",
  "system-configuration 0.7.0",
  "tokio",
  "tower-service",
@@ -3740,7 +3748,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.62.2",
+ "windows-core 0.58.0",
 ]
 
 [[package]]
@@ -5080,7 +5088,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -5879,10 +5887,11 @@ dependencies = [
 [[package]]
 name = "plugin_editor_api"
 version = "0.1.0"
+source = "git+https://github.com/Far-Beyond-Pulsar/Pulsar-Native?rev=7232437266b2443330a78bad96027d0dfb8c2fa8#7232437266b2443330a78bad96027d0dfb8c2fa8"
 dependencies = [
  "engine_subsystems",
  "gpui-ce",
- "pulsar_reflection",
+ "pulsar_reflection 0.1.0 (git+https://github.com/Far-Beyond-Pulsar/Pulsar-Reflection?rev=b0d9b957b00e695d005df4ab18becf82b377b740)",
  "schemars",
  "serde",
  "serde_json",
@@ -5895,6 +5904,7 @@ dependencies = [
 [[package]]
 name = "plugin_manager"
 version = "0.1.0"
+source = "git+https://github.com/Far-Beyond-Pulsar/Pulsar-Native?rev=7232437266b2443330a78bad96027d0dfb8c2fa8#7232437266b2443330a78bad96027d0dfb8c2fa8"
 dependencies = [
  "engine_subsystems",
  "gpui-ce",
@@ -6203,6 +6213,7 @@ dependencies = [
 [[package]]
 name = "pulsar-config"
 version = "0.1.0"
+source = "git+https://github.com/Far-Beyond-Pulsar/Pulsar-Native?rev=7232437266b2443330a78bad96027d0dfb8c2fa8#7232437266b2443330a78bad96027d0dfb8c2fa8"
 dependencies = [
  "dashmap",
  "dirs 5.0.1",
@@ -6256,7 +6267,7 @@ dependencies = [
 
 [[package]]
 name = "pulsar-installer"
-version = "0.1.6"
+version = "0.1.7"
 dependencies = [
  "anyhow",
  "async-channel 2.5.0",
@@ -6294,6 +6305,7 @@ dependencies = [
 [[package]]
 name = "pulsar-multiplayer-core"
 version = "0.1.0"
+source = "git+https://github.com/Far-Beyond-Pulsar/Pulsar-Native?rev=7232437266b2443330a78bad96027d0dfb8c2fa8#7232437266b2443330a78bad96027d0dfb8c2fa8"
 dependencies = [
  "async-trait",
  "chrono",
@@ -6319,6 +6331,7 @@ dependencies = [
 [[package]]
 name = "pulsar_auth"
 version = "0.1.0"
+source = "git+https://github.com/Far-Beyond-Pulsar/Pulsar-Native?rev=7232437266b2443330a78bad96027d0dfb8c2fa8#7232437266b2443330a78bad96027d0dfb8c2fa8"
 dependencies = [
  "anyhow",
  "directories 6.0.0",
@@ -6332,6 +6345,7 @@ dependencies = [
 [[package]]
 name = "pulsar_events"
 version = "0.1.0"
+source = "git+https://github.com/Far-Beyond-Pulsar/Pulsar-Native?rev=7232437266b2443330a78bad96027d0dfb8c2fa8#7232437266b2443330a78bad96027d0dfb8c2fa8"
 dependencies = [
  "engine_state",
  "serde",
@@ -6341,14 +6355,14 @@ dependencies = [
 [[package]]
 name = "pulsar_reflection"
 version = "0.1.0"
-source = "git+https://github.com/Far-Beyond-Pulsar//Pulsar-Reflection?rev=b0d9b957b00e695d005df4ab18becf82b377b740#b0d9b957b00e695d005df4ab18becf82b377b740"
+source = "git+https://github.com/Far-Beyond-Pulsar/Pulsar-Reflection?rev=b0d9b957b00e695d005df4ab18becf82b377b740#b0d9b957b00e695d005df4ab18becf82b377b740"
 dependencies = [
  "dashmap",
  "glam 0.33.3",
  "gpui-ce",
  "inventory",
  "once_cell",
- "pulsar_reflection_derive",
+ "pulsar_reflection_derive 0.1.0 (git+https://github.com/Far-Beyond-Pulsar/Pulsar-Reflection?rev=b0d9b957b00e695d005df4ab18becf82b377b740)",
  "serde",
  "serde_json",
  "tracing",
@@ -6357,9 +6371,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "pulsar_reflection"
+version = "0.1.0"
+source = "git+https://github.com/Far-Beyond-Pulsar/Pulsar-Reflection?rev=b9dd888d84fd5e0724f8c6cc8abcbb10c351e5ff#b9dd888d84fd5e0724f8c6cc8abcbb10c351e5ff"
+dependencies = [
+ "dashmap",
+ "glam 0.33.3",
+ "inventory",
+ "once_cell",
+ "pulsar_reflection_derive 0.1.0 (git+https://github.com/Far-Beyond-Pulsar/Pulsar-Reflection?rev=b9dd888d84fd5e0724f8c6cc8abcbb10c351e5ff)",
+ "serde",
+ "serde_json",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "pulsar_reflection_derive"
 version = "0.1.0"
-source = "git+https://github.com/Far-Beyond-Pulsar//Pulsar-Reflection?rev=b0d9b957b00e695d005df4ab18becf82b377b740#b0d9b957b00e695d005df4ab18becf82b377b740"
+source = "git+https://github.com/Far-Beyond-Pulsar/Pulsar-Reflection?rev=b0d9b957b00e695d005df4ab18becf82b377b740#b0d9b957b00e695d005df4ab18becf82b377b740"
+dependencies = [
+ "owo-colors",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
+name = "pulsar_reflection_derive"
+version = "0.1.0"
+source = "git+https://github.com/Far-Beyond-Pulsar/Pulsar-Reflection?rev=b9dd888d84fd5e0724f8c6cc8abcbb10c351e5ff#b9dd888d84fd5e0724f8c6cc8abcbb10c351e5ff"
 dependencies = [
  "owo-colors",
  "proc-macro2",
@@ -6370,6 +6411,7 @@ dependencies = [
 [[package]]
 name = "pulsar_scene"
 version = "0.1.0"
+source = "git+https://github.com/Far-Beyond-Pulsar/Pulsar-Native?rev=7232437266b2443330a78bad96027d0dfb8c2fa8#7232437266b2443330a78bad96027d0dfb8c2fa8"
 dependencies = [
  "engine_fs",
  "glam 0.33.3",
@@ -6377,7 +6419,7 @@ dependencies = [
  "helio-asset-compat",
  "helio_component",
  "pulsar_events",
- "pulsar_reflection",
+ "pulsar_reflection 0.1.0 (git+https://github.com/Far-Beyond-Pulsar/Pulsar-Reflection?rev=b0d9b957b00e695d005df4ab18becf82b377b740)",
  "serde",
  "serde_json",
  "tracing",
@@ -6390,7 +6432,7 @@ source = "git+https://github.com/Far-Beyond-Pulsar/SceneDB?rev=411ecd7707140765d
 dependencies = [
  "ahash 0.8.12",
  "profiling 0.1.0",
- "pulsar_reflection",
+ "pulsar_reflection 0.1.0 (git+https://github.com/Far-Beyond-Pulsar/Pulsar-Reflection?rev=b9dd888d84fd5e0724f8c6cc8abcbb10c351e5ff)",
  "pulsar_scenedb_derive",
  "serde_json",
  "tracing",
@@ -6410,6 +6452,7 @@ dependencies = [
 [[package]]
 name = "pulsar_settings"
 version = "0.1.0"
+source = "git+https://github.com/Far-Beyond-Pulsar/Pulsar-Native?rev=7232437266b2443330a78bad96027d0dfb8c2fa8#7232437266b2443330a78bad96027d0dfb8c2fa8"
 dependencies = [
  "pulsar-config",
 ]
@@ -6417,6 +6460,7 @@ dependencies = [
 [[package]]
 name = "pulsar_terrain"
 version = "0.1.0"
+source = "git+https://github.com/Far-Beyond-Pulsar/Pulsar-Native?rev=7232437266b2443330a78bad96027d0dfb8c2fa8#7232437266b2443330a78bad96027d0dfb8c2fa8"
 dependencies = [
  "anyhow",
  "crossbeam-channel",
@@ -6431,9 +6475,10 @@ dependencies = [
 [[package]]
 name = "pulsar_world_registry"
 version = "0.1.0"
+source = "git+https://github.com/Far-Beyond-Pulsar/Pulsar-Native?rev=7232437266b2443330a78bad96027d0dfb8c2fa8#7232437266b2443330a78bad96027d0dfb8c2fa8"
 dependencies = [
  "inventory",
- "pulsar_reflection",
+ "pulsar_reflection 0.1.0 (git+https://github.com/Far-Beyond-Pulsar/Pulsar-Reflection?rev=b0d9b957b00e695d005df4ab18becf82b377b740)",
  "pulsar_scenedb",
  "serde_json",
 ]
@@ -6491,7 +6536,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash 2.1.2",
  "rustls",
- "socket2 0.6.3",
+ "socket2 0.5.10",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -6528,7 +6573,7 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.6.3",
+ "socket2 0.5.10",
  "tracing",
  "windows-sys 0.60.2",
 ]
@@ -7245,7 +7290,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -7334,7 +7379,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs 1.0.7",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -7923,7 +7968,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a766e1110788c36f4fa1c2b71b387a7815aa65f88ce0229841826633d93723e"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -8037,7 +8082,7 @@ dependencies = [
  "cfg-if",
  "libc",
  "psm",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -8407,7 +8452,7 @@ dependencies = [
  "getrandom 0.4.2",
  "once_cell",
  "rustix 1.1.4",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -9333,12 +9378,13 @@ checksum = "f2f6fb2847f6742cd76af783a2a2c49e9375d0a111c7bef6f71cd9e738c72d6e"
 dependencies = [
  "memoffset",
  "tempfile",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
 name = "ui"
 version = "0.1.0"
+source = "git+https://github.com/Far-Beyond-Pulsar/Pulsar-Native?rev=7232437266b2443330a78bad96027d0dfb8c2fa8#7232437266b2443330a78bad96027d0dfb8c2fa8"
 dependencies = [
  "aho-corasick",
  "anyhow",
@@ -9424,6 +9470,7 @@ dependencies = [
 [[package]]
 name = "ui-macros"
 version = "0.1.0"
+source = "git+https://github.com/Far-Beyond-Pulsar/Pulsar-Native?rev=7232437266b2443330a78bad96027d0dfb8c2fa8#7232437266b2443330a78bad96027d0dfb8c2fa8"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -9433,6 +9480,7 @@ dependencies = [
 [[package]]
 name = "ui_auth"
 version = "0.1.0"
+source = "git+https://github.com/Far-Beyond-Pulsar/Pulsar-Native?rev=7232437266b2443330a78bad96027d0dfb8c2fa8#7232437266b2443330a78bad96027d0dfb8c2fa8"
 dependencies = [
  "gpui-ce",
  "ui",
@@ -9441,6 +9489,7 @@ dependencies = [
 [[package]]
 name = "ui_common"
 version = "0.1.0"
+source = "git+https://github.com/Far-Beyond-Pulsar/Pulsar-Native?rev=7232437266b2443330a78bad96027d0dfb8c2fa8#7232437266b2443330a78bad96027d0dfb8c2fa8"
 dependencies = [
  "anyhow",
  "engine_fs",
@@ -9451,7 +9500,7 @@ dependencies = [
  "parking_lot",
  "plugin_editor_api",
  "pulsar_auth",
- "pulsar_reflection",
+ "pulsar_reflection 0.1.0 (git+https://github.com/Far-Beyond-Pulsar/Pulsar-Reflection?rev=b0d9b957b00e695d005df4ab18becf82b377b740)",
  "reqwest",
  "rust-i18n",
  "rust-i18n-macro",
@@ -9469,6 +9518,7 @@ dependencies = [
 [[package]]
 name = "ui_friends"
 version = "0.1.0"
+source = "git+https://github.com/Far-Beyond-Pulsar/Pulsar-Native?rev=7232437266b2443330a78bad96027d0dfb8c2fa8#7232437266b2443330a78bad96027d0dfb8c2fa8"
 dependencies = [
  "anyhow",
  "chrono",
@@ -9488,6 +9538,7 @@ dependencies = [
 [[package]]
 name = "ui_gen_macros"
 version = "0.1.0"
+source = "git+https://github.com/Far-Beyond-Pulsar/Pulsar-Native?rev=7232437266b2443330a78bad96027d0dfb8c2fa8#7232437266b2443330a78bad96027d0dfb8c2fa8"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -9497,6 +9548,7 @@ dependencies = [
 [[package]]
 name = "ui_git_manager"
 version = "0.1.0"
+source = "git+https://github.com/Far-Beyond-Pulsar/Pulsar-Native?rev=7232437266b2443330a78bad96027d0dfb8c2fa8#7232437266b2443330a78bad96027d0dfb8c2fa8"
 dependencies = [
  "anyhow",
  "chrono",
@@ -9524,6 +9576,7 @@ dependencies = [
 [[package]]
 name = "ui_types_common"
 version = "0.1.0"
+source = "git+https://github.com/Far-Beyond-Pulsar/Pulsar-Native?rev=7232437266b2443330a78bad96027d0dfb8c2fa8#7232437266b2443330a78bad96027d0dfb8c2fa8"
 dependencies = [
  "chrono",
  "lazy_static",
@@ -10400,7 +10453,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -10412,6 +10465,7 @@ checksum = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
 [[package]]
 name = "window_manager"
 version = "0.1.0"
+source = "git+https://github.com/Far-Beyond-Pulsar/Pulsar-Native?rev=7232437266b2443330a78bad96027d0dfb8c2fa8#7232437266b2443330a78bad96027d0dfb8c2fa8"
 dependencies = [
  "anyhow",
  "dashmap",
@@ -11748,7 +11802,3 @@ dependencies = [
  "syn 3.0.3",
  "winnow 1.0.3",
 ]
-
-[[patch.unused]]
-name = "pulsar_std"
-version = "0.1.0"
