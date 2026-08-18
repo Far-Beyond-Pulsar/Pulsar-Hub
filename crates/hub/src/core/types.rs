@@ -420,12 +420,14 @@ pub struct VersionState {
     pub available_releases: Vec<crate::service::installer_service::GitHubRelease>,
     pub install_state: crate::service::installer_service::VersionInstallState,
     pub fetching: bool,
-    /// The highest releases API page that has been loaded into `available_releases`.
-    pub release_page: u32,
     /// True while an additional page of releases is being fetched.
     pub loading_more: bool,
-    /// False once the API returned fewer than a full page, meaning there are no more pages.
+    /// True if any source repo still has more pages to load.
     pub has_more: bool,
+    /// Currently enabled release channels.
+    pub selected_channels: Vec<crate::service::installer_service::ReleaseChannel>,
+    /// Per-repo pagination/loading state backing `available_releases`.
+    pub channel_sources: Vec<crate::service::installer_service::ChannelSource>,
 }
 
 impl Default for VersionState {
@@ -435,9 +437,14 @@ impl Default for VersionState {
             available_releases: Vec::new(),
             install_state: crate::service::installer_service::VersionInstallState::Idle,
             fetching: false,
-            release_page: 0,
             loading_more: false,
             has_more: true,
+            selected_channels: crate::service::installer_service::ReleaseChannel::ALL
+                .to_vec()
+                .into_iter()
+                .filter(|c| *c != crate::service::installer_service::ReleaseChannel::Nightly)
+                .collect(),
+            channel_sources: crate::service::installer_service::default_channel_sources(),
         }
     }
 }

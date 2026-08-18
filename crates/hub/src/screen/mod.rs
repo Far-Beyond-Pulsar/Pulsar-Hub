@@ -95,6 +95,9 @@ pub struct EntryScreen {
             ui::list::List<crate::screen::views::release_list::ReleaseListDelegate>,
         >,
     >,
+    /// Channel-selection dropdown content (multi-select checkboxes).
+    pub(crate) channel_menu:
+        Option<gpui::Entity<crate::screen::views::channel_menu::ChannelMenuView>>,
 }
 
 impl EntryScreen {
@@ -110,6 +113,12 @@ impl EntryScreen {
                 );
             ui::list::List::new(delegate, window, cx).no_query()
         });
+        let channel_menu = Some(cx.new(|cx| {
+            crate::screen::views::channel_menu::ChannelMenuView::new(
+                self_entity.downgrade(),
+                cx,
+            )
+        }));
 
         cx.subscribe_in(
             &state.auth.profile_dropdown,
@@ -162,6 +171,7 @@ impl EntryScreen {
             state,
             inputs,
             release_list: Some(release_list),
+            channel_menu,
         };
         this.state.git_auto_fetch_task = Some(Self::start_git_auto_fetch_task(cx));
         this.load_thumbnails(cx);
@@ -1400,37 +1410,112 @@ impl EntryScreen {
 
     // ── Version Management ──────────────────────────────────────────────
 
+    /// The repos backing the currently selected channels (deduped).
+    fn needed_repos(&self) -> Vec<&'static str> {
+        let mut out: Vec<&'static str> = Vec::new();
+        for channel in &self.state.versions.selected_channels {
+            if !out.contains(&channel.repo()) {
+                out.push(channel.repo());
+            }
+        }
+        out
+    }
+
+    /// Recompose `available_releases` from all sources, filtered by the
+    /// selected channels and ordered newest-first by publish date.
+    fn rebuild_available_releases(&mut self) {
+        use crate::service::installer_service as svc;
+        let channels = self.state.versions.selected_channels.clone();
+        let mut out: Vec<svc::GitHubRelease> = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        for src in &self.state.versions.channel_sources {
+            for release in &src.fetched {
+                let included = channels
+                    .iter()
+                    .any(|ch| ch.repo() == src.repo && ch.includes(release));
+                if included && seen.insert(release.tag_name.clone()) {
+                    out.push(release.clone());
+                }
+            }
+        }
+        svc::sort_releases_newest_first(&mut out);
+        self.state.versions.available_releases = out;
+    }
+
+    /// Recompute `has_more` from the sources that back the selected channels.
+    fn recompute_has_more(&mut self) {
+        let needed = self.needed_repos();
+        self.state.versions.has_more = self
+            .state
+            .versions
+            .channel_sources
+            .iter()
+            .any(|s| needed.contains(&s.repo) && s.has_more);
+    }
+
     pub(crate) fn refresh_versions(&mut self, cx: &mut Context<Self>) {
         self.state.versions.installed =
             crate::service::installer_service::scan_installed_versions();
         self.state.versions.fetching = true;
-        self.state.versions.release_page = 0;
-        self.state.versions.has_more = true;
+        self.state.versions.loading_more = false;
+        for src in &mut self.state.versions.channel_sources {
+            src.page = 0;
+            src.has_more = true;
+            src.loading = false;
+            src.error = None;
+            src.fetched.clear();
+        }
+        self.rebuild_available_releases();
         cx.notify();
 
+        let repos = self.needed_repos();
+        use crate::service::installer_service as svc;
         cx.spawn(async move |entity, cx| {
-            let result = cx
+            let results = cx
                 .background_executor()
-                .spawn(async {
-                    crate::service::installer_service::fetch_releases_blocking(1)
+                .spawn(async move {
+                    repos
+                        .iter()
+                        .map(|repo| (*repo, svc::fetch_repo_releases_blocking(repo, 1)))
+                        .collect::<Vec<_>>()
                 })
                 .await;
             let _ = cx.update(|cx| {
                 entity.update(cx, |this, cx| {
                     this.state.versions.fetching = false;
-                    match result {
-                        Ok(releases) => {
-                            let has_more = releases
-                                .len()
-                                == crate::service::installer_service::RELEASES_PER_PAGE as usize;
-                            this.state.versions.available_releases = releases;
-                            this.state.versions.release_page = 1;
-                            this.state.versions.has_more = has_more;
-                        }
-                        Err(e) => {
-                            tracing::warn!("Failed to fetch releases: {}", e);
+                    for (repo, result) in results {
+                        let Some(src) = this
+                            .state
+                            .versions
+                            .channel_sources
+                            .iter_mut()
+                            .find(|s| s.repo == repo)
+                        else {
+                            continue;
+                        };
+                        match result {
+                            Ok(list) => {
+                                let has_more = list.len()
+                                    == svc::RELEASES_PER_PAGE as usize;
+                                let mut seen: std::collections::HashSet<String> =
+                                    src.fetched.iter().map(|r| r.tag_name.clone()).collect();
+                                for release in list {
+                                    if seen.insert(release.tag_name.clone()) {
+                                        src.fetched.push(release);
+                                    }
+                                }
+                                src.page = 1;
+                                src.has_more = has_more;
+                                src.loading = false;
+                            }
+                            Err(e) => {
+                                src.error = Some(e);
+                                src.loading = false;
+                            }
                         }
                     }
+                    this.rebuild_available_releases();
+                    this.recompute_has_more();
                     cx.notify();
                 });
             });
@@ -1438,62 +1523,179 @@ impl EntryScreen {
         .detach();
     }
 
-    /// Fetch the next page of releases, appending to `available_releases`.
+    /// Fetch the next page of each needed source, then recompose the list.
     pub(crate) fn load_more_releases(&mut self, cx: &mut Context<Self>) {
-        let next_page = self.state.versions.release_page + 1;
-        if self.state.versions.fetching
-            || self.state.versions.loading_more
-            || !self.state.versions.has_more
-        {
+        if self.state.versions.fetching || self.state.versions.loading_more {
             return;
         }
-        self.state.versions.loading_more = true;
-        cx.notify();
-
-        let current_idents: std::collections::HashSet<String> = self
+        let needed = self.needed_repos();
+        let targets: Vec<(&'static str, u32)> = self
             .state
             .versions
-            .available_releases
+            .channel_sources
             .iter()
-            .map(|r| r.tag_name.clone())
+            .filter(|s| needed.contains(&s.repo) && s.has_more)
+            .map(|s| (s.repo, s.page + 1))
             .collect();
+        if targets.is_empty() {
+            self.state.versions.has_more = false;
+            return;
+        }
 
+        self.state.versions.loading_more = true;
+        for src in &mut self.state.versions.channel_sources {
+            if needed.contains(&src.repo) {
+                src.loading = true;
+            }
+        }
+        cx.notify();
+
+        use crate::service::installer_service as svc;
         cx.spawn(async move |entity, cx| {
-            let result = cx
+            let results = cx
                 .background_executor()
                 .spawn(async move {
-                    crate::service::installer_service::fetch_releases_blocking(next_page)
+                    targets
+                        .iter()
+                        .map(|(repo, page)| (*repo, svc::fetch_repo_releases_blocking(repo, *page)))
+                        .collect::<Vec<_>>()
                 })
                 .await;
             let _ = cx.update(|cx| {
                 entity.update(cx, |this, cx| {
-                    let v = &mut this.state.versions;
-                    v.loading_more = false;
-                    match result {
-                        Ok(releases) => {
-                            let mut appended = Vec::new();
-                            for release in releases {
-                                if current_idents.contains(&release.tag_name) {
-                                    continue;
+                    this.state.versions.loading_more = false;
+                    for (repo, result) in results {
+                        let Some(src) = this
+                            .state
+                            .versions
+                            .channel_sources
+                            .iter_mut()
+                            .find(|s| s.repo == repo)
+                        else {
+                            continue;
+                        };
+                        match result {
+                            Ok(list) => {
+                                let page = src.page + 1;
+                                let has_more = list.len() == svc::RELEASES_PER_PAGE as usize;
+                                let mut seen: std::collections::HashSet<String> =
+                                    src.fetched.iter().map(|r| r.tag_name.clone()).collect();
+                                for release in list {
+                                    if seen.insert(release.tag_name.clone()) {
+                                        src.fetched.push(release);
+                                    }
                                 }
-                                appended.push(release);
+                                src.page = page;
+                                src.has_more = has_more;
+                                src.loading = false;
                             }
-                            v.available_releases.extend(appended);
-                            v.release_page = next_page;
-                            v.has_more =
-                                v.available_releases.len()
-                                    >= (next_page * crate::service::installer_service::RELEASES_PER_PAGE) as usize
-                            ;
-                        }
-                        Err(e) => {
-                            tracing::warn!("Failed to fetch more releases (page {}): {}", next_page, e);
+                            Err(e) => {
+                                src.error = Some(e);
+                                src.loading = false;
+                            }
                         }
                     }
+                    this.rebuild_available_releases();
+                    this.recompute_has_more();
                     cx.notify();
                 });
             });
         })
         .detach();
+    }
+
+    /// Toggle a release channel on/off and recompose the visible list.
+    pub(crate) fn toggle_channel(
+        &mut self,
+        channel: crate::service::installer_service::ReleaseChannel,
+        selected: bool,
+        cx: &mut Context<Self>,
+    ) {
+        if selected {
+            let v = &mut self.state.versions;
+            if !v.selected_channels.contains(&channel) {
+                v.selected_channels.push(channel);
+            }
+        } else {
+            self.state.versions.selected_channels.retain(|c| *c != channel);
+        }
+        self.rebuild_available_releases();
+        self.recompute_has_more();
+
+        // If a newly-enabled channel's source repo was never fetched (e.g.
+        // Nightly, which is off by default), go fetch its first page now.
+        let needed = self.needed_repos();
+        let to_fetch: Vec<&'static str> = self
+            .state
+            .versions
+            .channel_sources
+            .iter()
+            .filter(|s| {
+                needed.contains(&s.repo) && s.page == 0 && s.fetched.is_empty() && !s.loading
+            })
+            .map(|s| s.repo)
+            .collect();
+        if !to_fetch.is_empty() {
+            self.state.versions.fetching = true;
+            for src in &mut self.state.versions.channel_sources {
+                if to_fetch.contains(&src.repo) {
+                    src.loading = true;
+                }
+            }
+            use crate::service::installer_service as svc;
+            cx.spawn(async move |entity, cx| {
+                let results = cx
+                    .background_executor()
+                    .spawn(async move {
+                        to_fetch
+                            .iter()
+                            .map(|repo| (*repo, svc::fetch_repo_releases_blocking(repo, 1)))
+                            .collect::<Vec<_>>()
+                    })
+                    .await;
+                let _ = cx.update(|cx| {
+                    entity.update(cx, |this, cx| {
+                        this.state.versions.fetching = false;
+                        for (repo, result) in results {
+                            let Some(src) = this
+                                .state
+                                .versions
+                                .channel_sources
+                                .iter_mut()
+                                .find(|s| s.repo == repo)
+                            else {
+                                continue;
+                            };
+                            match result {
+                                Ok(list) => {
+                                    let has_more = list.len()
+                                        == svc::RELEASES_PER_PAGE as usize;
+                                    let mut seen: std::collections::HashSet<String> =
+                                        src.fetched.iter().map(|r| r.tag_name.clone()).collect();
+                                    for release in list {
+                                        if seen.insert(release.tag_name.clone()) {
+                                            src.fetched.push(release);
+                                        }
+                                    }
+                                    src.page = 1;
+                                    src.has_more = has_more;
+                                    src.loading = false;
+                                }
+                                Err(e) => {
+                                    src.error = Some(e);
+                                    src.loading = false;
+                                }
+                            }
+                        }
+                        this.rebuild_available_releases();
+                        this.recompute_has_more();
+                        cx.notify();
+                    });
+                });
+            })
+            .detach();
+        }
+        cx.notify();
     }
 
     /// Start downloading + extracting the given release, driven by the tag name.

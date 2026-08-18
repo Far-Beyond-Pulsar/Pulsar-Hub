@@ -1,3 +1,4 @@
+pub mod channel_menu;
 pub mod clone_git;
 pub mod cloud_projects;
 pub mod dependency_setup;

@@ -260,14 +260,42 @@ fn render_install_modal(
                         ),
                 )
                 .child(
-                    Button::new("btn-refresh-releases")
-                        .label("Refresh")
-                        .icon(IconName::Refresh)
-                        .compact()
-                        .ghost()
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.refresh_versions(cx);
-                        })),
+                    h_flex()
+                        .gap_1()
+                        .items_center()
+                        .child(
+                            screen
+                                .channel_menu
+                                .as_ref()
+                                .cloned()
+                                .map(|menu| {
+                                    ui::popover::Popover::<
+                                        crate::screen::views::channel_menu::ChannelMenuView,
+                                    >::new("install-channels-popover")
+                                        .anchor(Corner::TopRight)
+                                        .trigger(
+                                            Button::new("btn-channels")
+                                                .label("Channels")
+                                                .icon(IconName::Settings)
+                                                .compact()
+                                                .ghost()
+                                                .tooltip("Select release channels"),
+                                        )
+                                        .content(move |_, _| menu.clone())
+                                        .into_any_element()
+                                })
+                                .unwrap_or_else(|| div().into_any_element()),
+                        )
+                        .child(
+                            Button::new("btn-refresh-releases")
+                                .label("Refresh")
+                                .icon(IconName::Refresh)
+                                .compact()
+                                .ghost()
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.refresh_versions(cx);
+                                })),
+                        ),
                 ),
         )
         .child(div().w_full().h(px(1.0)).bg(theme.border))

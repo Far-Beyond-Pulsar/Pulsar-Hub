@@ -6262,7 +6262,9 @@ dependencies = [
  "walkdir",
  "which 8.0.5",
  "window_manager",
+ "windows 0.58.0",
  "zed-reqwest 0.12.15-zed (git+https://github.com/zed-industries/reqwest.git?rev=c15662463bda39148ba154100dd44d3fba5873a4)",
+ "zip",
 ]
 
 [[package]]

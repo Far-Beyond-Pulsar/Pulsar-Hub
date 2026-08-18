@@ -34,12 +34,7 @@ impl ReleaseListDelegate {
     fn loaded(&self, cx: &App) -> usize {
         self.screen
             .upgrade()
-            .map(|s| {
-                s.read(cx).state.versions.available_releases
-                    .iter()
-                    .filter(|r| !r.prerelease)
-                    .count()
-            })
+            .map(|s| s.read(cx).state.versions.available_releases.len())
             .unwrap_or(0)
     }
 
@@ -51,10 +46,13 @@ impl ReleaseListDelegate {
     }
 
     fn release_at(&self, cx: &App, row: usize) -> Option<GitHubRelease> {
-        self.screen.upgrade()?.read(cx).state.versions.available_releases
-            .iter()
-            .filter(|r| !r.prerelease)
-            .nth(row)
+        self.screen
+            .upgrade()?
+            .read(cx)
+            .state
+            .versions
+            .available_releases
+            .get(row)
             .cloned()
     }
 

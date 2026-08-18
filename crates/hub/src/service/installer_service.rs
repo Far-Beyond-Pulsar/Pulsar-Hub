@@ -28,6 +28,9 @@ pub struct GitHubRelease {
     pub body: String,
     pub assets: Vec<GitHubAsset>,
     pub prerelease: bool,
+    /// ISO-8601 publish timestamp from the GitHub API.
+    #[serde(default)]
+    pub published_at: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -35,6 +38,108 @@ pub struct GitHubAsset {
     pub name: String,
     pub browser_download_url: String,
     pub size: u64,
+}
+
+/// A release channel a user can opt into.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ReleaseChannel {
+    /// Anything `>= 1.0.0` from the main Pulsar-Native repo.
+    Stable,
+    /// Anything `< 1.0.0` from the main Pulsar-Native repo.
+    Alpha,
+    /// Anything from the dedicated Nightly repo.
+    Nightly,
+}
+
+impl ReleaseChannel {
+    pub const ALL: [ReleaseChannel; 3] = [
+        ReleaseChannel::Stable,
+        ReleaseChannel::Alpha,
+        ReleaseChannel::Nightly,
+    ];
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            ReleaseChannel::Stable => "Stable",
+            ReleaseChannel::Alpha => "Alpha",
+            ReleaseChannel::Nightly => "Nightly",
+        }
+    }
+
+    pub fn repo(&self) -> &'static str {
+        match self {
+            ReleaseChannel::Stable | ReleaseChannel::Alpha => "Far-Beyond-Pulsar/Pulsar-Native",
+            ReleaseChannel::Nightly => "Far-Beyond-Pulsar/Nightly",
+        }
+    }
+
+    /// Whether this channel would show `release` (repo + version scoped).
+    pub fn includes(&self, release: &GitHubRelease) -> bool {
+        match self {
+            ReleaseChannel::Nightly => true,
+            ReleaseChannel::Stable => version_major(&release.tag_name).map(|m| m >= 1).unwrap_or(false),
+            ReleaseChannel::Alpha => version_major(&release.tag_name)
+                .map(|m| m >= 0 && m < 1)
+                .unwrap_or(false),
+        }
+    }
+}
+
+/// Pagination/loading state for a single source repo being paged through.
+#[derive(Debug, Clone)]
+pub struct ChannelSource {
+    pub repo: &'static str,
+    pub page: u32,
+    pub has_more: bool,
+    pub loading: bool,
+    pub error: Option<String>,
+    /// Releases fetched so far for this repo (unfiltered by channel).
+    pub fetched: Vec<GitHubRelease>,
+}
+
+impl ChannelSource {
+    pub fn new(repo: &'static str) -> Self {
+        Self {
+            repo,
+            page: 0,
+            has_more: true,
+            loading: false,
+            error: None,
+            fetched: Vec::new(),
+        }
+    }
+}
+
+/// The canonical set of repos used as release sources.
+pub fn default_channel_sources() -> Vec<ChannelSource> {
+    vec![
+        ChannelSource::new(ReleaseChannel::Stable.repo()),
+        ChannelSource::new(ReleaseChannel::Nightly.repo()),
+    ]
+}
+
+/// Parse the leading numeric major/minor from a release tag for version checks.
+fn version_major(tag: &str) -> Option<i64> {
+    let t = tag
+        .trim()
+        .trim_start_matches(|c: char| c == 'v' || c == 'V' || c == ' ');
+    let digits: String = t.chars().take_while(|c| c.is_ascii_digit()).collect();
+    if digits.is_empty() {
+        None
+    } else {
+        digits.parse().ok()
+    }
+}
+
+/// Sort `releases` newest-first by their publish date.
+pub fn sort_releases_newest_first(releases: &mut Vec<GitHubRelease>) {
+    releases.sort_by(|a, b| release_date_millis(b).cmp(&release_date_millis(a)));
+}
+
+fn release_date_millis(release: &GitHubRelease) -> i64 {
+    chrono::DateTime::parse_from_rfc3339(&release.published_at)
+        .map(|d| d.timestamp_millis())
+        .unwrap_or(0)
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -150,16 +255,21 @@ fn looks_like_install_dir(dir: &Path) -> bool {
     dir.join("pulsar").is_file()
         || dir.join("pulsar.exe").is_file()
         || dir.join("Contents").join("Info.plist").exists()
+        || dir.join(".pulsar-install.json").is_file()
 }
 
 // ── GitHub Releases ─────────────────────────────────────────────────────────
 
-const GITHUB_API: &str = "https://api.github.com/repos/Far-Beyond-Pulsar/Pulsar-Native/releases";
+const GITHUB_API: &str = "https://api.github.com/repos";
 
 /// Number of releases returned per page by the GitHub releases API.
 pub const RELEASES_PER_PAGE: u32 = 30;
 
-pub fn fetch_releases_blocking(page: u32) -> Result<Vec<GitHubRelease>, String> {
+/// Fetch one page of releases from a given `owner/repo` slug.
+pub fn fetch_repo_releases_blocking(
+    repo: &str,
+    page: u32,
+) -> Result<Vec<GitHubRelease>, String> {
     use std::time::Duration;
 
     let client = reqwest::blocking::Client::builder()
@@ -169,7 +279,10 @@ pub fn fetch_releases_blocking(page: u32) -> Result<Vec<GitHubRelease>, String> 
         .build()
         .map_err(|e| e.to_string())?;
 
-    let url = format!("{}?page={}&per_page={}", GITHUB_API, page, RELEASES_PER_PAGE);
+    let url = format!(
+        "{}/{}/releases?page={}&per_page={}",
+        GITHUB_API, repo, page, RELEASES_PER_PAGE
+    );
     let mut last_err = String::new();
     for attempt in 1..=3 {
         match client.get(&url).send() {
@@ -211,10 +324,45 @@ pub fn find_platform_asset(release: &GitHubRelease) -> Option<&GitHubAsset> {
             return Some(a);
         }
     }
+    // Nightly builds use `Pulsar-Native_<platform>_<hash>.zip` naming.
+    if let Some(token) = nightly_platform_token(&os, &arch) {
+        let needle = format!("pulsar-native_{}_", token);
+        if let Some(a) = release
+            .assets
+            .iter()
+            .find(|a| {
+                let n = a.name.to_lowercase();
+                n.starts_with("pulsar-native_") && n.contains(&needle) && n.ends_with(".zip")
+            })
+        {
+            tracing::info!(
+                "Asset selection: os={os} arch={arch} nightly_token={token} selected={}",
+                a.name
+            );
+            return Some(a);
+        }
+        tracing::warn!(
+            "No nightly asset matched token '{token}' (os={os} arch={arch}); available: {:?}",
+            release.assets.iter().map(|a| a.name.as_str()).collect::<Vec<_>>()
+        );
+    }
     release.assets.iter().find(|a| {
         let n = a.name.to_lowercase();
         n.contains(&os) && n.contains(&arch)
     })
+}
+
+/// Map the current OS/arch to the Nightly asset platform token.
+fn nightly_platform_token(os: &str, arch: &str) -> Option<String> {
+    match (os, arch) {
+        ("windows", "x86_64") => Some("x64".to_string()),
+        ("windows", "aarch64") => Some("arm64".to_string()),
+        ("macos", "x86_64") => Some("macos-x64".to_string()),
+        ("macos", "aarch64") => Some("macos-arm64".to_string()),
+        ("linux", "x86_64") => Some("linux-x64".to_string()),
+        ("linux", "aarch64") => Some("linux-arm64".to_string()),
+        _ => None,
+    }
 }
 
 pub fn download_and_extract_blocking(
@@ -241,7 +389,53 @@ pub fn download_and_extract_blocking(
     std::fs::create_dir_all(dest_dir).map_err(|e| e.to_string())?;
 
     let (_, _, ext) = platform_info();
-    if ext == "exe" {
+    let is_zip = url.to_lowercase().ends_with(".zip");
+    let archive_path = if is_zip || ext != "exe" {
+        let name = url
+            .rsplit('/')
+            .next()
+            .filter(|n| !n.is_empty())
+            .map(|n| n.to_string())
+            .unwrap_or_else(|| {
+                if is_zip {
+                    format!("pulsar-{}.zip", version)
+                } else {
+                    format!("pulsar-{}.tar.gz", version)
+                }
+            });
+        Some(dest_dir.parent().unwrap_or(dest_dir).join(name))
+    } else {
+        None
+    };
+
+    if let Some(archive_path) = &archive_path {
+        let mut file = std::fs::File::create(archive_path).map_err(|e| e.to_string())?;
+        use std::io::Read;
+        let mut reader = resp;
+        let mut buf = [0u8; 8192];
+        loop {
+            let n = reader.read(&mut buf).map_err(|e| e.to_string())?;
+            if n == 0 {
+                break;
+            }
+            std::io::Write::write_all(&mut file, &buf[..n]).map_err(|e| e.to_string())?;
+            downloaded += n as u64;
+            if total > 0 {
+                progress_cb((downloaded as f32 / total as f32) * 80.0);
+            }
+        }
+        progress_cb(80.0);
+        if is_zip {
+            extract_zip(archive_path, dest_dir).map_err(|e| e.to_string())?;
+            flatten_archive_root(dest_dir);
+            place_engine_binary_at_root(dest_dir);
+        } else {
+            extract_tar_gz(archive_path, dest_dir)
+                .map_err(|e| e.to_string())?;
+        }
+        let _ = std::fs::remove_file(archive_path);
+        write_metadata(dest_dir, version).map_err(|e| e.to_string())?;
+    } else {
         let exe_path = dest_dir.join("pulsar.exe");
         let mut file = std::fs::File::create(&exe_path).map_err(|e| e.to_string())?;
         use std::io::Read;
@@ -258,37 +452,6 @@ pub fn download_and_extract_blocking(
                 progress_cb((downloaded as f32 / total as f32) * 80.0);
             }
         }
-        write_metadata(dest_dir, version).map_err(|e| e.to_string())?;
-    } else {
-        let archive_path = dest_dir.parent().unwrap_or(dest_dir).join(format!(
-            "pulsar-{}.tar.gz",
-            version
-        ));
-        {
-            let mut file = std::fs::File::create(&archive_path).map_err(|e| e.to_string())?;
-            use std::io::Read;
-            let mut reader = resp;
-            let mut buf = [0u8; 8192];
-            loop {
-                let n = reader.read(&mut buf).map_err(|e| e.to_string())?;
-                if n == 0 {
-                    break;
-                }
-                std::io::Write::write_all(&mut file, &buf[..n]).map_err(|e| e.to_string())?;
-                downloaded += n as u64;
-                if total > 0 {
-                    progress_cb((downloaded as f32 / total as f32) * 80.0);
-                }
-            }
-        }
-        progress_cb(80.0);
-
-        let archive_file = std::fs::File::open(&archive_path).map_err(|e| e.to_string())?;
-        let dec = flate2::read::GzDecoder::new(archive_file);
-        let mut ar = tar::Archive::new(dec);
-        ar.unpack(dest_dir).map_err(|e| format!("Extract failed: {}", e))?;
-        let _ = std::fs::remove_file(&archive_path);
-
         write_metadata(dest_dir, version).map_err(|e| e.to_string())?;
     }
 
@@ -369,38 +532,58 @@ pub fn download_and_extract_with_progress(
     }
 
     let (_, _, ext) = platform_info();
-    let write_result = if ext == "exe" {
-        download_file_with_progress(resp, dest_dir.join("pulsar.exe"), &progress)
-    } else {
-        let archive_path = dest_dir
-            .parent()
-            .unwrap_or(dest_dir)
-            .join(format!("pulsar-{}.tar.gz", version));
+    // Nightly assets are `.zip` archives — even on Windows, where `ext` is
+    // "exe" — so decide on the URL's extension before falling back to the
+    // raw-exe / tar.gz paths.
+    let is_zip = url.to_lowercase().ends_with(".zip");
+    let write_result = if is_zip {
+        let archive_name = url
+            .rsplit('/')
+            .next()
+            .filter(|n| !n.is_empty())
+            .unwrap_or(&format!("pulsar-{}.zip", version))
+            .to_string();
+        let archive_path = dest_dir.parent().unwrap_or(dest_dir).join(&archive_name);
         let r = download_file_with_progress(resp, archive_path.clone(), &progress);
         if r.is_ok() {
             {
                 let mut p = progress.lock();
                 p.speed_bps = 0;
             }
-            match std::fs::File::open(&archive_path) {
-                Ok(f) => {
-                    let dec = flate2::read::GzDecoder::new(f);
-                    let mut ar = tar::Archive::new(dec);
-                    if let Err(e) = ar.unpack(dest_dir) {
-                        let mut p = progress.lock();
-                        p.error = Some(format!("Extract failed: {}", e));
-                        p.done = true;
-                        return;
-                    }
-                    let _ = std::fs::remove_file(&archive_path);
-                }
-                Err(e) => {
-                    let mut p = progress.lock();
-                    p.error = Some(e.to_string());
-                    p.done = true;
-                    return;
-                }
+            if let Err(e) = extract_zip(&archive_path, dest_dir) {
+                let mut p = progress.lock();
+                p.error = Some(e);
+                p.done = true;
+                return;
             }
+            flatten_archive_root(dest_dir);
+            place_engine_binary_at_root(dest_dir);
+            let _ = std::fs::remove_file(&archive_path);
+        }
+        r
+    } else if ext == "exe" {
+        download_file_with_progress(resp, dest_dir.join("pulsar.exe"), &progress)
+    } else {
+        let archive_name = url
+            .rsplit('/')
+            .next()
+            .filter(|n| !n.is_empty())
+            .unwrap_or(&format!("pulsar-{}.tar.gz", version))
+            .to_string();
+        let archive_path = dest_dir.parent().unwrap_or(dest_dir).join(&archive_name);
+        let r = download_file_with_progress(resp, archive_path.clone(), &progress);
+        if r.is_ok() {
+            {
+                let mut p = progress.lock();
+                p.speed_bps = 0;
+            }
+            if let Err(e) = extract_tar_gz(&archive_path, dest_dir) {
+                let mut p = progress.lock();
+                p.error = Some(e);
+                p.done = true;
+                return;
+            }
+            let _ = std::fs::remove_file(&archive_path);
         }
         r
     };
@@ -418,6 +601,123 @@ pub fn download_and_extract_with_progress(
             p.done = true;
         }
     }
+}
+
+/// Many archives (e.g. Nightly zips) wrap everything in a single top-level
+/// folder. If `dest` contains exactly one directory and no root files, hoist
+/// that folder's contents up into `dest` so the engine binary ends up at the
+/// install root.
+fn flatten_archive_root(dest: &Path) {
+    let mut root_files = 0;
+    let mut subdirs: Vec<PathBuf> = Vec::new();
+    let dirs = std::fs::read_dir(dest);
+    if let Ok(entries) = dirs {
+        for entry in entries.filter_map(|e| e.ok()) {
+            let kind = entry.file_type().ok();
+            if kind.map(|k| k.is_dir()).unwrap_or(false) {
+                subdirs.push(entry.path());
+            } else {
+                root_files += 1;
+            }
+        }
+    }
+    // If there are already files at the root (e.g. pulsar.exe) or more than
+    // one subdirectory, don't try to flatten.
+    if root_files > 0 || subdirs.len() != 1 {
+        return;
+    }
+    let inner = &subdirs[0];
+    if let Ok(entries) = std::fs::read_dir(inner) {
+        for entry in entries.filter_map(|e| e.ok()) {
+            let name = entry.file_name();
+            let target = dest.join(&name);
+            let _ = if name.to_str().map(|n| n.ends_with('/')).unwrap_or(false) {
+                Ok(())
+            } else {
+                std::fs::rename(entry.path(), target)
+            };
+        }
+    }
+    let _ = std::fs::remove_dir_all(inner);
+}
+
+/// Ensure the engine executable sits at the install root under the canonical
+/// name (`pulsar.exe` on Windows, `pulsar` elsewhere). Nightly archives ship
+/// the binary as `pulsar_engine.exe`, possibly inside subdirectories, so we
+/// locate it and rename it into place.
+fn place_engine_binary_at_root(dest: &Path) {
+    let canonical = if cfg!(windows) { "pulsar.exe" } else { "pulsar" };
+    let root_target = dest.join(canonical);
+    if root_target.exists() {
+        return;
+    }
+    let candidates: &[&str] = if cfg!(windows) {
+        &["pulsar_engine.exe", "pulsar.exe"]
+    } else {
+        &["pulsar_engine", "pulsar"]
+    };
+    for entry in WalkDir::new(dest)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file())
+    {
+        let name = entry.file_name().to_string_lossy();
+        if candidates
+            .iter()
+            .any(|c| name.eq_ignore_ascii_case(c))
+        {
+            let _ = std::fs::rename(entry.path(), &root_target);
+            return;
+        }
+    }
+}
+
+fn extract_tar_gz(archive_path: &Path, dest_dir: &Path) -> Result<(), String> {
+    let file = std::fs::File::open(archive_path).map_err(|e| e.to_string())?;
+    let dec = flate2::read::GzDecoder::new(file);
+    let mut ar = tar::Archive::new(dec);
+    ar.unpack(dest_dir).map_err(|e| format!("Extract failed: {}", e))
+}
+
+/// Extract a `.zip` archive (e.g. a Nightly build containing the binary and
+/// PDB/symbol files) into `dest_dir`.
+fn extract_zip(archive_path: &Path, dest_dir: &Path) -> Result<(), String> {
+    use std::io::Read;
+
+    let file = std::fs::File::open(archive_path).map_err(|e| e.to_string())?;
+    let mut zip = zip::ZipArchive::new(file).map_err(|e| format!("Invalid zip: {}", e))?;
+
+    for i in 0..zip.len() {
+        let mut entry = zip
+            .by_index(i)
+            .map_err(|e| format!("Read zip entry: {}", e))?;
+        let Some(rel) = entry.enclosed_name() else {
+            continue;
+        };
+        let out = dest_dir.join(rel);
+
+        if entry.is_dir() {
+            std::fs::create_dir_all(&out).map_err(|e| e.to_string())?;
+        } else {
+            if let Some(parent) = out.parent() {
+                std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+            }
+            std::io::copy(&mut entry, &mut std::fs::File::create(&out).map_err(|e| e.to_string())?)
+                .map_err(|e| e.to_string())?;
+        }
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if let Some(mode) = entry.unix_mode() {
+                if mode & 0o100 != 0 {
+                    std::fs::set_permissions(&out, std::fs::Permissions::from_mode(mode))
+                        .map_err(|e| e.to_string())?;
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 fn download_file_with_progress(
@@ -527,6 +827,16 @@ pub fn default_install_path() -> PathBuf {
 
 // TODO: Ensure the launched instance doesnt also open a shell window on Windows. This is a known issue and may require a different approach to launching the executable on Windows.
 pub fn launch_engine(install_dir: &Path) -> Result<(), String> {
+    // On macOS prefer launching the `.app` bundle so the app is activated
+    // properly; otherwise fall through to the raw binary.
+    #[cfg(target_os = "macos")]
+    {
+        let bundle = install_dir.join("pulsar.app");
+        if bundle.exists() {
+            return open::that(&bundle).map_err(|e| e.to_string());
+        }
+    }
+
     let exe = if cfg!(windows) {
         install_dir.join("pulsar.exe")
     } else if cfg!(target_os = "macos") {
@@ -540,7 +850,30 @@ pub fn launch_engine(install_dir: &Path) -> Result<(), String> {
     if !exe.exists() {
         return Err(format!("Binary not found: {}", exe.display()));
     }
-    open::that(&exe).map_err(|e| e.to_string())
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let mut cmd = std::process::Command::new(&exe);
+        cmd.current_dir(install_dir)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            // DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+            .creation_flags(0x0000_0008 | 0x0000_0200);
+        cmd.spawn().map(|_| ()).map_err(|e| e.to_string())
+    }
+    #[cfg(not(windows))]
+    {
+        std::process::Command::new(&exe)
+            .current_dir(install_dir)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
 }
 
 // ── Internals ───────────────────────────────────────────────────────────────
@@ -553,13 +886,47 @@ fn platform_info() -> (String, String, String) {
     } else {
         "linux".to_string()
     };
-    let arch = std::env::consts::ARCH.to_string();
+    let arch = native_arch();
     let ext = if cfg!(windows) {
         "exe".to_string()
     } else {
         "tar.gz".to_string()
     };
     (os, arch, ext)
+}
+
+/// The real OS/CPU architecture for asset selection.
+///
+/// On Windows this queries the *native* system architecture rather than the
+/// Hub's compiled architecture, so that an x64 Hub running under emulation on
+/// ARM64 Windows still selects ARM64 engine builds (which otherwise fail to
+/// launch with `ERROR_EXE_MACHINE_TYPE_MISMATCH`).
+fn native_arch() -> String {
+    #[cfg(windows)]
+    {
+        use windows::Win32::System::SystemInformation::{
+            GetNativeSystemInfo, SYSTEM_INFO, PROCESSOR_ARCHITECTURE_AMD64,
+            PROCESSOR_ARCHITECTURE_ARM64, PROCESSOR_ARCHITECTURE_INTEL,
+        };
+        let mut info = SYSTEM_INFO::default();
+        unsafe {
+            GetNativeSystemInfo(&mut info);
+        }
+        let a = unsafe { info.Anonymous.Anonymous.wProcessorArchitecture };
+        if a == PROCESSOR_ARCHITECTURE_ARM64 {
+            "aarch64".to_string()
+        } else if a == PROCESSOR_ARCHITECTURE_AMD64 {
+            "x86_64".to_string()
+        } else if a == PROCESSOR_ARCHITECTURE_INTEL {
+            "x86".to_string()
+        } else {
+            std::env::consts::ARCH.to_string()
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        std::env::consts::ARCH.to_string()
+    }
 }
 
 fn dir_size(path: &Path) -> u64 {
