@@ -90,6 +90,7 @@ impl ReleaseListDelegate {
             .upgrade()
             .map(|s| s.read(cx).state.release_details_view.clone());
 
+        let highlights = extract_summary(&body);
         let mut item = ReleaseItem::new(format!("release-{}", row));
         let tag_display = tag.clone();
         item = item.child(
@@ -183,7 +184,7 @@ impl ReleaseListDelegate {
                         }),
                 ),
         );
-        if !body.is_empty() {
+        if !highlights.is_empty() {
             let body_id = format!("release-body-{}-{}", row, tag);
             item = item.child(
                 div()
@@ -192,7 +193,7 @@ impl ReleaseListDelegate {
                     .min_h_0()
                     .mt_2()
                     .overflow_hidden()
-                    .child(TextView::markdown(body_id, body, window, cx)),
+                    .child(TextView::markdown(body_id, highlights, window, cx)),
             );
         }
         item
@@ -362,6 +363,7 @@ impl RenderOnce for ReleaseItem {
         self.base
             .w_full()
             .h(px(ROW_HEIGHT))
+            .my_2()
             .flex_col()
             .overflow_hidden()
             .p_3()
@@ -373,4 +375,99 @@ impl RenderOnce for ReleaseItem {
             })
             .children(self.children)
     }
+}
+
+/// The summary shown on a release card: the release notes "Highlights"
+/// section if present, otherwise the first section that follows the last
+/// "Container Images" section.
+pub(crate) fn extract_summary(markdown: &str) -> String {
+    let highlights = extract_highlights(markdown);
+    if !highlights.is_empty() {
+        return highlights;
+    }
+    extract_first_section_after_container_images(markdown)
+}
+
+/// Return the release notes "Highlights" section only.
+///
+/// Picks the first heading line (of any level) whose text contains the
+/// (case-insensitive) word "Highlights", ignoring any other surrounding
+/// characters. Its contents run from that heading until the next heading
+/// (of any level) or the end of the notes. Returns an empty string when no
+/// such heading exists.
+pub(crate) fn extract_highlights(markdown: &str) -> String {
+    let lines: Vec<&str> = markdown.lines().collect();
+
+    let mut start: Option<usize> = None;
+    for (i, line) in lines.iter().enumerate() {
+        if let Some(text) = heading_text(line) {
+            if text.to_lowercase().contains("highlights") {
+                start = Some(i);
+                break;
+            }
+        }
+    }
+    let Some(start) = start else {
+        return String::new();
+    };
+
+    let mut end = lines.len();
+    for j in (start + 1)..lines.len() {
+        if is_heading(lines[j]) {
+            end = j;
+            break;
+        }
+    }
+
+    lines[start..end].join("\n").trim().to_string()
+}
+
+/// If `line` is a Markdown heading, return its text with the leading `#`
+/// markers and whitespace stripped.
+fn heading_text(line: &str) -> Option<&str> {
+    let t = line.trim_start();
+    let hashes = t.chars().take_while(|c| *c == '#').count();
+    if hashes == 0 {
+        return None;
+    }
+    Some(t[hashes..].trim_start())
+}
+
+fn is_heading(line: &str) -> bool {
+    line.trim_start().starts_with('#')
+}
+
+/// Fallback when a release has no "Highlights" section: return the first
+/// section that appears after the *last* heading containing "Container Images".
+fn extract_first_section_after_container_images(markdown: &str) -> String {
+    let lines: Vec<&str> = markdown.lines().collect();
+
+    let mut last_ci: Option<usize> = None;
+    for (i, line) in lines.iter().enumerate() {
+        if let Some(text) = heading_text(line) {
+            if text.to_lowercase().contains("container images") {
+                last_ci = Some(i);
+            }
+        }
+    }
+    let Some(ci) = last_ci else { return String::new(); };
+
+    let mut start: Option<usize> = None;
+    for (i, line) in lines.iter().enumerate().skip(ci + 1) {
+        if is_heading(line) {
+            start = Some(i);
+            break;
+        }
+    }
+    let Some(start) = start else { return String::new(); };
+
+    let mut end = lines.len();
+    for j in (start + 1)..lines.len() {
+        if is_heading(lines[j]) {
+            end = j;
+            break;
+        }
+    }
+
+    lines[start..end].join("\n").trim().to_string()
 }

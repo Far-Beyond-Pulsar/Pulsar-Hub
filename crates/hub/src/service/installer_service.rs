@@ -525,7 +525,7 @@ pub fn default_install_path() -> PathBuf {
     }
 }
 
-// TODO: Ensure the launched instance doesnt also open a shell window on Windows. This is a known issue with the `open` crate, and may require a different approach to launching the executable on Windows.
+// TODO: Ensure the launched instance doesnt also open a shell window on Windows. This is a known issue and may require a different approach to launching the executable on Windows.
 pub fn launch_engine(install_dir: &Path) -> Result<(), String> {
     let exe = if cfg!(windows) {
         install_dir.join("pulsar.exe")

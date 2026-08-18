@@ -108,13 +108,7 @@ impl EntryScreen {
                 crate::screen::views::release_list::ReleaseListDelegate::new(
                     release_delegate_weak,
                 );
-            ui::list::List::new(delegate, window, cx)
-                .no_query()
-                .paddings(gpui::Edges::<gpui::Pixels> {
-                    top: gpui::px(12.).into(),
-                    bottom: gpui::px(12.).into(),
-                    ..gpui::Edges::default()
-                })
+            ui::list::List::new(delegate, window, cx).no_query()
         });
 
         cx.subscribe_in(
