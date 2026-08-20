@@ -7,7 +7,7 @@ use crate::screen::EntryScreen;
 pub fn render_modal(
     title: impl IntoElement,
     content: impl IntoElement,
-    on_close: Option<Box<dyn Fn(&mut Window, &mut Context<EntryScreen>)>>,
+    on_close: Option<Box<dyn Fn(&mut EntryScreen, &mut Window, &mut Context<EntryScreen>)>>,
     cx: &mut Context<EntryScreen>,
 ) -> impl IntoElement {
     let theme = cx.theme();
@@ -45,7 +45,7 @@ pub fn render_modal(
                         .when_some(on_close, |this, close| {
                             this.child(Button::new("modal-close").ghost().label("X").on_click(
                                 cx.listener(move |this, _, window, cx| {
-                                    close(window, cx);
+                                    close(this, window, cx);
                                     cx.notify();
                                 }),
                             ))

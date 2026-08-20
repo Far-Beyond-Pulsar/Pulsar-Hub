@@ -39,6 +39,8 @@ pub struct UiState {
     >,
     pub show_cloud_intro_modal: bool,
     pub cloud_intro_page: usize,
+    pub show_new_project_modal: bool,
+    pub show_clone_git_modal: bool,
 }
 
 impl UiState {
@@ -62,6 +64,8 @@ impl UiState {
             build_progress: None,
             show_cloud_intro_modal: false,
             cloud_intro_page: 0,
+            show_new_project_modal: false,
+            show_clone_git_modal: false,
         }
     }
 }

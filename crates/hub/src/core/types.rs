@@ -29,8 +29,6 @@ pub struct EnginePrompt {
 pub enum EntryScreenView {
     Recent,
     Templates,
-    NewProject,
-    CloneGit,
     Versions,
     CloudProjects,
     Friends,

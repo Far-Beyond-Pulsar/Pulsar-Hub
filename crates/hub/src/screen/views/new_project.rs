@@ -6,9 +6,22 @@ use ui::{
 
 use crate::screen::EntryScreen;
 
-pub fn render_new_project(
+pub fn render_new_project_modal(
     screen: &mut EntryScreen,
-    window: &mut Window,
+    cx: &mut Context<EntryScreen>,
+) -> impl IntoElement {
+    crate::component::render_modal(
+        "New Project",
+        render_new_project_content(screen, cx),
+        Some(Box::new(|this, _, cx| {
+            this.close_new_project_modal(cx);
+        })),
+        cx,
+    )
+}
+
+fn render_new_project_content(
+    screen: &mut EntryScreen,
     cx: &mut Context<EntryScreen>,
 ) -> impl IntoElement {
     let theme = cx.theme();
@@ -16,22 +29,10 @@ pub fn render_new_project(
     let selected_path = screen.state.input.new_project_path.clone();
 
     v_flex()
-        .flex_1()
-        .h_full()
-                .overflow_hidden()
-        .px_8()
-        .pt_6()
-        .gap_6()
+        .gap_4()
         .child(
             v_flex()
                 .gap_2()
-                .child(
-                    div()
-                        .text_xl()
-                        .font_weight(gpui::FontWeight::BOLD)
-                        .text_color(theme.foreground)
-                        .child("New Project"),
-                )
                 .child(
                     div()
                         .text_sm()

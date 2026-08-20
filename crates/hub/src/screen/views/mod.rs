@@ -18,12 +18,12 @@ pub mod templates;
 pub mod upstream_prompt;
 pub mod versions;
 
-pub use clone_git::render_clone_git;
+pub use clone_git::render_clone_git_modal;
 pub use cloud_intro_modal::render_cloud_intro_modal;
 pub use cloud_projects::render_cloud_projects;
 pub use dependency_setup::render_dependency_setup;
 pub use download_manager::DownloadManagerView;
-pub use new_project::render_new_project;
+pub use new_project::render_new_project_modal;
 pub use onboarding::render_onboarding;
 pub use project_settings::*;
 pub use recent_projects::render_recent_projects;

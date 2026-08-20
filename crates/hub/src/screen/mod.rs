@@ -859,6 +859,28 @@ impl EntryScreen {
         cx.notify();
     }
 
+    pub(crate) fn open_new_project_modal(&mut self, cx: &mut Context<Self>) {
+        self.state.ui.view = EntryScreenView::Recent;
+        self.state.ui.show_new_project_modal = true;
+        cx.notify();
+    }
+
+    pub(crate) fn close_new_project_modal(&mut self, cx: &mut Context<Self>) {
+        self.state.ui.show_new_project_modal = false;
+        cx.notify();
+    }
+
+    pub(crate) fn open_clone_git_modal(&mut self, cx: &mut Context<Self>) {
+        self.state.ui.view = EntryScreenView::Recent;
+        self.state.ui.show_clone_git_modal = true;
+        cx.notify();
+    }
+
+    pub(crate) fn close_clone_git_modal(&mut self, cx: &mut Context<Self>) {
+        self.state.ui.show_clone_git_modal = false;
+        cx.notify();
+    }
+
     pub fn calculate_columns(&self, available_width: gpui::Pixels) -> usize {
         let card_width = 320.0;
         let gap = 24.0;

@@ -22,8 +22,6 @@ pub fn render_sidebar(screen: &mut EntryScreen, cx: &mut Context<EntryScreen>) -
 
     let is_recent = screen.state.ui.view == EntryScreenView::Recent;
     let is_templates = screen.state.ui.view == EntryScreenView::Templates;
-    let is_new = screen.state.ui.view == EntryScreenView::NewProject;
-    let is_clone = screen.state.ui.view == EntryScreenView::CloneGit;
     let is_versions = screen.state.ui.view == EntryScreenView::Versions;
     let is_cloud = screen.state.ui.view == EntryScreenView::CloudProjects;
     let is_friends = screen.state.ui.view == EntryScreenView::Friends;
@@ -145,36 +143,6 @@ pub fn render_sidebar(screen: &mut EntryScreen, cx: &mut Context<EntryScreen>) -
                     hover_bg,
                     cx.listener(|this, _, _, cx| {
                         this.state.ui.view = EntryScreenView::Templates;
-                        cx.notify();
-                    }),
-                ))
-                .child(nav_item(
-                    "nav-new",
-                    IconName::Plus,
-                    "New Project",
-                    is_new,
-                    accent,
-                    foreground,
-                    muted_fg,
-                    accent_bg,
-                    hover_bg,
-                    cx.listener(|this, _, _, cx| {
-                        this.state.ui.view = EntryScreenView::NewProject;
-                        cx.notify();
-                    }),
-                ))
-                .child(nav_item(
-                    "nav-clone",
-                    IconName::Github,
-                    "Clone from Git",
-                    is_clone,
-                    accent,
-                    foreground,
-                    muted_fg,
-                    accent_bg,
-                    hover_bg,
-                    cx.listener(|this, _, _, cx| {
-                        this.state.ui.view = EntryScreenView::CloneGit;
                         cx.notify();
                     }),
                 )),

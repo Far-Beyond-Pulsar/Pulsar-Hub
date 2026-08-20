@@ -7,9 +7,22 @@ use ui::{
 
 use crate::screen::EntryScreen;
 
-pub fn render_clone_git(
+pub fn render_clone_git_modal(
     screen: &mut EntryScreen,
-    _window: &mut Window,
+    cx: &mut Context<EntryScreen>,
+) -> impl IntoElement {
+    crate::component::render_modal(
+        "Clone from Git",
+        render_clone_git_content(screen, cx),
+        Some(Box::new(|this, _, cx| {
+            this.close_clone_git_modal(cx);
+        })),
+        cx,
+    )
+}
+
+fn render_clone_git_content(
+    screen: &mut EntryScreen,
     cx: &mut Context<EntryScreen>,
 ) -> impl IntoElement {
     let theme = cx.theme();
@@ -27,22 +40,10 @@ pub fn render_clone_git(
     });
 
     v_flex()
-        .flex_1()
-        .h_full()
-        .overflow_hidden()
-        .px_8()
-        .pt_6()
-        .gap_6()
+        .gap_4()
         .child(
             v_flex()
                 .gap_2()
-                .child(
-                    div()
-                        .text_xl()
-                        .font_weight(gpui::FontWeight::BOLD)
-                        .text_color(theme.foreground)
-                        .child("Clone from Git"),
-                )
                 .child(
                     div()
                         .text_sm()

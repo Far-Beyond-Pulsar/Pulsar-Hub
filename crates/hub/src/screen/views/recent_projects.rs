@@ -71,6 +71,22 @@ pub fn render_recent_projects(
                         .on_click(cx.listener(|this, _, _, cx| {
                             this.open_folder_dialog(cx);
                         })),
+                )
+                .child(
+                    Button::new("new-project-btn")
+                        .label("New Project")
+                        .compact()
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.open_new_project_modal(cx);
+                        })),
+                )
+                .child(
+                    Button::new("clone-git-btn")
+                        .label("Clone from Git")
+                        .compact()
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.open_clone_git_modal(cx);
+                        })),
                 ),
         )
         .child(

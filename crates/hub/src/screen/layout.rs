@@ -143,14 +143,6 @@ pub fn render_layout(
                                 crate::screen::views::render_templates(screen, available_width, cx)
                                     .into_any_element()
                             }
-                            EntryScreenView::NewProject => {
-                                crate::screen::views::render_new_project(screen, window, cx)
-                                    .into_any_element()
-                            }
-                            EntryScreenView::CloneGit => {
-                                crate::screen::views::render_clone_git(screen, window, cx)
-                                    .into_any_element()
-                            }
                             EntryScreenView::Versions => {
                                 crate::screen::views::render_versions(screen, window, cx)
                                     .into_any_element()
@@ -167,6 +159,12 @@ pub fn render_layout(
         )
         .when(screen.state.ui.show_cloud_intro_modal, |this| {
             this.child(crate::screen::views::render_cloud_intro_modal(screen, cx))
+        })
+        .when(screen.state.ui.show_new_project_modal, |this| {
+            this.child(crate::screen::views::render_new_project_modal(screen, cx))
+        })
+        .when(screen.state.ui.show_clone_git_modal, |this| {
+            this.child(crate::screen::views::render_clone_git_modal(screen, cx))
         })
         .into_any_element()
 }

@@ -68,9 +68,8 @@ pub fn render_engine_install_prompt(
                             })),
                     ),
             ),
-        Some(Box::new(|_window, cx| {
-            let screen = cx.entity();
-            let _ = screen.update(cx, |this, cx| this.close_engine_prompt(cx));
+        Some(Box::new(|this, _, cx| {
+            this.close_engine_prompt(cx);
         })),
         cx,
     )
