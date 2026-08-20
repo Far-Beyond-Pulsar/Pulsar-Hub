@@ -65,6 +65,7 @@ pub fn render_recent_projects(
                 )
                 .child(
                     Button::new("open-folder-btn")
+                        .icon(IconName::FolderOpen)
                         .label("Open Folder")
                         .primary()
                         .compact()
@@ -74,6 +75,7 @@ pub fn render_recent_projects(
                 )
                 .child(
                     Button::new("new-project-btn")
+                        .icon(IconName::Plus)
                         .label("New Project")
                         .compact()
                         .on_click(cx.listener(|this, _, _, cx| {
@@ -82,6 +84,7 @@ pub fn render_recent_projects(
                 )
                 .child(
                     Button::new("clone-git-btn")
+                        .icon(IconName::Github)
                         .label("Clone from Git")
                         .compact()
                         .on_click(cx.listener(|this, _, _, cx| {
