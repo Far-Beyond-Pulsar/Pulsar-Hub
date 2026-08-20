@@ -1,6 +1,6 @@
 use gpui::*;
 use ui::theme::Theme;
-use ui::{h_flex, v_flex, ActiveTheme as _};
+use ui::{h_flex, v_flex, ActiveTheme as _, Icon, IconName};
 
 use crate::screen::EntryScreen;
 
@@ -10,17 +10,18 @@ pub fn render_info_section(
 ) -> impl IntoElement {
     let theme = cx.theme();
     v_flex()
+        .w_full()
         .gap_2()
         .children(items.into_iter().map(|(label, value)| {
             h_flex()
                 .gap_3()
                 .px_3()
-                .py_2()
+                .py_3()
                 .rounded_md()
                 .bg(theme.secondary.opacity(0.08))
                 .child(
                     div()
-                        .w(px(140.))
+                        .w(px(112.))
                         .flex_shrink_0()
                         .text_sm()
                         .text_color(theme.muted_foreground)
@@ -34,6 +35,45 @@ pub fn render_info_section(
                         .child(value),
                 )
         }))
+}
+
+pub fn render_page_header(
+    icon: IconName,
+    title: impl Into<SharedString>,
+    description: impl Into<SharedString>,
+    cx: &mut Context<EntryScreen>,
+) -> impl IntoElement {
+    let title = title.into();
+    let description = description.into();
+    let theme = cx.theme();
+    h_flex()
+        .w_full()
+        .gap_4()
+        .items_center()
+        .child(
+            div()
+                .p_2()
+                .rounded_lg()
+                .bg(theme.accent.opacity(0.12))
+                .child(Icon::new(icon).size(px(18.)).text_color(theme.accent)),
+        )
+        .child(
+            v_flex()
+                .gap_1()
+                .child(
+                    div()
+                        .text_xl()
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(theme.foreground)
+                        .child(title),
+                )
+                .child(
+                    div()
+                        .text_sm()
+                        .text_color(theme.muted_foreground)
+                        .child(description),
+                ),
+        )
 }
 
 pub fn render_size_bar(
@@ -51,6 +91,7 @@ pub fn render_size_bar(
     let formatted = crate::util::formatters::format_size(size_bytes);
 
     v_flex()
+        .w_full()
         .gap_1()
         .child(
             h_flex()

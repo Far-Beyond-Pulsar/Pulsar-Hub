@@ -28,11 +28,6 @@ pub fn render_layout(
         return crate::screen::views::render_upstream_prompt(screen, window, cx).into_any_element();
     }
 
-    if let Some(ref _settings) = screen.state.ui.project_settings {
-        return crate::screen::views::render_project_settings(screen, window, cx)
-            .into_any_element();
-    }
-
     if screen.state.ui.engine_prompt.is_some() {
         return crate::screen::views::engine_install_prompt::render_engine_install_prompt(
             screen, cx,
@@ -165,6 +160,9 @@ pub fn render_layout(
         })
         .when(screen.state.ui.show_clone_git_modal, |this| {
             this.child(crate::screen::views::render_clone_git_modal(screen, cx))
+        })
+        .when(screen.state.ui.project_settings.is_some(), |this| {
+            this.child(crate::screen::views::render_project_settings(screen, window, cx))
         })
         .into_any_element()
 }

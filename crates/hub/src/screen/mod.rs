@@ -891,9 +891,12 @@ impl EntryScreen {
 
     pub(crate) fn change_project_settings_tab(
         &mut self,
-        _tab: ProjectSettingsTab,
+        tab: ProjectSettingsTab,
         cx: &mut Context<Self>,
     ) {
+        if let Some(settings) = self.state.ui.project_settings.as_mut() {
+            settings.active_tab = tab;
+        }
         cx.notify();
     }
 

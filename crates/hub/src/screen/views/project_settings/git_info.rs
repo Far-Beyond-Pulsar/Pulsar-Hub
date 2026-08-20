@@ -4,7 +4,7 @@ use ui::{
     button::Button, button::ButtonVariants as _, h_flex, v_flex, ActiveTheme as _, Icon, IconName,
 };
 
-use super::helpers::render_info_section;
+use super::helpers::{render_info_section, render_page_header};
 use crate::screen::EntryScreen;
 use crate::util::formatters::format_size;
 
@@ -53,14 +53,14 @@ pub fn render_git_info_tab(
     let project_path = settings.project_path.clone();
 
     v_flex()
-        .gap_6()
-        .child(
-            div()
-                .text_lg()
-                .font_weight(FontWeight::SEMIBOLD)
-                .text_color(theme.foreground)
-                .child("Git Info"),
-        )
+        .w_full()
+        .gap_4()
+        .child(render_page_header(
+            IconName::GitBranch,
+            "Git Info",
+            "Repository state, history, and working tree details",
+            cx,
+        ))
         .child(render_info_section(
             vec![
                 ("Remote URL".to_string(), remote_url),

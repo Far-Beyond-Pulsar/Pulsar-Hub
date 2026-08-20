@@ -1,8 +1,8 @@
 use gpui::prelude::*;
 use gpui::*;
-use ui::{button::Button, button::ButtonVariants as _, h_flex, v_flex, ActiveTheme as _};
+use ui::{button::Button, button::ButtonVariants as _, h_flex, v_flex, ActiveTheme as _, IconName};
 
-use super::helpers::render_size_bar;
+use super::helpers::{render_page_header, render_size_bar};
 use crate::screen::EntryScreen;
 use crate::util::formatters::format_size;
 
@@ -10,7 +10,7 @@ pub fn render_disk_info_tab(
     screen: &mut EntryScreen,
     cx: &mut Context<EntryScreen>,
 ) -> impl IntoElement {
-    let theme = cx.theme();
+    let theme = cx.theme().clone();
     let Some(ref settings) = screen.state.ui.project_settings else {
         return div().into_any_element();
     };
@@ -21,16 +21,17 @@ pub fn render_disk_info_tab(
     let project_path = settings.project_path.clone();
 
     v_flex()
-        .gap_6()
-        .child(
-            div()
-                .text_lg()
-                .font_weight(FontWeight::SEMIBOLD)
-                .text_color(theme.foreground)
-                .child("Disk Info"),
-        )
+        .w_full()
+        .gap_4()
+        .child(render_page_header(
+            IconName::HardDrive,
+            "Disk Info",
+            "Understand how project files and Git history use disk space",
+            cx,
+        ))
         .child(
             v_flex()
+                .w_full()
                 .gap_4()
                 .child(render_size_bar(
                     "Total Project Size",
@@ -56,6 +57,7 @@ pub fn render_disk_info_tab(
         )
         .child(
             h_flex()
+                .w_full()
                 .gap_4()
                 .child(
                     v_flex()

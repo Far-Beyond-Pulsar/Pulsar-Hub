@@ -1,15 +1,15 @@
 use gpui::prelude::*;
 use gpui::*;
-use ui::{button::Button, button::ButtonVariants as _, h_flex, v_flex, ActiveTheme as _};
+use ui::{button::Button, button::ButtonVariants as _, h_flex, v_flex, ActiveTheme as _, IconName};
 
-use super::helpers::render_info_section;
+use super::helpers::{render_info_section, render_page_header};
 use crate::screen::EntryScreen;
 
 pub fn render_general_tab(
     screen: &mut EntryScreen,
     cx: &mut Context<EntryScreen>,
 ) -> impl IntoElement {
-    let theme = cx.theme();
+    let theme = cx.theme().clone();
     let Some(ref settings) = screen.state.ui.project_settings else {
         return div().into_any_element();
     };
@@ -18,14 +18,14 @@ pub fn render_general_tab(
     let path_str = project_path.to_string_lossy().to_string();
 
     v_flex()
-        .gap_6()
-        .child(
-            div()
-                .text_lg()
-                .font_weight(FontWeight::SEMIBOLD)
-                .text_color(theme.foreground)
-                .child("General"),
-        )
+        .w_full()
+        .gap_4()
+        .child(render_page_header(
+            IconName::Settings,
+            "General",
+            "Project identity and quick access tools",
+            cx,
+        ))
         .child(render_info_section(
             vec![
                 ("Name".to_string(), project_name),

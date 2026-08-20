@@ -6,13 +6,14 @@ use ui::{
 };
 
 use super::types::{AvailableTools, ToolInfo};
+use super::helpers::render_page_header;
 use crate::screen::EntryScreen;
 
 pub fn render_integrations_tab(
     screen: &mut EntryScreen,
     cx: &mut Context<EntryScreen>,
 ) -> impl IntoElement {
-    let theme = cx.theme();
+    let theme = cx.theme().clone();
     let Some(ref settings) = screen.state.ui.project_settings else {
         return div().into_any_element();
     };
@@ -22,20 +23,14 @@ pub fn render_integrations_tab(
     let project_path = settings.project_path.clone();
 
     v_flex()
-        .gap_6()
-        .child(
-            div()
-                .text_lg()
-                .font_weight(FontWeight::SEMIBOLD)
-                .text_color(theme.foreground)
-                .child("Integrations"),
-        )
-        .child(
-            div()
-                .text_sm()
-                .text_color(theme.muted_foreground)
-                .child("Configure preferred tools for this project"),
-        )
+        .w_full()
+        .gap_4()
+        .child(render_page_header(
+            IconName::Code,
+            "Integrations",
+            "Choose preferred editors, Git clients, and terminals",
+            cx,
+        ))
         .child(render_tool_category(
             "Editors",
             IconName::Code,

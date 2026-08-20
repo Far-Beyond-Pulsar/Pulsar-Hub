@@ -13,7 +13,8 @@ pub use types::*;
 use gpui::prelude::*;
 use gpui::*;
 use ui::{
-    button::Button, button::ButtonVariants as _, h_flex, v_flex, ActiveTheme as _, Icon, IconName,
+    button::Button, button::ButtonVariants as _, h_flex, scroll::ScrollbarAxis, v_flex,
+    ActiveTheme as _, Icon, IconName,
     StyledExt as _,
 };
 
@@ -33,6 +34,7 @@ pub fn render_project_settings(
     let project_path = settings.project_path.clone();
 
     div()
+        .id("project-settings-modal")
         .absolute()
         .size_full()
         .inset_0()
@@ -40,11 +42,14 @@ pub fn render_project_settings(
         .items_center()
         .justify_center()
         .bg(theme.background.opacity(0.86))
+        .on_mouse_down(MouseButton::Left, |_, _, cx| {
+            cx.stop_propagation();
+        })
         .child(
             v_flex()
                 .w_full()
-                .max_w(px(720.))
-                .h(relative(0.8))
+                .max_w(px(820.))
+                .h(relative(0.86))
                 .p_0()
                 .rounded_xl()
                 .border_1()
@@ -83,7 +88,7 @@ pub fn render_project_settings(
                             Button::new("close-project-settings")
                                 .compact()
                                 .ghost()
-                                .icon(IconName::X)
+                                .icon(IconName::Close)
                                 .on_click(cx.listener(|this, _, _, cx| {
                                     this.close_project_settings(cx);
                                 })),
@@ -93,18 +98,26 @@ pub fn render_project_settings(
                     h_flex()
                         .flex_1()
                         .min_h_0()
+                        .items_stretch()
                         .overflow_hidden()
                         .child(
                             v_flex()
-                                .w(px(180.))
+                                .id("project-settings-sidebar-scroll")
+                                .w(px(208.))
                                 .h_full()
+                                .min_h_0()
+                                .self_stretch()
                                 .flex_shrink_0()
                                 .border_r_1()
                                 .border_color(theme.border)
+                                .bg(theme.secondary.opacity(0.035))
                                 .p_2()
                                 .gap_1()
+                                .overflow_hidden()
+                                .scrollable(ScrollbarAxis::Vertical)
                                 .child(tab_button(
                                     "ps-general",
+                                    IconName::Settings,
                                     "General",
                                     active_tab == ProjectSettingsTab::General,
                                     ProjectSettingsTab::General,
@@ -112,6 +125,7 @@ pub fn render_project_settings(
                                 ))
                                 .child(tab_button(
                                     "ps-git-info",
+                                    IconName::GitBranch,
                                     "Git Info",
                                     active_tab == ProjectSettingsTab::GitInfo,
                                     ProjectSettingsTab::GitInfo,
@@ -119,6 +133,7 @@ pub fn render_project_settings(
                                 ))
                                 .child(tab_button(
                                     "ps-git-ci",
+                                    IconName::Github,
                                     "Git CI/CD",
                                     active_tab == ProjectSettingsTab::GitCI,
                                     ProjectSettingsTab::GitCI,
@@ -126,6 +141,7 @@ pub fn render_project_settings(
                                 ))
                                 .child(tab_button(
                                     "ps-metadata",
+                                    IconName::BookOpen,
                                     "Metadata",
                                     active_tab == ProjectSettingsTab::Metadata,
                                     ProjectSettingsTab::Metadata,
@@ -133,6 +149,7 @@ pub fn render_project_settings(
                                 ))
                                 .child(tab_button(
                                     "ps-disk",
+                                    IconName::HardDrive,
                                     "Disk Info",
                                     active_tab == ProjectSettingsTab::DiskInfo,
                                     ProjectSettingsTab::DiskInfo,
@@ -140,6 +157,7 @@ pub fn render_project_settings(
                                 ))
                                 .child(tab_button(
                                     "ps-perf",
+                                    IconName::Cpu,
                                     "Performance",
                                     active_tab == ProjectSettingsTab::Performance,
                                     ProjectSettingsTab::Performance,
@@ -147,6 +165,7 @@ pub fn render_project_settings(
                                 ))
                                 .child(tab_button(
                                     "ps-integrations",
+                                    IconName::Code,
                                     "Integrations",
                                     active_tab == ProjectSettingsTab::Integrations,
                                     ProjectSettingsTab::Integrations,
@@ -154,7 +173,17 @@ pub fn render_project_settings(
                                 )),
                         )
                         .child(
-                            v_flex().flex_1().h_full().overflow_hidden().p_6().child(
+                            v_flex()
+                                .id("project-settings-content-scroll")
+                                .flex_1()
+                                .h_full()
+                                .min_w_0()
+                                .min_h_0()
+                                .self_stretch()
+                                .overflow_hidden()
+                                .scrollable(ScrollbarAxis::Vertical)
+                                .p_4()
+                                .child(
                                 match active_tab {
                                     ProjectSettingsTab::General => {
                                         general::render_general_tab(screen, cx).into_any_element()
@@ -190,6 +219,7 @@ pub fn render_project_settings(
 
 fn tab_button(
     id: &'static str,
+    icon: IconName,
     label: &'static str,
     is_active: bool,
     tab: ProjectSettingsTab,
@@ -206,6 +236,15 @@ fn tab_button(
         .when(is_active, |this| this.bg(theme.accent.opacity(0.12)))
         .hover(|this| this.bg(theme.accent.opacity(0.07)))
         .child(
+            Icon::new(icon)
+                .size(px(15.))
+                .text_color(if is_active {
+                    theme.accent
+                } else {
+                    theme.muted_foreground
+                }),
+        )
+        .child(
             div()
                 .text_sm()
                 .font_weight(if is_active {
@@ -220,7 +259,7 @@ fn tab_button(
                 })
                 .child(label),
         )
-        .on_click(cx.listener(move |this, _, _, cx| {
+        .on_mouse_down(MouseButton::Left, cx.listener(move |this, _, _, cx| {
             this.change_project_settings_tab(tab.clone(), cx);
         }))
 }

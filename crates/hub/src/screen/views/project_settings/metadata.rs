@@ -5,12 +5,13 @@ use ui::{
 };
 
 use crate::screen::EntryScreen;
+use super::helpers::render_page_header;
 
 pub fn render_metadata_tab(
     screen: &mut EntryScreen,
     cx: &mut Context<EntryScreen>,
 ) -> impl IntoElement {
-    let theme = cx.theme();
+    let theme = cx.theme().clone();
     let Some(ref settings) = screen.state.ui.project_settings else {
         return div().into_any_element();
     };
@@ -21,20 +22,14 @@ pub fn render_metadata_tab(
         std::fs::read_to_string(&toml_path).unwrap_or_else(|_| "Pulsar.toml not found".to_string());
 
     v_flex()
-        .gap_6()
-        .child(
-            div()
-                .text_lg()
-                .font_weight(FontWeight::SEMIBOLD)
-                .text_color(theme.foreground)
-                .child("Metadata"),
-        )
-        .child(
-            div()
-                .text_sm()
-                .text_color(theme.muted_foreground)
-                .child("Project configuration stored in Pulsar.toml"),
-        )
+        .w_full()
+        .gap_4()
+        .child(render_page_header(
+            IconName::BookOpen,
+            "Metadata",
+            "Inspect and manage the project configuration manifest",
+            cx,
+        ))
         .child(
             v_flex()
                 .gap_2()

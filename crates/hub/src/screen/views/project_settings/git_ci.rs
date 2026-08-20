@@ -5,12 +5,13 @@ use ui::{
 };
 
 use crate::screen::EntryScreen;
+use super::helpers::render_page_header;
 
 pub fn render_git_ci_tab(
     screen: &mut EntryScreen,
     cx: &mut Context<EntryScreen>,
 ) -> impl IntoElement {
-    let theme = cx.theme();
+    let theme = cx.theme().clone();
     let Some(ref settings) = screen.state.ui.project_settings else {
         return div().into_any_element();
     };
@@ -18,21 +19,15 @@ pub fn render_git_ci_tab(
     let workflow_dir = settings.project_path.join(".github").join("workflows");
 
     v_flex()
-        .gap_6()
-        .child(
-            div()
-                .text_lg()
-                .font_weight(FontWeight::SEMIBOLD)
-                .text_color(theme.foreground)
-                .child("Git CI/CD"),
-        )
-        .child(
-            div()
-                .text_sm()
-                .text_color(theme.muted_foreground)
-                .child(format!("{} workflow file(s) found", files.len())),
-        )
-        .child(v_flex().gap_2().children(files.iter().map(|file| {
+        .w_full()
+        .gap_4()
+        .child(render_page_header(
+            IconName::Github,
+            "Git CI/CD",
+            format!("{} workflow file(s) found in .github/workflows", files.len()),
+            cx,
+        ))
+        .child(v_flex().w_full().gap_2().children(files.iter().map(|file| {
             let file_clone = file.clone();
             let workflow_path = workflow_dir.join(&file_clone);
             h_flex()
