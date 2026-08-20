@@ -5869,19 +5869,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4596b6d070b27117e987119b4dac604f3c58cfb0b191112e24771b2faeac1a6"
 
 [[package]]
-name = "plist"
-version = "1.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "092791278e026273c1b65bbdcfbba3a300f2994c896bd01ab01da613c29c46f1"
-dependencies = [
- "base64 0.22.1",
- "indexmap",
- "quick-xml",
- "serde",
- "time",
-]
-
-[[package]]
 name = "plugin_editor_api"
 version = "0.1.0"
 source = "git+https://github.com/Far-Beyond-Pulsar/Pulsar-Native?rev=ee99d54e0dc4c8576ab2a486b75d8f7806cc3148#ee99d54e0dc4c8576ab2a486b75d8f7806cc3148"
@@ -6269,35 +6256,19 @@ name = "pulsar-installer"
 version = "0.1.7"
 dependencies = [
  "anyhow",
- "async-channel 2.5.0",
- "async-trait",
  "bsdiff",
- "chrono",
- "dirs 5.0.1",
- "flate2",
- "futures",
  "gpui-ce",
  "hex",
- "indicatif",
- "plist",
  "pulsar-hub",
  "reqwest_client",
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "smol",
- "tar",
- "tempfile",
  "tokio",
  "tracing",
  "tracing-subscriber",
  "ui",
- "walkdir",
- "windows 0.58.0",
- "winreg",
- "xdg",
  "zed-reqwest 0.12.15-zed (git+https://github.com/zed-industries/reqwest.git?rev=c15662463bda39148ba154100dd44d3fba5873a4)",
- "zip",
  "zstd",
 ]
 
@@ -11064,16 +11035,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "winreg"
-version = "0.52.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a277a57398d4bfa075df44f501a17cfdf8542d224f0d36095a2adc7aee4ef0a5"
-dependencies = [
- "cfg-if",
- "windows-sys 0.48.0",
-]
-
-[[package]]
 name = "winsafe"
 version = "0.0.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -11269,12 +11230,6 @@ name = "xcursor"
 version = "0.3.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bec9e4a500ca8864c5b47b8b482a73d62e4237670e5b5f1d6b9e3cae50f28f2b"
-
-[[package]]
-name = "xdg"
-version = "2.5.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "213b7324336b53d2414b2db8537e56544d981803139155afa84f76eeebb7a546"
 
 [[package]]
 name = "xkbcommon-dl"

@@ -42,14 +42,4 @@
 //! - Icons: `~/.local/share/icons/hicolor/<size>/apps/`
 //! - Follows freedesktop.org specifications
 
-pub mod traits;
-pub mod platform;
-pub mod download;
-pub mod config;
-pub mod error;
-pub mod installed_versions;
 pub mod updater;
-
-pub use traits::*;
-pub use config::InstallerConfig;
-pub use error::{InstallerError, Result};

@@ -14,38 +14,14 @@ pulsar-hub = { path = "../hub" }
 serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
-smol.workspace = true
 reqwest_client = { path = "../reqwest_client" }
-
-# Installer-specific dependencies
-async-trait = "0.1"
-indicatif = "0.17"
-tar = "0.4"
-flate2 = "1.0"
 sha2 = "0.10"
 hex = "0.4"
-tempfile = "3.8"
-walkdir = "2.5"
-futures = "0.3"
-async-channel = "2.3"
-chrono = "0.4"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-zip = "2.2"
-dirs = "5.0"
 bsdiff.workspace = true
 zstd.workspace = true
 reqwest.workspace = true
 tokio.workspace = true
-
-[target.'cfg(windows)'.dependencies]
-windows.workspace = true
-winreg = "0.52"
-
-[target.'cfg(target_os = "macos")'.dependencies]
-plist = "1.6"
-
-[target.'cfg(target_os = "linux")'.dependencies]
-xdg = "2.5"
 
 [lints]
 workspace = true
