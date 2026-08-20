@@ -393,7 +393,7 @@ fn nav_item(
         .when(is_active, |this| this.bg(accent_bg))
         .hover(|this| this.bg(hover_bg))
         .child(Icon::new(icon).size(px(15.)).text_color(if is_active {
-            foreground
+            accent
         } else {
             muted_fg
         }))

@@ -31,7 +31,9 @@ fn render_installed_grid(
 
     v_flex()
         .size_full()
-        .p_6()
+        .px_8()
+        .pt_6()
+        .pb_6()
         .gap_4()
         .child(
             h_flex()
@@ -42,7 +44,7 @@ fn render_installed_grid(
                     v_flex()
                         .child(
                             div()
-                                .text_xl()
+                                .text_2xl()
                                 .font_weight(gpui::FontWeight::BOLD)
                                 .text_color(theme.foreground)
                                 .child("Engine Versions"),
@@ -368,4 +370,3 @@ fn render_install_modal(
                 ),
         )
 }
-

@@ -30,7 +30,7 @@ pub fn render_templates(
                 .items_center()
                 .child(
                     div()
-                        .text_xl()
+                        .text_2xl()
                         .font_weight(gpui::FontWeight::BOLD)
                         .text_color(theme.foreground)
                         .child("Templates"),

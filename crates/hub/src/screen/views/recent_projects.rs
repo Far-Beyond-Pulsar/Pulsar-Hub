@@ -105,14 +105,15 @@ pub fn render_recent_projects(
                             .justify_center()
                             .gap_3()
                             .child(
-                                Icon::new(IconName::Folder)
+                                Icon::new(IconName::FolderOpen)
                                     .size(px(48.))
                                     .text_color(theme.muted_foreground.opacity(0.4)),
                             )
                             .child(
                                 div()
                                     .text_lg()
-                                    .text_color(theme.muted_foreground)
+                                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                                    .text_color(theme.foreground)
                                     .child("No recent projects"),
                             )
                             .child(
