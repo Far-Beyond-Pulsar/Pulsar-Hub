@@ -1,4 +1,4 @@
-# Pulsar Installer
+# Pulsar Hub
 
 A modern, cross-platform installer for the Pulsar Game Engine, built with GPUI and Rust.
 
