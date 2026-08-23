@@ -2,8 +2,8 @@ use gpui::prelude::*;
 use gpui::*;
 use std::path::{Path, PathBuf};
 use ui::{
-    button::Button, button::ButtonVariants as _, h_flex, v_flex, ActiveTheme as _,
-    Disableable as _, Icon, IconName, StyledExt,
+    button::Button, button::ButtonVariants as _, h_flex, menu::context_menu::ContextMenuExt as _,
+    menu::PopupMenu, v_flex, ActiveTheme as _, Disableable as _, Icon, IconName, StyledExt,
 };
 
 use crate::core::types::{EntryScreenView, GitFetchStatus};
@@ -19,8 +19,26 @@ pub fn render_recent_projects(
     let theme = cx.theme();
     let columns = screen.calculate_columns(px(available_width + 220.0 + 64.0));
 
-    let project_count = screen.state.recent_projects.projects.len();
-    let is_empty = project_count == 0;
+    let total_count = screen.state.recent_projects.projects.len();
+    let query = screen.state.input.project_search_query.trim().to_lowercase();
+    let is_filtering = !query.is_empty();
+    let projects: Vec<crate::service::project_service::RecentProject> = screen
+        .state
+        .recent_projects
+        .projects
+        .clone()
+        .into_iter()
+        .filter(|project| {
+            if !is_filtering {
+                return true;
+            }
+            project.name.to_lowercase().contains(&query)
+                || project.path.to_lowercase().contains(&query)
+        })
+        .collect();
+    let project_count = projects.len();
+    let is_empty = total_count == 0;
+    let no_matches = !is_empty && project_count == 0;
 
     v_flex()
         .flex_1()
@@ -44,13 +62,23 @@ pub fn render_recent_projects(
                 )
                 .child(
                     div()
+                        .w(px(260.))
+                        .child(ui::input::Input::new(&screen.inputs().project_search.clone())),
+                )
+                .child(
+                    div()
                         .text_sm()
                         .text_color(theme.muted_foreground)
-                        .child(format!(
-                            "{} project{}",
-                            project_count,
-                            if project_count == 1 { "" } else { "s" }
-                        )),
+                        .child(if is_filtering {
+                            format!("{} of {} project{}", project_count, total_count,
+                                if total_count == 1 { "" } else { "s" })
+                        } else {
+                            format!(
+                                "{} project{}",
+                                project_count,
+                                if project_count == 1 { "" } else { "s" }
+                            )
+                        }),
                 )
                 .child(
                     Button::new("refresh-projects")
@@ -124,7 +152,27 @@ pub fn render_recent_projects(
                             ),
                     )
                 })
-                .when(!is_empty, |this| {
+                .when(no_matches, |this| {
+                    this.child(
+                        v_flex()
+                            .size_full()
+                            .items_center()
+                            .justify_center()
+                            .gap_2()
+                            .child(
+                                Icon::new(IconName::Search)
+                                    .size(px(36.))
+                                    .text_color(theme.muted_foreground.opacity(0.4)),
+                            )
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .text_color(theme.muted_foreground)
+                                    .child(format!("No projects match \u{201C}{}\u{201D}", query)),
+                            ),
+                    )
+                })
+                .when(!is_empty && !no_matches, |this| {
                     this.child(
                     v_flex()
                         .id("recent-projects-scroll")
@@ -134,7 +182,7 @@ pub fn render_recent_projects(
                         .px_8()
                         .pb_6()
                             .child(h_flex().flex_wrap().gap_6().children(
-                                screen.state.recent_projects.projects.clone().iter().map(
+                                projects.iter().map(
                                     |project| render_project_card(screen, project, columns, cx),
                                 ),
                             )),
@@ -179,7 +227,41 @@ fn render_project_card(
 
     let missing_engine = screen.missing_engine_for_project(Path::new(&path));
 
-    v_flex()
+    let weak = cx.entity().downgrade();
+    let m_path = path.clone();
+    let menu = move |mut menu: PopupMenu, _window: &mut Window, _cx: &mut Context<PopupMenu>| {
+        let (w, p) = (weak.clone(), m_path.clone());
+        menu = menu.menu_handler_with_icon("Open", IconName::Play, move |_, cx| {
+            let _ = w.update(cx, |this, cx| this.launch_project(PathBuf::from(&p), cx));
+        });
+        let (w, p) = (weak.clone(), m_path.clone());
+        menu = menu.menu_handler_with_icon("Git Manager", IconName::GitBranch, move |_, cx| {
+            let _ = w.update(cx, |this, cx| this.open_git_manager(PathBuf::from(&p), cx));
+        });
+        let (w, p) = (weak.clone(), m_path.clone());
+        menu = menu.menu_handler_with_icon("Project Settings", IconName::Settings, move |_, cx| {
+            let _ = w.update(cx, |this, cx| this.open_project_settings(PathBuf::from(&p), cx));
+        });
+        menu = menu.separator();
+        let p = m_path.clone();
+        menu = menu.menu_handler_with_icon("Reveal in File Explorer", IconName::FolderOpen, move |_, _| {
+            let _ = open::that(&p);
+        });
+        let p = m_path.clone();
+        menu = menu.menu_handler_with_icon("Copy Path", IconName::Copy, move |_, cx| {
+            cx.write_to_clipboard(ClipboardItem::new_string(p.clone()));
+        });
+        menu = menu.separator();
+        let (w, p) = (weak.clone(), m_path.clone());
+        menu = menu.menu_handler_with_icon("Remove from Recent", IconName::Close, move |_, cx| {
+            let _ = w.update(cx, |this, cx| {
+                this.remove_recent_project(&p, cx);
+            });
+        });
+        menu
+    };
+
+    let card = v_flex()
         .id(SharedString::from(format!("project-card-{}", path)))
         .w(px(320.))
         .rounded_xl()
@@ -358,7 +440,9 @@ fn render_project_card(
                             )
                         }),
                 ),
-        )
+        );
+
+    card.context_menu(menu)
 }
 
 fn render_git_status(

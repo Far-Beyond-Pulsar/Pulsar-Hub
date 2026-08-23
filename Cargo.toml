@@ -43,6 +43,7 @@ ui_common        = { git = "https://github.com/Far-Beyond-Pulsar/Pulsar-Native",
 ui_auth          = { git = "https://github.com/Far-Beyond-Pulsar/Pulsar-Native", rev = "e35133a768d4bffef72a6815b9ab318f2d9d9605" }
 ui_git_manager   = { git = "https://github.com/Far-Beyond-Pulsar/Pulsar-Native", rev = "e35133a768d4bffef72a6815b9ab318f2d9d9605" }
 ui_friends       = { git = "https://github.com/Far-Beyond-Pulsar/Pulsar-Native", rev = "e35133a768d4bffef72a6815b9ab318f2d9d9605" }
+ui_settings      = { git = "https://github.com/Far-Beyond-Pulsar/Pulsar-Native", rev = "e35133a768d4bffef72a6815b9ab318f2d9d9605" }
 ui_types_common  = { git = "https://github.com/Far-Beyond-Pulsar/Pulsar-Native", rev = "e35133a768d4bffef72a6815b9ab318f2d9d9605" }
 ui_gen_macros    = { git = "https://github.com/Far-Beyond-Pulsar/Pulsar-Native", rev = "e35133a768d4bffef72a6815b9ab318f2d9d9605" }
 pulsar-config    = { git = "https://github.com/Far-Beyond-Pulsar/Pulsar-Native", rev = "e35133a768d4bffef72a6815b9ab318f2d9d9605" }

@@ -23,6 +23,7 @@ impl EntryWindow {
             &s,
             window,
             |this: &mut Self, _screen, event: &GitManagerRequested, _window, cx| {
+                crate::windows::open_git_manager_window(event.path.clone(), cx);
                 cx.emit(event.clone());
             },
         )
@@ -31,6 +32,7 @@ impl EntryWindow {
             &s,
             window,
             |this: &mut Self, _screen, _event: &SettingsRequested, _window, cx| {
+                crate::windows::open_settings_window(None, cx);
                 cx.emit(SettingsRequested);
             },
         )

@@ -23,7 +23,6 @@ pub struct UiState {
     pub show_dependency_setup: bool,
     pub onboarding_tab: OnboardingTab,
     pub show_git_upstream_prompt: Option<(PathBuf, String)>,
-    pub project_settings: Option<crate::screen::views::project_settings::ProjectSettings>,
     pub auth_device_modal_shown: bool,
     pub show_add_server: bool,
     pub show_create_project: bool,
@@ -52,7 +51,6 @@ impl UiState {
             show_dependency_setup: false,
             onboarding_tab: OnboardingTab::default(),
             show_git_upstream_prompt: None,
-            project_settings: None,
             auth_device_modal_shown: false,
             show_add_server: false,
             show_create_project: false,
@@ -82,6 +80,7 @@ pub struct InputEntities {
     pub create_project_name: Entity<ui::input::InputState>,
     pub create_project_description: Entity<ui::input::InputState>,
     pub plugin_search: Entity<ui::input::InputState>,
+    pub project_search: Entity<ui::input::InputState>,
 }
 
 impl InputEntities {
@@ -113,6 +112,9 @@ impl InputEntities {
             }),
             plugin_search: cx.new(|cx| {
                 ui::input::InputState::new(window, cx).placeholder("Search plugins\u{2026}")
+            }),
+            project_search: cx.new(|cx| {
+                ui::input::InputState::new(window, cx).placeholder("Search projects\u{2026}")
             }),
         }
     }
@@ -278,6 +280,20 @@ impl InputEntities {
             },
         )
         .detach();
+        let s11 = screen.clone();
+        cx.subscribe(
+            &self.project_search,
+            move |_: Entity<ui::input::InputState>, ev: &InputEvent, cx: &mut App| {
+                if let InputEvent::Change = ev {
+                    let _ = s11.update(cx, |this, cx| {
+                        this.state.input.project_search_query =
+                            this.inputs().project_search.read(cx).text().to_string();
+                        cx.notify();
+                    });
+                }
+            },
+        )
+        .detach();
     }
 }
 
@@ -294,6 +310,7 @@ pub struct InputValues {
     pub create_project_name_text: String,
     pub create_project_description_text: String,
     pub plugin_search_query: String,
+    pub project_search_query: String,
 }
 
 impl InputValues {
@@ -310,6 +327,7 @@ impl InputValues {
             create_project_name_text: String::new(),
             create_project_description_text: String::new(),
             plugin_search_query: String::new(),
+            project_search_query: String::new(),
         }
     }
 }

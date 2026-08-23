@@ -4,11 +4,13 @@ mod screen;
 mod service;
 mod util;
 mod window;
+mod windows;
 
 pub use core::events::*;
 pub use core::types::*;
 pub use screen::EntryScreen;
 pub use window::EntryWindow;
+pub use windows::{open_git_manager_window, open_settings_window};
 
 pub use engine_state::{EngineContext, WindowContext, WindowRequest};
 

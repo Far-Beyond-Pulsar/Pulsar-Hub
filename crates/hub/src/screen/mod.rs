@@ -12,7 +12,6 @@ use ui::ContextModal;
 use crate::core::events::*;
 use crate::core::state::*;
 use crate::core::types::*;
-use crate::screen::views::project_settings::ProjectSettingsTab;
 use crate::service::auth_service::AuthService;
 use crate::service::cloud_service::CloudService;
 use crate::service::dependency_service::DependencyService;
@@ -840,23 +839,10 @@ impl EntryScreen {
         cx.emit(GitManagerRequested { path });
     }
 
+    /// Open the engine's settings window scoped to this project (edits the
+    /// project's `.pulsar` TOML settings database).
     pub(crate) fn open_project_settings(&mut self, path: PathBuf, cx: &mut Context<Self>) {
-        let (editor, git_tool) = ProjectService::load_tool_preferences(&path);
-        let name = path
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_default();
-        let mut ps =
-            crate::screen::views::project_settings::ProjectSettings::new(path.clone(), name);
-        ps.preferred_editor = editor;
-        ps.preferred_git_tool = git_tool;
-        self.state.ui.project_settings = Some(ps);
-        cx.notify();
-    }
-
-    pub(crate) fn close_project_settings(&mut self, cx: &mut Context<Self>) {
-        self.state.ui.project_settings = None;
-        cx.notify();
+        crate::windows::open_settings_window(Some(path), cx);
     }
 
     pub(crate) fn open_new_project_modal(&mut self, cx: &mut Context<Self>) {
@@ -887,36 +873,6 @@ impl EntryScreen {
         let f_width: f32 = f32::from(available_width);
         let cols = ((f_width + gap) / (card_width + gap)).floor() as usize;
         cols.max(1)
-    }
-
-    pub(crate) fn change_project_settings_tab(
-        &mut self,
-        tab: ProjectSettingsTab,
-        cx: &mut Context<Self>,
-    ) {
-        if let Some(settings) = self.state.ui.project_settings.as_mut() {
-            settings.active_tab = tab;
-        }
-        cx.notify();
-    }
-
-    pub(crate) fn refresh_project_settings(&mut self, cx: &mut Context<Self>) {
-        if let Some(ref settings) = self.state.ui.project_settings.clone() {
-            let (editor, git_tool) = ProjectService::load_tool_preferences(&settings.project_path);
-            let name = settings
-                .project_path
-                .file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_default();
-            let mut ps = crate::screen::views::project_settings::ProjectSettings::new(
-                settings.project_path.clone(),
-                name,
-            );
-            ps.preferred_editor = editor;
-            ps.preferred_git_tool = git_tool;
-            self.state.ui.project_settings = Some(ps);
-        }
-        cx.notify();
     }
 
     pub(crate) fn browse_project_location(&self, cx: &mut Context<Self>) {

@@ -14,7 +14,7 @@ pub fn render_clone_git_modal(
     crate::component::render_modal(
         "Clone from Git",
         render_clone_git_content(screen, cx),
-        Some(Box::new(|this, _, cx| {
+        Some(std::rc::Rc::new(|this, _, cx| {
             this.close_clone_git_modal(cx);
         })),
         cx,

@@ -7,7 +7,6 @@ use ui::{
 
 use crate::core::types::EntryScreenView;
 use crate::screen::views::download_manager::DownloadManagerView;
-use crate::screen::views::project_settings::ProjectSettingsTab;
 use crate::screen::EntryScreen;
 
 pub fn render_layout(
@@ -160,9 +159,6 @@ pub fn render_layout(
         })
         .when(screen.state.ui.show_clone_git_modal, |this| {
             this.child(crate::screen::views::render_clone_git_modal(screen, cx))
-        })
-        .when(screen.state.ui.project_settings.is_some(), |this| {
-            this.child(crate::screen::views::render_project_settings(screen, window, cx))
         })
         .into_any_element()
 }

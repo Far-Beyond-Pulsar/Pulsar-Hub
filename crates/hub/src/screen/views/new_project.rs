@@ -13,7 +13,7 @@ pub fn render_new_project_modal(
     crate::component::render_modal(
         "New Project",
         render_new_project_content(screen, cx),
-        Some(Box::new(|this, _, cx| {
+        Some(std::rc::Rc::new(|this, _, cx| {
             this.close_new_project_modal(cx);
         })),
         cx,

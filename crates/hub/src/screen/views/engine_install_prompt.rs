@@ -68,7 +68,7 @@ pub fn render_engine_install_prompt(
                             })),
                     ),
             ),
-        Some(Box::new(|this, _, cx| {
+        Some(std::rc::Rc::new(|this, _, cx| {
             this.close_engine_prompt(cx);
         })),
         cx,
