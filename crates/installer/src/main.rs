@@ -55,6 +55,19 @@ fn main() {
         Theme::change(WindowAppearance::Dark, None, cx);
         cx.activate(true);
 
+        // Hub-wide keyboard shortcuts, scoped to the "Hub" key context set on
+        // the EntryWindow root so they don't fire inside other windows.
+        use pulsar_hub::{
+            CheckGitUpdates, CloneGitModal, NewProjectModal, OpenAppSettings, OpenFolderDialog,
+        };
+        cx.bind_keys([
+            gpui::KeyBinding::new("ctrl-n", NewProjectModal, Some("Hub")),
+            gpui::KeyBinding::new("ctrl-o", OpenFolderDialog, Some("Hub")),
+            gpui::KeyBinding::new("ctrl-g", CloneGitModal, Some("Hub")),
+            gpui::KeyBinding::new("ctrl-shift-r", CheckGitUpdates, Some("Hub")),
+            gpui::KeyBinding::new("ctrl-,", OpenAppSettings, Some("Hub")),
+        ]);
+
         let window_size = size(px(1300.0), px(800.0));
         let window_bounds = Bounds::centered(None, window_size, cx);
 

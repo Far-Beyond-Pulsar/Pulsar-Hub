@@ -1147,6 +1147,51 @@ impl EntryScreen {
         .detach();
     }
 
+    /// Switch to the Storage page, scanning on first visit.
+    pub(crate) fn open_storage_view(&mut self, cx: &mut Context<Self>) {
+        let needs_scan = self.state.storage.rows.is_empty()
+            && !self.state.storage.loading
+            && !self.state.recent_projects.projects.is_empty();
+        self.state.ui.view = EntryScreenView::Storage;
+        if needs_scan {
+            self.refresh_storage(cx);
+        }
+        cx.notify();
+    }
+
+    /// Re-measure every recent project's disk usage in the background.
+    pub(crate) fn refresh_storage(&mut self, cx: &mut Context<Self>) {
+        if self.state.storage.loading {
+            return;
+        }
+        self.state.storage.loading = true;
+        cx.notify();
+        let projects = self.state.recent_projects.projects.clone();
+        cx.spawn(async move |entity, cx| {
+            let rows = cx
+                .background_executor()
+                .spawn(async move {
+                    projects
+                        .iter()
+                        .map(|p| {
+                            crate::service::storage_service::measure_project(std::path::Path::new(
+                                &p.path,
+                            ))
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .await;
+            let _ = cx.update(|cx| {
+                let _ = entity.update(cx, |this, cx| {
+                    this.state.storage.rows = rows;
+                    this.state.storage.loading = false;
+                    cx.notify();
+                });
+            });
+        })
+        .detach();
+    }
+
     pub(crate) fn open_cloud_projects_view(&mut self, cx: &mut Context<Self>) {
         self.state.ui.view = EntryScreenView::CloudProjects;
         if !crate::util::path_helpers::is_cloud_intro_seen() {

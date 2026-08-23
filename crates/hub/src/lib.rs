@@ -6,6 +6,7 @@ mod util;
 mod window;
 mod windows;
 
+pub use core::actions::*;
 pub use core::events::*;
 pub use core::types::*;
 pub use screen::EntryScreen;

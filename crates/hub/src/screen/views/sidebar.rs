@@ -22,6 +22,7 @@ pub fn render_sidebar(screen: &mut EntryScreen, cx: &mut Context<EntryScreen>) -
 
     let is_recent = screen.state.ui.view == EntryScreenView::Recent;
     let is_templates = screen.state.ui.view == EntryScreenView::Templates;
+    let is_storage = screen.state.ui.view == EntryScreenView::Storage;
     let is_versions = screen.state.ui.view == EntryScreenView::Versions;
     let is_cloud = screen.state.ui.view == EntryScreenView::CloudProjects;
     let is_friends = screen.state.ui.view == EntryScreenView::Friends;
@@ -144,6 +145,20 @@ pub fn render_sidebar(screen: &mut EntryScreen, cx: &mut Context<EntryScreen>) -
                     cx.listener(|this, _, _, cx| {
                         this.state.ui.view = EntryScreenView::Templates;
                         cx.notify();
+                    }),
+                ))
+                .child(nav_item(
+                    "nav-storage",
+                    IconName::Database,
+                    "Storage",
+                    is_storage,
+                    accent,
+                    foreground,
+                    muted_fg,
+                    accent_bg,
+                    hover_bg,
+                    cx.listener(|this, _, _, cx| {
+                        this.open_storage_view(cx);
                     }),
                 )),
         )

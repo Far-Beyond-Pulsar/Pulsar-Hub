@@ -137,6 +137,10 @@ pub fn render_layout(
                                 crate::screen::views::render_templates(screen, available_width, cx)
                                     .into_any_element()
                             }
+                            EntryScreenView::Storage => {
+                                crate::screen::views::render_storage(screen, cx)
+                                    .into_any_element()
+                            }
                             EntryScreenView::Versions => {
                                 crate::screen::views::render_versions(screen, window, cx)
                                     .into_any_element()

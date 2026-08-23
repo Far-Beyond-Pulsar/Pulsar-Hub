@@ -332,6 +332,12 @@ impl InputValues {
     }
 }
 
+/// Disk-usage scan results backing the Storage page.
+pub struct StorageState {
+    pub loading: bool,
+    pub rows: Vec<crate::service::storage_service::ProjectDiskStats>,
+}
+
 /// Auth-specific state
 pub struct AuthState {
     pub loading: bool,
@@ -405,6 +411,8 @@ pub struct AppState {
     pub template_thumbnail_queue: VecDeque<Template>,
 
     pub versions: crate::core::types::VersionState,
+    /// Per-project disk usage for the Storage page.
+    pub storage: StorageState,
     pub download_manager_view: Entity<crate::screen::views::download_manager::DownloadManagerView>,
     pub release_details_view:
         Entity<crate::screen::views::release_details::ReleaseDetailsView>,
@@ -513,6 +521,10 @@ impl AppState {
             },
             download_manager_view: cx
                 .new(|cx| crate::screen::views::download_manager::DownloadManagerView::new(cx)),
+            storage: StorageState {
+                loading: false,
+                rows: Vec::new(),
+            },
             release_details_view: cx.new(|cx| {
                 crate::screen::views::release_details::ReleaseDetailsView::new(cx)
             }),
