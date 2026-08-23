@@ -1159,10 +1159,12 @@ impl EntryScreen {
         .detach();
     }
 
-    pub(crate) fn test_cloud_server_connection(&self, index: usize, cx: &mut Context<Self>) {
+    pub(crate) fn test_cloud_server_connection(&mut self, index: usize, cx: &mut Context<Self>) {
         if index >= self.state.cloud_servers.len() {
             return;
         }
+        self.state.cloud_servers[index].status = CloudServerStatus::Connecting;
+        cx.notify();
         let server = self.state.cloud_servers[index].clone();
         cx.spawn(async move |entity, cx| {
             let result = cx
@@ -1237,7 +1239,7 @@ impl EntryScreen {
         cx.notify();
     }
 
-    pub(crate) fn refresh_cloud_server(&self, index: usize, cx: &mut Context<Self>) {
+    pub(crate) fn refresh_cloud_server(&mut self, index: usize, cx: &mut Context<Self>) {
         self.test_cloud_server_connection(index, cx);
     }
 
@@ -1347,8 +1349,12 @@ impl EntryScreen {
         if index < self.state.cloud_servers.len() {
             self.state.cloud_servers.remove(index);
             self.save_cloud_servers();
-            if self.state.selected_cloud_server == Some(index) {
-                self.state.selected_cloud_server = None;
+            if let Some(selected) = self.state.selected_cloud_server {
+                if selected == index {
+                    self.state.selected_cloud_server = None;
+                } else if selected > index {
+                    self.state.selected_cloud_server = Some(selected - 1);
+                }
             }
             cx.notify();
         }

@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use gpui::prelude::*;
 use gpui::*;
 use ui::{
@@ -98,13 +100,27 @@ pub fn render_cloud_intro_modal(
                         .w_full()
                         .px_6()
                         .py_5()
-                        .gap_4()
                         .min_h(px(260.))
-                        .child(match current_page {
-                            0 => render_page_overview(cx).into_any_element(),
-                            1 => render_page_realtime(cx).into_any_element(),
-                            _ => render_page_git_ci(cx).into_any_element(),
-                        }),
+                        .child(
+                            v_flex()
+                                .w_full()
+                                .gap_4()
+                                .child(match current_page {
+                                    0 => render_page_overview(cx).into_any_element(),
+                                    1 => render_page_realtime(cx).into_any_element(),
+                                    _ => render_page_git_ci(cx).into_any_element(),
+                                })
+                                .with_animation(
+                                    SharedString::from(format!(
+                                        "cloud-intro-page-fx-{current_page}"
+                                    )),
+                                    Animation::new(Duration::from_millis(220))
+                                        .with_easing(ease_out_quint()),
+                                    move |this, delta| {
+                                        this.opacity(delta).mt(px(8. * (1. - delta)))
+                                    },
+                                ),
+                        ),
                 )
                 // Footer
                 .child(
