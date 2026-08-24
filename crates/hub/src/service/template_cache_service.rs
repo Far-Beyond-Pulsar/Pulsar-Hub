@@ -117,6 +117,10 @@ fn force_remove_dir_all(path: &Path) -> std::io::Result<()> {
         } else {
             #[cfg(windows)]
             {
+                // Windows-only path: clearing FILE_ATTRIBUTE_READONLY so
+                // read-only git objects can be deleted (the clippy lint about
+                // Unix world-writable files does not apply).
+                #[allow(clippy::permissions_set_readonly_false)]
                 if let Ok(meta) = std::fs::metadata(&p) {
                     let mut perms = meta.permissions();
                     if perms.readonly() {
