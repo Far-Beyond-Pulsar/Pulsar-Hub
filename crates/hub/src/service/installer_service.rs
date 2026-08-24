@@ -1288,6 +1288,10 @@ fn launch_binary(exe: &Path, current_dir: &Path, project: Option<&Path>) -> Resu
         // DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
         cmd.creation_flags(0x0000_0008 | 0x0000_0200);
     }
+    crate::service::launch_flags::LaunchFlags::apply_env(
+        exe.parent().unwrap_or_else(|| Path::new("")),
+        &mut cmd,
+    );
     cmd.spawn().map(|_| ()).map_err(|e| e.to_string())
 }
 

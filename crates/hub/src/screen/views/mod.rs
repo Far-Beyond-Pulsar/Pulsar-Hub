@@ -5,6 +5,7 @@ pub mod cloud_projects;
 pub mod dependency_setup;
 pub mod download_manager;
 pub mod engine_install_prompt;
+pub mod launch_flags_menu;
 pub mod new_project;
 pub mod onboarding;
 pub mod recent_projects;

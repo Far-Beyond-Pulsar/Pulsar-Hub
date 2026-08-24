@@ -4,6 +4,7 @@ pub mod dependency_service;
 pub mod git_service;
 pub mod integration_service;
 pub mod installer_service;
+pub mod launch_flags;
 pub mod plugin_service;
 pub mod project_service;
 pub mod storage_service;

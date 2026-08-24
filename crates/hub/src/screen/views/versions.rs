@@ -127,6 +127,7 @@ fn render_installed_grid(
                     let size = format_bytes(ver.disk_size_bytes);
                     let path = ver.metadata.install_path.clone();
                     let path_clone = path.clone();
+                    let is_src = version.eq_ignore_ascii_case("src");
 
                     v_flex()
                         .id(format!("version-card-{}", idx))
@@ -246,6 +247,34 @@ fn render_installed_grid(
                                                 .on_click(cx.listener(move |this, _, _, cx| {
                                                     this.remove_version(&v, cx);
                                                 }))
+                                        })
+                                        .when(!is_src, |row| {
+                                            // The `src` entry points at a source
+                                            // checkout, but its binary (and flag
+                                            // file) live in `<checkout>/target`.
+                                            let dir = path_clone.clone();
+                                            row.child(
+                                                ui::popover::Popover::<
+                                                    crate::screen::views::launch_flags_menu::LaunchFlagsMenuView,
+                                                >::new(format!("flags-popover-{}", idx))
+                                                .anchor(Corner::TopRight)
+                                                .trigger(
+                                                    Button::new(format!("flags-{}", idx))
+                                                        .icon(IconName::Ellipsis)
+                                                        .compact()
+                                                        .ghost()
+                                                        .tooltip("Launch flags"),
+                                                )
+                                                .content(move |_, cx| {
+                                                    cx.new(|cx| {
+                                                        crate::screen::views::launch_flags_menu::LaunchFlagsMenuView::new(
+                                                            dir.clone(),
+                                                            cx,
+                                                        )
+                                                    })
+                                                })
+                                                .into_any_element(),
+                                            )
                                         }),
                                 )
                                 .child({
