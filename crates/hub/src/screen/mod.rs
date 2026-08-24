@@ -18,6 +18,7 @@ use crate::service::dependency_service::DependencyService;
 use crate::service::git_service::GitService;
 use crate::service::plugin_service::PluginService;
 use crate::service::project_service::ProjectService;
+use crate::service::template_cache_service::TemplateCacheService;
 use crate::service::thumbnail_service::ThumbnailService;
 use ui_common::ProfileDropdownEvent;
 
@@ -83,6 +84,19 @@ fn git_fetch_paths(
         .iter()
         .map(|project| (project.path.clone(), PathBuf::from(&project.path)))
         .collect()
+}
+
+/// Flags a template's cache as busy; returns false if it already is.
+fn mark_template_cache_busy(
+    statuses: &Arc<Mutex<HashMap<String, GitFetchStatus>>>,
+    repo_url: &str,
+) -> bool {
+    let mut statuses = statuses.lock();
+    if matches!(statuses.get(repo_url), Some(GitFetchStatus::Fetching)) {
+        return false;
+    }
+    statuses.insert(repo_url.to_string(), GitFetchStatus::Fetching);
+    true
 }
 
 pub struct EntryScreen {
@@ -547,6 +561,12 @@ impl EntryScreen {
     }
 
     pub(crate) fn clone_template(&mut self, template: Template, cx: &mut Context<Self>) {
+        // Cached templates are instantiated locally without touching the
+        // network (issue #375).
+        if TemplateCacheService::is_cached(&template.repo_url) {
+            self.create_project_from_template_cache(template, cx);
+            return;
+        }
         let dl_id = format!("template-{}", template.name);
         self.state.download_manager_view.update(cx, |view, cx| {
             view.add_item(DownloadItem {
@@ -565,6 +585,254 @@ impl EntryScreen {
         });
         cx.notify();
         self.clone_git_repo(Some(template.repo_url), cx);
+    }
+
+    /// Create a project by copying an already-cached template — no download.
+    fn create_project_from_template_cache(
+        &mut self,
+        template: Template,
+        cx: &mut Context<Self>,
+    ) {
+        let recent_projects_path = self.state.recent_projects_path.clone();
+        let url = template.repo_url.clone();
+        let progress = Arc::new(Mutex::new(CloneProgress {
+            current: 0,
+            total: 0,
+            message: "Copying template from local cache...".to_string(),
+            completed: false,
+            error: None,
+            cancelled: false,
+        }));
+        self.state.clone_progress = Some(progress.clone());
+        cx.notify();
+
+        cx.spawn(async move |entity, cx| {
+            let mut error: Option<String> = None;
+            let mut target: Option<PathBuf> = None;
+            if let Some(folder) = rfd::AsyncFileDialog::new().pick_folder().await {
+                let parent = folder.path().to_path_buf();
+                let name = url
+                    .trim_end_matches(".git")
+                    .split('/')
+                    .last()
+                    .unwrap_or("repo")
+                    .to_string();
+                let t = parent.join(name);
+                if t.exists() {
+                    error = Some(format!("Directory already exists: {}", t.display()));
+                } else {
+                    let entry = TemplateCacheService::entry_dir(&url);
+                    let u = url.clone();
+                    let tt = t.clone();
+                    let p = progress.clone();
+                    p.lock().message = format!(
+                        "Copying template from local cache to {}...",
+                        tt.display()
+                    );                    match cx
+                        .background_executor()
+                        .spawn(async move { TemplateCacheService::instantiate_project(&entry, &tt, &u) })
+                        .await
+                    {
+                        Ok(()) => target = Some(t),
+                        Err(e) => error = Some(format!("Failed to copy template: {}", e)),
+                    }
+                }
+            }
+            let _ = cx.update(|cx| {
+                let _ = entity.update(cx, |this, cx| {
+                    this.state.clone_progress = None;
+                    match (target, error) {
+                        (Some(t), _) => {
+                            let n = t
+                                .file_name()
+                                .map(|n| n.to_string_lossy().to_string())
+                                .unwrap_or_default();
+                            // The template remote was renamed away from
+                            // `origin`, so offer the upstream prompt for the
+                            // user's own fork.
+                            this.state.ui.show_git_upstream_prompt = Some((t.clone(), n));
+                            cx.notify();
+                        }
+                        (None, Some(err)) => {
+                            this.state.template_cache_statuses
+                                .lock()
+                                .insert(url.clone(), GitFetchStatus::Error(err.clone()));
+                            this.state.clone_error = Some(err);
+                            cx.notify();
+                        }
+                        (None, None) => {}
+                    }
+                });
+            });
+        })
+        .detach();
+    }
+
+    /// Save a template into the local cache for offline/fast reuse (#375).
+    pub(crate) fn download_template_to_cache(&mut self, template: Template, cx: &mut Context<Self>) {
+        let url = template.repo_url.clone();
+        if TemplateCacheService::is_cached(&url) {
+            return;
+        }
+        if !mark_template_cache_busy(&self.state.template_cache_statuses, &url) {
+            return;
+        }
+        let dl_id = format!("template-cache-{}", template.name);
+        self.state.download_manager_view.update(cx, |view, cx| {
+            view.add_item(DownloadItem {
+                id: dl_id.clone(),
+                kind: DownloadKind::TemplateClone {
+                    name: template.name.clone(),
+                },
+                status: DownloadStatus::Downloading {
+                    bytes_downloaded: 0,
+                    total_bytes: 0,
+                    speed_bps: 0,
+                },
+                started_at: std::time::Instant::now(),
+            });
+            cx.notify();
+        });
+
+        let progress = Arc::new(Mutex::new(CloneProgress {
+            current: 0,
+            total: 0,
+            message: "Downloading template to local cache...".to_string(),
+            completed: false,
+            error: None,
+            cancelled: false,
+        }));
+        self.state.clone_progress = Some(progress.clone());
+        let statuses_map = Arc::clone(&self.state.template_cache_statuses);
+        cx.notify();
+
+        cx.spawn(async move |entity, cx| {
+            let p = Arc::clone(&progress);
+            let u = url.clone();
+            let result = cx
+                .background_executor()
+                .spawn(async move { TemplateCacheService::clone_to_cache(&u, p) })
+                .await;
+
+            let _ = cx.update(|cx| {
+                let _ = entity.update(cx, |this, cx| {
+                    this.state.clone_progress = None;
+                    this.state.download_manager_view.update(cx, |view, cx| {
+                        if let Some(item) =
+                            view.items.iter_mut().find(|i| i.id == dl_id)
+                        {
+                            item.status = match &result {
+                                Ok(_) => DownloadStatus::Complete,
+                                Err(e) => DownloadStatus::Failed(e.to_string()),
+                            };
+                        }
+                        cx.notify();
+                    });
+                    statuses_map.lock().insert(
+                        url.clone(),
+                        match &result {
+                            Ok(_) => GitFetchStatus::UpToDate,
+                            Err(e) => GitFetchStatus::Error(format!(
+                                "Cache download failed: {}",
+                                e
+                            )),
+                        },
+                    );
+                    cx.notify();
+                });
+            });
+        })
+        .detach();
+    }
+
+    /// Fetch the remote of a cached template and report behind-count.
+    pub(crate) fn check_template_cache_updates(
+        &mut self,
+        template: Template,
+        cx: &mut Context<Self>,
+    ) {
+        let url = template.repo_url.clone();
+        if !TemplateCacheService::is_cached(&url) {
+            return;
+        }
+        if !mark_template_cache_busy(&self.state.template_cache_statuses, &url) {
+            return;
+        }
+        cx.notify();
+        let statuses_map = Arc::clone(&self.state.template_cache_statuses);
+        cx.spawn(async move |entity, cx| {
+            let u = url.clone();
+            let result = cx
+                .background_executor()
+                .spawn(async move { TemplateCacheService::fetch_tracking_snapshot(&u) })
+                .await;
+
+            let status = match result {
+                Ok(outcome) => git_fetch_status(Ok(outcome))
+                    .unwrap_or(GitFetchStatus::NotStarted),
+                Err(error) => GitFetchStatus::Error(error.to_string()),
+            };
+            let _ = cx.update(|cx| {
+                let _ = entity.update(cx, |this, cx| {
+                    statuses_map.lock().insert(url.clone(), status);
+                    cx.notify();
+                });
+            });
+        })
+        .detach();
+    }
+
+    /// Pull new commits into a cached template.
+    pub(crate) fn pull_template_cache_updates(
+        &mut self,
+        template: Template,
+        cx: &mut Context<Self>,
+    ) {
+        let url = template.repo_url.clone();
+        if !TemplateCacheService::is_cached(&url) {
+            return;
+        }
+        if !mark_template_cache_busy(&self.state.template_cache_statuses, &url) {
+            return;
+        }
+        cx.notify();
+        let statuses_map = Arc::clone(&self.state.template_cache_statuses);
+        cx.spawn(async move |entity, cx| {
+            let u = url.clone();
+            let result = cx
+                .background_executor()
+                .spawn(async move { TemplateCacheService::pull_cached(&u) })
+                .await;
+
+            let status = match result {
+                Ok(()) => GitFetchStatus::UpToDate,
+                Err(error) => GitFetchStatus::Error(error.to_string()),
+            };
+            let _ = cx.update(|cx| {
+                let _ = entity.update(cx, |this, cx| {
+                    statuses_map.lock().insert(url.clone(), status);
+                    cx.notify();
+                });
+            });
+        })
+        .detach();
+    }
+
+    /// Delete a template's local cache entry.
+    pub(crate) fn remove_template_from_cache(
+        &mut self,
+        template: Template,
+        cx: &mut Context<Self>,
+    ) {
+        let url = template.repo_url.clone();
+        let result = TemplateCacheService::remove_cached(&url);
+        let mut statuses = self.state.template_cache_statuses.lock();
+        statuses.remove(&url);
+        if let Err(error) = result {
+            statuses.insert(url, GitFetchStatus::Error(error.to_string()));
+        }
+        drop(statuses);
+        cx.notify();
     }
 
     pub(crate) fn setup_git_upstream(&mut self, cx: &mut Context<Self>) {

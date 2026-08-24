@@ -376,6 +376,8 @@ pub struct AppState {
     pub clone_error: Option<String>,
 
     pub git_fetch_statuses: Arc<Mutex<HashMap<String, GitFetchStatus>>>,
+    /// Per-template local-cache status, keyed by template repo URL.
+    pub template_cache_statuses: Arc<Mutex<HashMap<String, GitFetchStatus>>>,
     pub(crate) git_repository_generations: HashMap<PathBuf, u64>,
     pub is_fetching_updates: bool,
     pub(crate) git_auto_fetch_task: Option<Task<()>>,
@@ -485,6 +487,7 @@ impl AppState {
             clone_progress: None,
             clone_error: None,
             git_fetch_statuses: Arc::new(Mutex::new(HashMap::new())),
+            template_cache_statuses: Arc::new(Mutex::new(HashMap::new())),
             git_repository_generations: HashMap::new(),
             is_fetching_updates: false,
             git_auto_fetch_task: None,

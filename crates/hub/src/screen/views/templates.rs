@@ -5,8 +5,9 @@ use ui::{
     StyledExt,
 };
 
-use crate::core::types::Template;
+use crate::core::types::{GitFetchStatus, Template};
 use crate::screen::EntryScreen;
+use crate::service::template_cache_service::TemplateCacheService;
 
 pub fn render_templates(
     screen: &mut EntryScreen,
@@ -112,11 +113,26 @@ fn render_template_card(
     let repo_url_button = repo_url.clone();
     let template_icon = template.icon.clone();
     let template_icon_listener = template_icon.clone();
+    let (click_name, click_description, click_icon, click_repo_url, click_category) = (
+        name.clone(),
+        description.clone(),
+        template_icon.clone(),
+        repo_url.clone(),
+        category.clone(),
+    );
     let thumbnail = screen
         .state
         .template_thumbnails
         .get(&name)
         .and_then(|t| t.clone());
+    let cached = TemplateCacheService::is_cached(&repo_url);
+    let cache_status = screen
+        .state
+        .template_cache_statuses
+        .lock()
+        .get(&repo_url)
+        .cloned()
+        .unwrap_or(GitFetchStatus::NotStarted);
 
     v_flex()
         .id(SharedString::from(format!("template-card-{}", name)))
@@ -134,11 +150,11 @@ fn render_template_card(
         .on_click(cx.listener(move |this, _, window, cx| {
             if !window.default_prevented() {
                 let t = Template::new(
-                    &name,
-                    &description,
+                    &click_name,
+                    &click_description,
                     template_icon_listener.clone(),
-                    &repo_url,
-                    &category,
+                    &click_repo_url,
+                    &click_category,
                 );
                 this.clone_template(t, cx);
             }
@@ -200,7 +216,80 @@ fn render_template_card(
                                     cx.open_url(&repo_url_button);
                                 },
                             )),
-                        ),
+                        )
+                        .when(!cached, |this| {
+                            let (n, d, i, u, c) = (
+                                name.clone(),
+                                description.clone(),
+                                template_icon.clone(),
+                                repo_url.clone(),
+                                category.clone(),
+                            );
+                            this.child(
+                                Button::new(SharedString::from(format!(
+                                    "cache-download-{}",
+                                    name
+                                )))
+                                .icon(IconName::Download)
+                                .compact()
+                                .ghost()
+                                .tooltip("Save to local cache")
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    this.download_template_to_cache(
+                                        Template::new(&n, &d, i.clone(), &u, &c),
+                                        cx,
+                                    );
+                                })),
+                            )
+                        })
+                        .when(cached, |this| {
+                            let (n, d, i, u, c) = (
+                                name.clone(),
+                                description.clone(),
+                                template_icon.clone(),
+                                repo_url.clone(),
+                                category.clone(),
+                            );
+                            let (n2, d2, i2, u2, c2) = (
+                                name.clone(),
+                                description.clone(),
+                                template_icon.clone(),
+                                repo_url.clone(),
+                                category.clone(),
+                            );
+                            this.child(
+                                Button::new(SharedString::from(format!(
+                                    "cache-check-updates-{}",
+                                    name
+                                )))
+                                .icon(IconName::Refresh)
+                                .compact()
+                                .ghost()
+                                .tooltip("Check for updates")
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    this.check_template_cache_updates(
+                                        Template::new(&n, &d, i.clone(), &u, &c),
+                                        cx,
+                                    );
+                                })),
+                            )
+                            .child(
+                                Button::new(SharedString::from(format!(
+                                    "cache-remove-{}",
+                                    name
+                                )))
+                                .icon(IconName::Trash)
+                                .compact()
+                                .ghost()
+                                .tooltip("Remove from local cache")
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    this.remove_template_from_cache(
+                                        Template::new(&n2, &d2, i2.clone(), &u2, &c2),
+                                        cx,
+                                    );
+                                })),
+                            )
+                        }),
                 ),
         )
         .child(
@@ -232,6 +321,126 @@ fn render_template_card(
                             .text_color(theme.foreground)
                             .child(category_label),
                     ),
+                )
+                .when(
+                    cached || !matches!(cache_status, GitFetchStatus::NotStarted),
+                    |this| {
+                        this.child(render_template_cache_status(
+                            name.clone(),
+                            description.clone(),
+                            template_icon.clone(),
+                            repo_url.clone(),
+                            category.clone(),
+                            cached,
+                            cache_status,
+                            cx,
+                        ))
+                    },
                 ),
         )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_template_cache_status(
+    name: String,
+    description: String,
+    icon: IconName,
+    repo_url: String,
+    category: String,
+    cached: bool,
+    status: GitFetchStatus,
+    cx: &mut Context<EntryScreen>,
+) -> impl IntoElement {
+    let theme = cx.theme();
+
+    h_flex().gap_1().items_center().children(match status {
+        GitFetchStatus::Fetching => {
+            let label = if cached {
+                "checking for updates..."
+            } else {
+                "downloading to cache..."
+            };
+            vec![
+                Icon::new(IconName::Refresh)
+                    .size(px(12.))
+                    .text_color(theme.muted_foreground)
+                    .into_any_element(),
+                div()
+                    .text_xs()
+                    .text_color(theme.muted_foreground)
+                    .child(label)
+                    .into_any_element(),
+            ]
+        }
+        GitFetchStatus::UpToDate => {
+            vec![
+                Icon::new(IconName::HardDrive)
+                    .size(px(12.))
+                    .text_color(theme.success_foreground)
+                    .into_any_element(),
+                Icon::new(IconName::Check)
+                    .size(px(12.))
+                    .text_color(theme.success_foreground)
+                    .into_any_element(),
+                div()
+                    .text_xs()
+                    .text_color(theme.muted_foreground)
+                    .child("cached · up to date")
+                    .into_any_element(),
+            ]
+        }
+        GitFetchStatus::UpdatesAvailable(count) => {
+            let t = Template::new(&name, &description, icon, &repo_url, &category);
+            vec![
+                Icon::new(IconName::ArrowUp)
+                    .size(px(12.))
+                    .text_color(theme.warning)
+                    .into_any_element(),
+                div()
+                    .text_xs()
+                    .text_color(theme.warning)
+                    .child(format!("cached · {} update{}", count, if count == 1 { "" } else { "s" }))
+                    .into_any_element(),
+                Button::new(SharedString::from(format!("cache-pull-{}", name)))
+                    .compact()
+                    .ghost()
+                    .icon(IconName::Download)
+                    .tooltip("Update cache")
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.pull_template_cache_updates(t.clone(), cx);
+                    }))
+                    .into_any_element(),
+            ]
+        }
+        GitFetchStatus::Error(e) => {
+            vec![
+                Icon::new(IconName::WarningTriangle)
+                    .size(px(12.))
+                    .text_color(gpui::red())
+                    .into_any_element(),
+                div()
+                    .text_xs()
+                    .text_color(gpui::red())
+                    .child(div().max_w(px(260.)).truncate().child(e))
+                    .into_any_element(),
+            ]
+        }
+        GitFetchStatus::NotStarted => {
+            if cached {
+                vec![
+                    Icon::new(IconName::HardDrive)
+                        .size(px(12.))
+                        .text_color(theme.muted_foreground.opacity(0.7))
+                        .into_any_element(),
+                    div()
+                        .text_xs()
+                        .text_color(theme.muted_foreground.opacity(0.7))
+                        .child("cached")
+                        .into_any_element(),
+                ]
+            } else {
+                vec![]
+            }
+        }
+    })
 }

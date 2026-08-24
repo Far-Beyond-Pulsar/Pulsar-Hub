@@ -8,4 +8,5 @@ pub mod launch_flags;
 pub mod plugin_service;
 pub mod project_service;
 pub mod storage_service;
+pub mod template_cache_service;
 pub mod thumbnail_service;

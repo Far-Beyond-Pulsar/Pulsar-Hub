@@ -36,6 +36,10 @@ pub fn registries_dir() -> std::path::PathBuf {
     appdata_dir().join("registries")
 }
 
+pub fn template_cache_dir() -> std::path::PathBuf {
+    appdata_dir().join("TemplateCache")
+}
+
 pub fn thumbnail_cache_dir() -> std::path::PathBuf {
     directories::ProjectDirs::from("com", "Pulsar", "Pulsar_Engine")
         .map(|d| d.cache_dir().join("template_thumbnails"))
