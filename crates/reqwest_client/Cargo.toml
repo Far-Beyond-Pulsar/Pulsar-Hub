@@ -17,12 +17,14 @@ doctest = true
 
 [dependencies]
 gpui-ce.workspace = true
-reqwest.workspace = true
+reqwest = { workspace = true, features = ["blocking"] }
 anyhow.workspace = true
 log.workspace = true
 
-rustls = { version = "0.23.26" }
-rustls-platform-verifier = "0.5.0"
+# Self-contained TLS: bundled Mozilla roots + ring provider, so verification
+# does not depend on the machine's certificate store or CPU feature set.
+rustls = { version = "0.23.26", default-features = false, features = ["ring", "std", "tls12"] }
+webpki-roots = "1.0"
 bytes = "1.0"
 futures = "0.3"
 tokio = { version = "1", features = ["rt", "rt-multi-thread"] }

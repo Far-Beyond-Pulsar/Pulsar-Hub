@@ -345,7 +345,9 @@ pub fn fetch_repo_releases_blocking(
 ) -> Result<Vec<GitHubRelease>, String> {
     use std::time::Duration;
 
-    let client = reqwest::blocking::Client::builder()
+    let client = reqwest_client::apply_bundled_tls_blocking(
+        reqwest::blocking::Client::builder(),
+    )
         .user_agent("Pulsar-Hub/1.0")
         .timeout(Duration::from_secs(30))
         .connect_timeout(Duration::from_secs(10))
@@ -401,10 +403,12 @@ pub fn release_notes_for_version(version: &str) -> String {
         GITHUB_API, repo, tag
     );
 
-    let client = match reqwest::blocking::Client::builder()
-        .user_agent("Pulsar-Hub/1.0")
-        .timeout(std::time::Duration::from_secs(15))
-        .build()
+    let client = match reqwest_client::apply_bundled_tls_blocking(
+        reqwest::blocking::Client::builder(),
+    )
+    .user_agent("Pulsar-Hub/1.0")
+    .timeout(std::time::Duration::from_secs(15))
+    .build()
     {
         Ok(c) => c,
         Err(_) => return format!("Could not load release notes for **{}**.", version),
@@ -497,7 +501,9 @@ pub fn download_and_extract_blocking(
 ) -> Result<(), String> {
     progress_cb(0.0);
 
-    let client = reqwest::blocking::Client::builder()
+    let client = reqwest_client::apply_bundled_tls_blocking(
+        reqwest::blocking::Client::builder(),
+    )
         .user_agent("Pulsar-Hub/1.0")
         .build()
         .map_err(|e| e.to_string())?;
@@ -612,10 +618,12 @@ pub fn download_and_extract_with_progress(
     version: &str,
     progress: Arc<Mutex<DownloadProgress>>,
 ) {
-    let client = match reqwest::blocking::Client::builder()
-        .user_agent("Pulsar-Hub/1.0")
-        .connect_timeout(std::time::Duration::from_secs(10))
-        .build()
+    let client = match reqwest_client::apply_bundled_tls_blocking(
+        reqwest::blocking::Client::builder(),
+    )
+    .user_agent("Pulsar-Hub/1.0")
+    .connect_timeout(std::time::Duration::from_secs(10))
+    .build()
     {
         Ok(c) => c,
         Err(e) => {

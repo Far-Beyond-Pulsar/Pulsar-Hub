@@ -35,6 +35,7 @@ smol.workspace = true
 futures.workspace = true
 tokio.workspace = true
 reqwest = { workspace = true, features = ["blocking", "json"] }
+reqwest_client = { path = "../reqwest_client" }
 
 # Utilities
 anyhow.workspace = true

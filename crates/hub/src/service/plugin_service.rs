@@ -60,7 +60,9 @@ impl PluginService {
         registries: &[PluginRegistry],
         registries_path: &Path,
     ) -> Vec<RegistryPlugin> {
-        let http_client = reqwest::blocking::Client::builder()
+        let http_client = reqwest_client::apply_bundled_tls_blocking(
+            reqwest::blocking::Client::builder(),
+        )
             .timeout(std::time::Duration::from_secs(15))
             .user_agent("Pulsar-Native/1.0")
             .build()
@@ -174,7 +176,9 @@ impl PluginService {
         repo: &str,
     ) -> Result<Option<(String, Option<String>)>, String> {
         let url = format!("https://api.github.com/repos/{}/{}/releases", owner, repo);
-        let client = reqwest::blocking::Client::builder()
+        let client = reqwest_client::apply_bundled_tls_blocking(
+            reqwest::blocking::Client::builder(),
+        )
             .timeout(std::time::Duration::from_secs(15))
             .user_agent("Pulsar-Native/1.0")
             .build()
@@ -217,7 +221,9 @@ impl PluginService {
         lib_name: &str,
     ) -> Result<String, String> {
         use std::io::Write;
-        let client = reqwest::blocking::Client::builder()
+        let client = reqwest_client::apply_bundled_tls_blocking(
+            reqwest::blocking::Client::builder(),
+        )
             .timeout(std::time::Duration::from_secs(120))
             .user_agent("Pulsar-Native/1.0")
             .build()

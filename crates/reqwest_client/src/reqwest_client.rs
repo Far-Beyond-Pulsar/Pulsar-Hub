@@ -14,6 +14,20 @@ use reqwest::{
 
 mod http_client_tls;
 
+/// Applies the bundled-roots/ring TLS configuration to an async client
+/// builder. All clients must go through this so networking behaves the same
+/// on every machine.
+pub fn apply_bundled_tls(builder: reqwest::ClientBuilder) -> reqwest::ClientBuilder {
+    builder.use_preconfigured_tls(http_client_tls::tls_config())
+}
+
+/// Same as [`apply_bundled_tls`] for blocking clients used by background services.
+pub fn apply_bundled_tls_blocking(
+    builder: reqwest::blocking::ClientBuilder,
+) -> reqwest::blocking::ClientBuilder {
+    builder.use_preconfigured_tls(http_client_tls::tls_config())
+}
+
 const DEFAULT_CAPACITY: usize = 4096;
 static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
 static REDACT_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"key=[^&]+").unwrap());
@@ -29,6 +43,7 @@ impl ReqwestClient {
     fn builder() -> reqwest::ClientBuilder {
         reqwest::Client::builder()
             .use_rustls_tls()
+            .use_preconfigured_tls(http_client_tls::tls_config())
             .connect_timeout(Duration::from_secs(10))
     }
 
@@ -72,9 +87,7 @@ impl ReqwestClient {
             client_has_proxy = false;
         };
 
-        let client = client
-            .use_preconfigured_tls(http_client_tls::tls_config())
-            .build()?;
+        let client = client.build()?;
         let mut client: ReqwestClient = client.into();
         client.proxy = client_has_proxy.then_some(proxy).flatten();
         client.user_agent = Some(user_agent);

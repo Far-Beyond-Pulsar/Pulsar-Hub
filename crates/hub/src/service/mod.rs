@@ -2,6 +2,7 @@ pub mod auth_service;
 pub mod cloud_service;
 pub mod dependency_service;
 pub mod git_service;
+pub mod github_archive;
 pub mod integration_service;
 pub mod installer_service;
 pub mod launch_flags;

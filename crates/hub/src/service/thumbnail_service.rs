@@ -68,7 +68,9 @@ impl ThumbnailService {
     }
 
     fn download_bytes(url: &str) -> Option<Vec<u8>> {
-        let client = reqwest::blocking::Client::builder()
+        let client = reqwest_client::apply_bundled_tls_blocking(
+            reqwest::blocking::Client::builder(),
+        )
             .timeout(std::time::Duration::from_secs(15))
             .user_agent("Pulsar-Native/1.0")
             .build()

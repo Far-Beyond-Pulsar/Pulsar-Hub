@@ -127,7 +127,9 @@ impl DependencyService {
             p.status = InstallStatus::Downloading;
         }
 
-        let client = reqwest::blocking::Client::builder()
+        let client = reqwest_client::apply_bundled_tls_blocking(
+            reqwest::blocking::Client::builder(),
+        )
             .timeout(std::time::Duration::from_secs(300))
             .build()
             .map_err(|e| e.to_string())?;
@@ -228,7 +230,9 @@ impl DependencyService {
             p.progress = 0.1;
             p.status = InstallStatus::Downloading;
         }
-        let client = reqwest::blocking::Client::builder()
+        let client = reqwest_client::apply_bundled_tls_blocking(
+            reqwest::blocking::Client::builder(),
+        )
             .timeout(std::time::Duration::from_secs(300))
             .build()
             .map_err(|e| e.to_string())?;

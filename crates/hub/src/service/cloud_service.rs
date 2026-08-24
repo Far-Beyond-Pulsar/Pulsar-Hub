@@ -3,10 +3,6 @@ use std::path::PathBuf;
 use crate::core::types::*;
 use engine_backend::subsystems::networking::MultiuserClient;
 
-fn insecure_tls_enabled() -> bool {
-    std::env::var("PULSAR_INSECURE_TLS").as_deref() == Ok("1")
-}
-
 fn normalize_url(raw: &str) -> String {
     let raw = raw.trim().trim_end_matches('/');
     if raw.starts_with("http://") || raw.starts_with("https://") {
@@ -24,9 +20,10 @@ impl CloudService {
     pub fn login(base_url: &str, email: &str, password: &str) -> Option<(String, String)> {
         let login_url = format!("{}/api/v1/auth/login", base_url);
         let body = serde_json::json!({ "email": email, "password": password });
-        let client = reqwest::blocking::Client::builder()
+        let client = reqwest_client::apply_bundled_tls_blocking(
+            reqwest::blocking::Client::builder(),
+        )
             .timeout(std::time::Duration::from_secs(10))
-            .danger_accept_invalid_certs(insecure_tls_enabled())
             .build()
             .ok()?;
         let resp = client.post(&login_url).json(&body).send().ok()?;
@@ -52,9 +49,10 @@ impl CloudService {
             Some(token.to_string())
         };
 
-        let client = reqwest::blocking::Client::builder()
+        let client = reqwest_client::apply_bundled_tls_blocking(
+            reqwest::blocking::Client::builder(),
+        )
             .timeout(std::time::Duration::from_secs(6))
-            .danger_accept_invalid_certs(insecure_tls_enabled())
             .build()
             .ok()?;
 
@@ -216,9 +214,10 @@ impl CloudService {
         } else {
             Some(token.to_string())
         };
-        let Ok(client) = reqwest::blocking::Client::builder()
+        let Ok(client) = reqwest_client::apply_bundled_tls_blocking(
+            reqwest::blocking::Client::builder(),
+        )
             .timeout(std::time::Duration::from_secs(10))
-            .danger_accept_invalid_certs(insecure_tls_enabled())
             .build()
         else {
             return;
@@ -234,9 +233,10 @@ impl CloudService {
 
     pub fn delete_workspace(base_url: &str, workspace_id: &str, token: &str) {
         let url = format!("{}/api/v1/workspaces/{}", base_url, workspace_id);
-        let Ok(client) = reqwest::blocking::Client::builder()
+        let Ok(client) = reqwest_client::apply_bundled_tls_blocking(
+            reqwest::blocking::Client::builder(),
+        )
             .timeout(std::time::Duration::from_secs(10))
-            .danger_accept_invalid_certs(insecure_tls_enabled())
             .build()
         else {
             return;
@@ -251,9 +251,10 @@ impl CloudService {
     }
 
     fn send_post(url: &str, token: Option<String>) {
-        let Ok(client) = reqwest::blocking::Client::builder()
+        let Ok(client) = reqwest_client::apply_bundled_tls_blocking(
+            reqwest::blocking::Client::builder(),
+        )
             .timeout(std::time::Duration::from_secs(10))
-            .danger_accept_invalid_certs(insecure_tls_enabled())
             .build()
         else {
             return;

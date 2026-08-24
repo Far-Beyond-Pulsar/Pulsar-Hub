@@ -43,7 +43,9 @@ impl AuthService {
     }
 
     pub fn load_avatar(url: &str) -> Option<Arc<RenderImage>> {
-        let client = reqwest::blocking::Client::builder()
+        let client = reqwest_client::apply_bundled_tls_blocking(
+            reqwest::blocking::Client::builder(),
+        )
             .timeout(std::time::Duration::from_secs(10))
             .user_agent("Pulsar-Native/1.0")
             .build()

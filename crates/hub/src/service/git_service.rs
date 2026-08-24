@@ -11,6 +11,47 @@ impl GitService {
         target_path: PathBuf,
         progress: SharedCloneProgress,
     ) -> Result<git2::Repository, git2::Error> {
+        match Self::clone_via_git2(&repo_url, &target_path, &progress) {
+            Ok(repo) => Ok(repo),
+            Err(error) => {
+                // Never fall back when the user explicitly cancelled.
+                if progress.lock().cancelled {
+                    progress.lock().error = Some("Clone cancelled".to_string());
+                    return Err(error);
+                }
+
+                tracing::warn!(
+                    "Native git transport failed for {} ({}); trying HTTPS archive fallback",
+                    repo_url,
+                    error
+                );
+                progress.lock().message =
+                    "Git transport failed — retrying via HTTPS archive...".to_string();
+
+                match crate::service::github_archive::download_repo_snapshot(
+                    &repo_url,
+                    &target_path,
+                    &progress,
+                ) {
+                    Ok(()) => git2::Repository::open(&target_path),
+                    Err(fallback_error) => {
+                        let message = format!(
+                            "Clone failed: {} (HTTPS archive fallback: {})",
+                            error, fallback_error
+                        );
+                        progress.lock().error = Some(message.clone());
+                        Err(git2::Error::from_str(&message))
+                    }
+                }
+            }
+        }
+    }
+
+    fn clone_via_git2(
+        repo_url: &str,
+        target_path: &PathBuf,
+        progress: &SharedCloneProgress,
+    ) -> Result<git2::Repository, git2::Error> {
         let mut callbacks = git2::RemoteCallbacks::new();
         let progress_inner = progress.clone();
         callbacks.transfer_progress(move |stats| {
@@ -43,11 +84,7 @@ impl GitService {
         fetch_opts.remote_callbacks(callbacks);
         let mut builder = git2::build::RepoBuilder::new();
         builder.fetch_options(fetch_opts);
-        let result = builder.clone(&repo_url, &target_path);
-        if let Err(ref e) = result {
-            progress.lock().error = Some(format!("Clone failed: {}", e));
-        }
-        result
+        builder.clone(repo_url, target_path)
     }
 
     pub fn setup_template_remotes(
