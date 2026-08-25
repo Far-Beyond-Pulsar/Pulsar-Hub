@@ -38,6 +38,10 @@ pub struct GitHubAsset {
     pub name: String,
     pub browser_download_url: String,
     pub size: u64,
+    /// Per-asset digest from the GitHub REST API, formatted `sha256:<hex>`;
+    /// absent on older responses.
+    #[serde(default, rename = "digest", skip_serializing_if = "Option::is_none")]
+    pub digest: Option<String>,
 }
 
 /// A release channel a user can opt into.
@@ -498,6 +502,7 @@ pub fn download_and_extract_blocking(
     dest_dir: &Path,
     version: &str,
     progress_cb: impl Fn(f32),
+    expected_digest: Option<&str>,
 ) -> Result<(), String> {
     progress_cb(0.0);
 
@@ -544,6 +549,17 @@ pub fn download_and_extract_blocking(
     if let Some(archive_path) = &archive_path {
         crate::service::download::stream_to_file(&client, url, archive_path, &options)?;
         progress_cb(80.0);
+        if let Some(digest) = expected_digest {
+            if let Err(e) = verify_archive_digest(archive_path, digest) {
+                let _ = std::fs::remove_file(archive_path);
+                return Err(e);
+            }
+        } else {
+            tracing::warn!(
+                "No digest published for {}; skipping archive integrity check",
+                url
+            );
+        }
         if is_zip {
             extract_zip(archive_path, dest_dir).map_err(|e| e.to_string())?;
             flatten_archive_root(dest_dir);
@@ -779,6 +795,40 @@ fn place_engine_binary_at_root(dest: &Path) {
             return;
         }
     }
+}
+
+/// Verify a downloaded archive against an expected digest (`sha256:<hex>` or
+/// bare hex) before it is trusted for extraction.
+fn verify_archive_digest(archive_path: &Path, digest: &str) -> Result<(), String> {
+    use sha2::{Digest, Sha256};
+    use std::io::Read;
+
+    let expected = digest
+        .strip_prefix("sha256:")
+        .unwrap_or(digest)
+        .trim()
+        .to_lowercase();
+    let mut hasher = Sha256::new();
+    let mut file = std::fs::File::open(archive_path).map_err(|e| e.to_string())?;
+    let mut buf = [0u8; 8192];
+    loop {
+        let n = file.read(&mut buf).map_err(|e| e.to_string())?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    let actual = hex::encode(hasher.finalize());
+    if actual != expected {
+        return Err(format!(
+            "Checksum mismatch for {}: expected sha256 {}, got {} — download was likely truncated, please retry",
+            archive_path.display(),
+            expected,
+            actual
+        ));
+    }
+    tracing::info!("Verified sha256 of {}", archive_path.display());
+    Ok(())
 }
 
 fn extract_tar_gz(archive_path: &Path, dest_dir: &Path) -> Result<(), String> {

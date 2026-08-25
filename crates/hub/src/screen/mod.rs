@@ -2520,6 +2520,7 @@ impl EntryScreen {
             let tag = release.tag_name.clone();
             if let Some(asset) = crate::service::installer_service::find_platform_asset(&release) {
                 let url = asset.browser_download_url.clone();
+                let digest = asset.digest.clone();
                 let dest = crate::service::installer_service::default_install_path()
                     .join(tag.trim_start_matches('v'));
 
@@ -2540,6 +2541,7 @@ impl EntryScreen {
                                 &dest,
                                 &dl_tag,
                                 |_| {},
+                                digest.as_deref(),
                             )
                         })
                         .await;

@@ -113,7 +113,24 @@ fn main() {
         })
         .expect("Failed to open hub window");
 
-        if !skip_update_check {
+        if skip_update_check {
+            if let Ok(exe) = std::env::current_exe() {
+                let backup = exe.with_extension("bak");
+                if backup.exists() {
+                    match std::fs::remove_file(&backup) {
+                        Ok(()) => tracing::info!(
+                            "Removed pre-update backup {}",
+                            backup.display()
+                        ),
+                        Err(e) => tracing::debug!(
+                            "Could not remove backup {}: {}",
+                            backup.display(),
+                            e
+                        ),
+                    }
+                }
+            }
+        } else {
             std::thread::spawn(run_update_check);
         }
     });

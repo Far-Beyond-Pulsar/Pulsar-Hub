@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
 
 use anyhow::{Context, Result};
+use ed25519_dalek::{Signer, SigningKey, Verifier, VerifyingKey};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -332,8 +333,54 @@ pub fn generate_manifest(
     })
 }
 
+/// Generate a fresh ed25519 keypair for manifest signing.
+///
+/// Returns `(seed_hex, pubkey_hex)` where the seed is the 32-byte private key
+/// (store it as a secret — it can regenerate the whole keypair) and the
+/// pubkey is the 32-byte verification key to pin in the updater binary.
+pub fn generate_keypair() -> Result<(String, String)> {
+    use rand_core::RngCore;
+
+    let mut seed = [0u8; 32];
+    rand_core::OsRng.fill_bytes(&mut seed);
+    let signing = SigningKey::from_bytes(&seed);
+    Ok((
+        hex::encode(signing.to_bytes()),
+        hex::encode(signing.verifying_key().to_bytes()),
+    ))
+}
+
+/// Sign the file at `path` with an ed25519 private key given as a 32-byte hex
+/// seed, writing a detached signature to `<path>.sig` (hex-encoded).
+///
+/// Returns the path of the written signature file.
+pub fn sign_file(path: &Path, seed_hex: &str) -> Result<String> {
+    let data = std::fs::read(path).with_context(|| format!("reading {}", path.display()))?;
+    let signing = signing_key_from_seed(seed_hex)?;
+    let signature = signing.sign(&data);
+
+    let file_name = path
+        .file_name()
+        .context("invalid manifest path (no file name)")?;
+    let sig_path = path.with_file_name(format!("{}.sig", file_name.to_string_lossy()));
+    std::fs::write(&sig_path, hex::encode(signature.to_bytes()))
+        .with_context(|| format!("writing signature: {}", sig_path.display()))?;
+    Ok(sig_path.display().to_string())
+}
+
+fn signing_key_from_seed(seed_hex: &str) -> Result<SigningKey> {
+    let seed_bytes = hex::decode(seed_hex.trim()).context("signing key must be 64 hex chars")?;
+    let seed: [u8; 32] = seed_bytes
+        .as_slice()
+        .try_into()
+        .map_err(|_| anyhow::anyhow!("signing key seed must be 32 bytes"))?;
+    Ok(SigningKey::from_bytes(&seed))
+}
+
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use super::*;
 
     #[test]
@@ -606,5 +653,40 @@ mod tests {
         assert!(err.to_string().contains("aarch64-apple-darwin"));
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn sign_verify_round_trip() {
+        let dir = std::env::temp_dir().join("pulsar_patch_sign_test");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+
+        let manifest_path = dir.join("update-manifest.json");
+        fs::write(&manifest_path, br#"{"schema_version":1,"latest_version":"0.0.0"}"#).unwrap();
+
+        let (seed_hex, pubkey_hex) = generate_keypair().unwrap();
+        assert_eq!(seed_hex.len(), 64);
+        assert_eq!(pubkey_hex.len(), 64);
+
+        let sig_path = sign_file(&manifest_path, &seed_hex).unwrap();
+        assert!(sig_path.ends_with("update-manifest.json.sig"));
+        let sig_hex = fs::read_to_string(&sig_path).unwrap();
+        assert_eq!(sig_hex.len(), 128);
+
+        let sig_bytes = hex::decode(sig_hex.trim()).unwrap();
+        let signature = ed25519_dalek::Signature::from_slice(&sig_bytes).unwrap();
+        let verifying = VerifyingKey::from_bytes(
+            &hex::decode(pubkey_hex).unwrap().as_slice().try_into().unwrap(),
+        )
+        .unwrap();
+        verifying
+            .verify(b"{\"schema_version\":1,\"latest_version\":\"0.0.0\"}", &signature)
+            .expect("signature must verify");
+
+        let mut tampered = b"{\"schema_version\":1,\"latest_version\":\"0.0.0\"}".to_vec();
+        tampered[20] ^= 1;
+        assert!(verifying.verify(&tampered, &signature).is_err());
+
+        let _ = fs::remove_dir_all(&dir);
     }
 }
