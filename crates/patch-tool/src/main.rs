@@ -35,6 +35,23 @@ enum Commands {
         #[arg(long)]
         file: PathBuf,
     },
+    /// Generate an ed25519 keypair for update-manifest signing.
+    ///
+    /// Prints the 32-byte seed (private key) as hex ONCE — store it in a
+    /// secret store such as the UPDATE_SIGNING_KEY_SEED GitHub Actions secret —
+    /// followed by the 32-byte public key hex to pin in the updater binary.
+    GenKeypair,
+    /// Sign an update manifest with an ed25519 private key (32-byte seed, hex).
+    ///
+    /// Writes a detached signature to <manifest>.sig, hex-encoded (64 raw
+    /// bytes -> 128 hex chars). The updater verifies this against its pinned
+    /// public key before trusting the manifest.
+    SignManifest {
+        #[arg(long)]
+        manifest: PathBuf,
+        #[arg(long)]
+        key: String,
+    },
 }
 
 fn main() -> Result<()> {
@@ -61,6 +78,17 @@ fn main() -> Result<()> {
         Commands::Sha256 { file } => {
             let hash = pulsar_patch_tool::sha256_file(&file)?;
             println!("{}", hash);
+        }
+        Commands::GenKeypair => {
+            let (seed, pubkey) = pulsar_patch_tool::generate_keypair()?;
+            println!("Signing key seed (PRIVATE — store as UPDATE_SIGNING_KEY_SEED secret):");
+            println!("{}", seed);
+            println!("Public key (pin in updater binary):");
+            println!("{}", pubkey);
+        }
+        Commands::SignManifest { manifest, key } => {
+            let sig_path = pulsar_patch_tool::sign_file(&manifest, &key)?;
+            println!("Signature written: {}", sig_path);
         }
     }
 

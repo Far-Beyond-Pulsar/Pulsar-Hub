@@ -101,6 +101,7 @@ tar = "0.4"
 bsdiff = "0.2.1"
 zstd = "0.13"
 clap = { version = "4", features = ["derive"] }
+ed25519-dalek = { version = "2", features = ["rand_core"] }
 
 [workspace.dependencies.windows]
 features = ["Wdk", "Wdk_System", "Wdk_System_SystemServices"]

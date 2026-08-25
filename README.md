@@ -56,6 +56,9 @@ The sidebar **Settings** entry edits globals; the gear icon on a project card op
 ### Also included
 Cloud Projects (self-hosted workspaces), Friends/presence, GitHub sign-in via device flow, 21 themes, first-run onboarding, a download manager, and self-updating of the Hub itself (`--updated` relaunch flow).
 
+### Rollback
+If an update goes wrong, the previous binary is kept next to the updated one as `Pulsar.exe.bak` (removed automatically once the new version launches cleanly). To recover manually, rename `Pulsar.exe.bak` over `Pulsar.exe`.
+
 ---
 
 ## Launching the engine without the Hub

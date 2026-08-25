@@ -55,6 +55,7 @@ flate2.workspace = true
 tar.workspace = true
 zip = "2.2"
 sha2 = "0.10"
+hex = "0.4"
 
 [target.'cfg(windows)'.dependencies]
 runas = "1.2"

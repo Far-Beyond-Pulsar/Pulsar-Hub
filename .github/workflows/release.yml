@@ -457,7 +457,15 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Sign update manifest
+        env:
+          UPDATE_SIGNING_KEY_SEED: ${{ secrets.UPDATE_SIGNING_KEY_SEED }}
+        run: |
+          ./target/release/pulsar-patch-tool sign-manifest \
+            --manifest update-manifest.json \
+            --key "$UPDATE_SIGNING_KEY_SEED"
+
       - name: Upload update manifest
-        run: gh release upload "v${{ needs.check-version.outputs.version }}" update-manifest.json --clobber
+        run: gh release upload "v${{ needs.check-version.outputs.version }}" update-manifest.json update-manifest.json.sig --clobber
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

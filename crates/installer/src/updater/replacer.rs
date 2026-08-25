@@ -25,10 +25,6 @@ impl SelfReplacer {
         self.do_replace(new_binary, &backup_path)
             .context("self-replace failed")?;
 
-        if backup_path.exists() {
-            let _ = std::fs::remove_file(&backup_path);
-        }
-
         Ok(())
     }
 
