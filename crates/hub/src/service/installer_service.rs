@@ -508,14 +508,6 @@ pub fn download_and_extract_blocking(
         .build()
         .map_err(|e| e.to_string())?;
 
-    let resp = client.get(url).send().map_err(|e| e.to_string())?;
-    if !resp.status().is_success() {
-        return Err(format!("Download failed: HTTP {}", resp.status()));
-    }
-
-    let total = resp.content_length().unwrap_or(0);
-    let mut downloaded: u64 = 0;
-
     std::fs::create_dir_all(dest_dir).map_err(|e| e.to_string())?;
 
     let (_, _, ext) = platform_info();
@@ -538,22 +530,19 @@ pub fn download_and_extract_blocking(
         None
     };
 
-    if let Some(archive_path) = &archive_path {
-        let mut file = std::fs::File::create(archive_path).map_err(|e| e.to_string())?;
-        use std::io::Read;
-        let mut reader = resp;
-        let mut buf = [0u8; 8192];
-        loop {
-            let n = reader.read(&mut buf).map_err(|e| e.to_string())?;
-            if n == 0 {
-                break;
-            }
-            std::io::Write::write_all(&mut file, &buf[..n]).map_err(|e| e.to_string())?;
-            downloaded += n as u64;
-            if total > 0 {
-                progress_cb((downloaded as f32 / total as f32) * 80.0);
-            }
+    let report = |downloaded: u64, total: Option<u64>| {
+        if let Some(total) = total.filter(|t| *t > 0) {
+            progress_cb((downloaded as f32 / total as f32) * 80.0);
         }
+    };
+    let options = crate::service::download::StreamOptions {
+        progress: &report,
+        cancelled: &|| false,
+        resume: true,
+    };
+
+    if let Some(archive_path) = &archive_path {
+        crate::service::download::stream_to_file(&client, url, archive_path, &options)?;
         progress_cb(80.0);
         if is_zip {
             extract_zip(archive_path, dest_dir).map_err(|e| e.to_string())?;
@@ -567,21 +556,7 @@ pub fn download_and_extract_blocking(
         write_metadata(dest_dir, version).map_err(|e| e.to_string())?;
     } else {
         let exe_path = dest_dir.join("pulsar.exe");
-        let mut file = std::fs::File::create(&exe_path).map_err(|e| e.to_string())?;
-        use std::io::Read;
-        let mut reader = resp;
-        let mut buf = [0u8; 8192];
-        loop {
-            let n = reader.read(&mut buf).map_err(|e| e.to_string())?;
-            if n == 0 {
-                break;
-            }
-            std::io::Write::write_all(&mut file, &buf[..n]).map_err(|e| e.to_string())?;
-            downloaded += n as u64;
-            if total > 0 {
-                progress_cb((downloaded as f32 / total as f32) * 80.0);
-            }
-        }
+        crate::service::download::stream_to_file(&client, url, &exe_path, &options)?;
         write_metadata(dest_dir, version).map_err(|e| e.to_string())?;
     }
 
