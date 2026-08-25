@@ -11,7 +11,10 @@ zstd = "0.13"
 sha2 = "0.10"
 hex = "0.4"
 anyhow.workspace = true
+chrono.workspace = true
 clap = { version = "4", features = ["derive"] }
+serde.workspace = true
+serde_json.workspace = true
 
 [lints]
 workspace = true

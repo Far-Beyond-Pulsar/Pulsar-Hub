@@ -1,45 +1,34 @@
 //! # Pulsar Installer
 //!
-//! A modern, cross-platform installer framework for the Pulsar game engine.
+//! Cross-platform GPUI installer/launcher for the Pulsar game engine.
 //!
-//! ## Features
+//! ## Entry flow
 //!
-//! - **Cross-Platform**: Works seamlessly on Windows, macOS, and Linux
-//! - **Modular Architecture**: Trait-based design for easy customization
-//! - **Beautiful UI**: Built with GPUI component library
-//! - **Progress Tracking**: Real-time installation progress with detailed feedback
-//! - **Async Operations**: Non-blocking downloads and installation
-//! - **Verification**: Checksum validation for downloaded files
-//! - **Rollback Support**: Automatic cleanup on installation failure
-//! - **OS-Native Installation**: Follows platform conventions for each OS
+//! The binary starts by running the self-update check
+//! ([`updater::check_and_update`]): it fetches `update-manifest.json` from the
+//! latest GitHub release, computes a patch chain from the running version to
+//! the latest, applies it, and self-replaces the binary before relaunching
+//! itself with `--updated`. It then opens the GPUI hub window via
+//! [`pulsar_hub::EntryWindow`].
 //!
-//! ## Architecture
+//! ## Updater module
 //!
-//! The installer is built around several core traits:
+//! - [`updater::manifest`] — `UpdateManifest` schema (`schema_version`,
+//!   `latest_version`, per-platform [`updater::manifest::PlatformUpdateInfo`]
+//!   with full-binary URL/hash/size and [`updater::manifest::PatchInfo`]
+//!   entries)
+//! - [`updater::chain`] — computes the update path between versions using a
+//!   chain of bsdiff patches (zstd-compressed), capped at
+//!   [`updater::chain::MAX_PATCH_CHAIN_LENGTH`] hops before falling back to a
+//!   full download
+//! - [`updater::downloader`] — downloads each step and verifies SHA256 hashes
+//! - [`updater::replacer`] — atomic self-replace of the running executable
 //!
-//! - [`InstallStep`]: Defines individual installation steps
-//! - [`SystemDetector`]: Detects system information and requirements
-//! - [`DownloadManager`]: Handles file downloads with progress tracking
-//! - [`ComponentInstaller`]: Installs individual components
-//! - [`ConfigManager`]: Manages installation configuration
+//! ## Hub split
 //!
-//! ## Platform-Specific Installation
-//!
-//! ### Windows
-//! - Install location: `%LOCALAPPDATA%\Programs\Pulsar`
-//! - Start Menu shortcut creation
-//! - Add/Remove Programs registration via registry
-//! - Proper uninstall metadata
-//!
-//! ### macOS
-//! - Creates valid .app bundle with Info.plist
-//! - Install location: `~/Applications/Pulsar.app` (user) or `/Applications/Pulsar.app` (system)
-//! - Launch Services handles registration automatically
-//!
-//! ### Linux
-//! - Binary: `~/.local/bin/pulsar` (user) or `/usr/bin/pulsar` (system)
-//! - Desktop entry: `~/.local/share/applications/pulsar.desktop`
-//! - Icons: `~/.local/share/icons/hicolor/<size>/apps/`
-//! - Follows freedesktop.org specifications
+//! Installation itself does not live in this crate. The UI and all real
+//! install logic live in the `pulsar-hub` crate (`crates/hub`), whose services
+//! perform the work: `installer_service`, `dependency_service`,
+//! `template_cache_service`, and `plugin_service`.
 
 pub mod updater;

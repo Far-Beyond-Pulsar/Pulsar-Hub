@@ -9,7 +9,7 @@ use anyhow::{Context, Result};
 const GITHUB_OWNER: &str = "Far-Beyond-Pulsar";
 const GITHUB_REPO: &str = "Pulsar-Installer";
 
-pub const MAX_PATCH_CHAIN_LENGTH: usize = 4;
+pub use chain::MAX_PATCH_CHAIN_LENGTH;
 
 pub fn current_version() -> &'static str {
     env!("CARGO_PKG_VERSION")

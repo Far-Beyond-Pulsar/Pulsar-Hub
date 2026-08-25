@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
@@ -35,6 +35,17 @@ enum Commands {
         #[arg(long)]
         file: PathBuf,
     },
+    /// Generate update-manifest.json from a release directory
+    GenManifest {
+        #[arg(long)]
+        release_dir: PathBuf,
+        #[arg(long)]
+        prev_manifest: Option<PathBuf>,
+        #[arg(long)]
+        latest_version: Option<String>,
+        #[arg(long)]
+        output: PathBuf,
+    },
 }
 
 fn main() -> Result<()> {
@@ -61,6 +72,27 @@ fn main() -> Result<()> {
         Commands::Sha256 { file } => {
             let hash = pulsar_patch_tool::sha256_file(&file)?;
             println!("{}", hash);
+        }
+        Commands::GenManifest {
+            release_dir,
+            prev_manifest,
+            latest_version,
+            output,
+        } => {
+            let manifest = pulsar_patch_tool::generate_manifest(
+                &release_dir,
+                prev_manifest.as_deref(),
+                latest_version.as_deref(),
+            )?;
+            let json = serde_json::to_string_pretty(&manifest)?;
+            std::fs::write(&output, json)
+                .with_context(|| format!("writing {}", output.display()))?;
+            println!(
+                "Manifest written: {} ({} platforms, latest v{})",
+                output.display(),
+                manifest.platforms.len(),
+                manifest.latest_version
+            );
         }
     }
 

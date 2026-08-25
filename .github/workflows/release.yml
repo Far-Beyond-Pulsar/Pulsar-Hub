@@ -361,31 +361,16 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Generate patches and manifest
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p ./patches
           VERSION="${{ needs.check-version.outputs.version }}"
           PREV_VERSION="${{ needs.check-version.outputs.previous_version }}"
           PATCH_TOOL="./target/release/pulsar-patch-tool"
-          RELEASE_BASE="https://github.com/${{ github.repository }}/releases/download/v${VERSION}"
-
-          MANIFEST=$(cat << 'MANIFEST_START'
-          {
-            "schema_version": 1,
-            "latest_version": "${VERSION}",
-            "generated_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-            "platforms": {}
-          }
-          MANIFEST_START
-          )
-          # Replace version and date
-          MANIFEST=$(echo "$MANIFEST" | sed "s|\${VERSION}|${VERSION}|g")
-          MANIFEST=$(echo "$MANIFEST" | sed "s|\$(date -u +%Y-%m-%dT%H:%M:%SZ)|$(date -u +%Y-%m-%dT%H:%M:%SZ)|g")
-
-          PLATFORMS="{}"
 
           for TRIPLE in x86_64-pc-windows-msvc i686-pc-windows-msvc aarch64-pc-windows-msvc aarch64-apple-darwin x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu i686-unknown-linux-gnu armv7-unknown-linux-gnueabihf; do
             case "$TRIPLE" in
-              *windows*) ASSET="pulsar-installer-${TRIPLE##*-}-${TRIPLE%%-*}"; EXT=".exe" ;;
               *x86_64-pc-windows*) ASSET="pulsar-installer-windows-x86_64.exe"; EXT=".exe" ;;
               *i686-pc-windows*) ASSET="pulsar-installer-windows-i686.exe"; EXT=".exe" ;;
               *aarch64-pc-windows*) ASSET="pulsar-installer-windows-arm64.exe"; EXT=".exe" ;;
@@ -408,42 +393,31 @@ jobs:
             echo "Generating patch: ${TRIPLE}"
             PATCH_ASSET="pulsar-installer-patch-${PREV_VERSION}-${VERSION}-${ASSET}.zst"
 
-            if "$PATCH_TOOL" generate-patch \
+            if ! "$PATCH_TOOL" generate-patch \
               --old-binary "$PREV_FILE" \
               --new-binary "$CURRENT_FILE" \
               --output "./patches/${PATCH_ASSET}" 2>/dev/null; then
-
-              PATCH_SHA256=$("$PATCH_TOOL" sha256 --file "./patches/${PATCH_ASSET}")
-              PATCH_SIZE=$(stat -c%s "./patches/${PATCH_ASSET}" 2>/dev/null || stat -f%z "./patches/${PATCH_ASSET}")
-
-              FULL_SHA256=""
-              FULL_SIZE=$(stat -c%s "$CURRENT_FILE" 2>/dev/null || stat -f%z "$CURRENT_FILE")
-              if [ -f "${CURRENT_FILE}.sha256" ]; then
-                FULL_SHA256=$(cat "${CURRENT_FILE}.sha256" | awk '{print $1}')
-              else
-                FULL_SHA256=$("$PATCH_TOOL" sha256 --file "$CURRENT_FILE")
-              fi
-
-              PATCH_ENTRY="{\"from_version\": \"${PREV_VERSION}\", \"to_version\": \"${VERSION}\", \"asset_name\": \"${PATCH_ASSET}\", \"url\": \"${RELEASE_BASE}/${PATCH_ASSET}\", \"sha256\": \"${PATCH_SHA256}\", \"size_bytes\": ${PATCH_SIZE}}"
-
-              PLATFORM_ENTRY=$(echo "$PLATFORMS" | jq --arg t "$TRIPLE" --arg an "$ASSET" --arg fu "${RELEASE_BASE}/${ASSET}" --arg fs "$FULL_SHA256" --argjson fsize "$FULL_SIZE" \
-                '.[$t] = {full_asset_name: $an, full_url: $fu, full_sha256: $fs, full_size_bytes: $fsize, patches: []}')
-
-              PLATFORMS=$(echo "$PLATFORMS" | jq --arg t "$TRIPLE" --argjson entry "$PATCH_ENTRY" '.[$t].patches += [$entry]')
-
-              echo "Uploaded patch: ${PATCH_ASSET}"
-            else
               echo "Patch generation failed for ${TRIPLE}, skipping"
             fi
           done
 
-          MANIFEST=$(jq -n \
-            --arg v "$VERSION" \
-            --arg d "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            --argjson p "$PLATFORMS" \
-            '{schema_version: 1, latest_version: $v, generated_at: $d, platforms: $p}')
+          PREV_MANIFEST_ARGS=()
+          if gh release download "v${PREV_VERSION}" --dir ./prev-release --pattern "update-manifest.json" --skip-existing; then
+            PREV_MANIFEST_ARGS=(--prev-manifest ./prev-release/update-manifest.json)
+          else
+            echo "No previous update manifest found, starting fresh"
+          fi
 
-          echo "$MANIFEST" > update-manifest.json
+          mkdir -p ./dist
+          cp ./current-binaries/pulsar-installer-* ./dist/ 2>/dev/null || true
+          cp ./patches/pulsar-installer-patch-*.zst ./dist/ 2>/dev/null || true
+
+          "${PATCH_TOOL}" gen-manifest \
+            --release-dir ./dist \
+            "${PREV_MANIFEST_ARGS[@]}" \
+            --latest-version "$VERSION" \
+            --output update-manifest.json
+
           echo "Generated update-manifest.json:"
           cat update-manifest.json
 
