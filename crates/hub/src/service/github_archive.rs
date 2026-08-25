@@ -8,7 +8,6 @@
 //! prompts) behave exactly like a real clone, minus history.
 
 use std::fs::File;
-use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use crate::core::types::SharedCloneProgress;
@@ -141,49 +140,31 @@ pub fn download_repo_snapshot(
     result
 }
 
-/// Stream the archive to disk, feeding byte progress and honoring cancellation.
+/// Download via the shared streaming utility, mapping byte progress onto the
+/// clone-progress channel and honoring its cancellation flag.
 fn download_archive(
     client: &reqwest::blocking::Client,
     url: &str,
     dest: &Path,
     progress: &SharedCloneProgress,
 ) -> Result<(), String> {
-    let mut response = client
-        .get(url)
-        .send()
-        .map_err(|e| e.to_string())?
-        .error_for_status()
-        .map_err(|e| e.to_string())?;
-
-    let total = response.content_length();
     {
         let mut p = progress.lock();
         p.current = 0;
+        p.total = 0;
+    }
+    let report = |received: u64, total: Option<u64>| {
+        let mut p = progress.lock();
+        p.current = received.min(usize::MAX as u64) as usize;
         p.total = total.unwrap_or(0) as usize;
-    }
-
-    let mut file = File::create(dest).map_err(|e| e.to_string())?;
-    let mut received: u64 = 0;
-    let mut buffer = [0u8; 64 * 1024];
-    let mut reader = response;
-    loop {
-        if progress.lock().cancelled {
-            return Err("Cancelled".to_string());
-        }
-        let read = reader.read(&mut buffer).map_err(|e| e.to_string())?;
-        if read == 0 {
-            break;
-        }
-        use std::io::Write as _;
-        file.write_all(&buffer[..read]).map_err(|e| e.to_string())?;
-        received += read as u64;
-        {
-            let mut p = progress.lock();
-            p.current = received.min(usize::MAX as u64) as usize;
-            p.message = format!("Downloading archive: {:.1} MB", received as f32 / 1_048_576.0);
-        }
-    }
-    Ok(())
+        p.message = format!("Downloading archive: {:.1} MB", received as f32 / 1_048_576.0);
+    };
+    let options = crate::service::download::StreamOptions {
+        progress: &report,
+        cancelled: &|| progress.lock().cancelled,
+        resume: false,
+    };
+    crate::service::download::stream_to_file(client, url, dest, &options)
 }
 
 fn extract_tar_gz(archive_path: &Path, staging: &Path) -> Result<(), String> {

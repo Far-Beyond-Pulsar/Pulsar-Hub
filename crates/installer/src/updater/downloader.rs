@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use sha2::{Digest, Sha256};
+use tokio::io::AsyncWriteExt;
 
 use crate::updater::chain::{UpdateChain, UpdateStep};
 use crate::updater::manifest::PlatformUpdateInfo;
@@ -116,20 +117,35 @@ impl UpdateDownloader {
     async fn download_file(&self, url: &str, dest: &Path) -> Result<()> {
         tracing::info!("Downloading {} -> {}", url, dest.display());
 
-        let dest = dest.to_path_buf();
-        let url = url.to_string();
-
-        let response = self
+        let mut response = self
             .client
-            .get(&url)
+            .get(url)
             .send()
             .await
             .context("HTTP request failed")?
             .error_for_status()
             .context("HTTP error response")?;
 
-        let bytes = response.bytes().await.context("reading response body")?;
-        std::fs::write(&dest, &bytes).context("writing downloaded file")?;
+        let mut staged_name = dest
+            .file_name()
+            .context("invalid destination path")?
+            .to_os_string();
+        staged_name.push(".part");
+        let part = dest.with_file_name(staged_name);
+
+        let mut file = tokio::fs::File::create(&part)
+            .await
+            .with_context(|| format!("creating staging file {}", part.display()))?;
+        while let Some(chunk) = response.chunk().await.context("reading response body")? {
+            file.write_all(&chunk)
+                .await
+                .context("writing downloaded file")?;
+        }
+        file.flush().await.context("flushing downloaded file")?;
+        drop(file);
+        tokio::fs::rename(&part, dest)
+            .await
+            .context("finalizing downloaded file")?;
 
         Ok(())
     }
