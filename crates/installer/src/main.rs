@@ -4,6 +4,53 @@ use ui::Assets;
 use ui::Root;
 use ui::theme::Theme;
 
+fn forward_args<I>(args: I) -> Vec<String>
+where
+    I: IntoIterator<Item = String>,
+{
+    let mut args: Vec<String> = args.into_iter().filter(|a| a != "--updated").collect();
+    args.push("--updated".into());
+    args
+}
+
+fn spawn_relaunch() -> bool {
+    let exe = match std::env::current_exe() {
+        Ok(exe) => exe,
+        Err(e) => {
+            tracing::error!("Failed to resolve current executable for relaunch: {}", e);
+            return false;
+        }
+    };
+
+    match std::process::Command::new(exe)
+        .args(forward_args(std::env::args().skip(1)))
+        .spawn()
+    {
+        Ok(_) => true,
+        Err(e) => {
+            tracing::error!("Failed to relaunch after update: {}", e);
+            false
+        }
+    }
+}
+
+fn run_update_check() {
+    let rt = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
+    let should_relaunch = rt.block_on(async {
+        match pulsar_installer::updater::check_and_update().await {
+            Ok(relaunch) => relaunch,
+            Err(e) => {
+                tracing::warn!("Update check failed: {}", e);
+                false
+            }
+        }
+    });
+
+    if should_relaunch && spawn_relaunch() {
+        std::process::exit(0);
+    }
+}
+
 fn main() {
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -12,30 +59,7 @@ fn main() {
         )
         .init();
 
-    let args: Vec<String> = std::env::args().collect();
-    let skip_update_check = args.iter().any(|a| a == "--updated");
-
-    if !skip_update_check {
-        let rt = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
-        let should_relaunch = rt.block_on(async {
-            match pulsar_installer::updater::check_and_update().await {
-                Ok(relaunch) => relaunch,
-                Err(e) => {
-                    tracing::warn!("Update check failed: {}", e);
-                    false
-                }
-            }
-        });
-
-        if should_relaunch {
-            if let Ok(exe) = std::env::current_exe() {
-                let _ = std::process::Command::new(exe)
-                    .arg("--updated")
-                    .spawn();
-            }
-            std::process::exit(0);
-        }
-    }
+    let skip_update_check = std::env::args().any(|a| a == "--updated");
 
     tracing::info!("Starting Pulsar Hub");
 
@@ -88,5 +112,43 @@ fn main() {
             cx.new(|cx| Root::new(entry_window.into(), window, cx))
         })
         .expect("Failed to open hub window");
+
+        if !skip_update_check {
+            std::thread::spawn(run_update_check);
+        }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::forward_args;
+
+    #[test]
+    fn test_forward_args_filters_existing_updated_flag() {
+        let args = vec![
+            "--data-dir".to_string(),
+            "/tmp/pulsar".to_string(),
+            "--updated".to_string(),
+        ];
+        let expected = vec![
+            "--data-dir".to_string(),
+            "/tmp/pulsar".to_string(),
+            "--updated".to_string(),
+        ];
+        assert_eq!(forward_args(args), expected);
+    }
+
+    #[test]
+    fn test_forward_args_appends_single_updated_flag_when_absent() {
+        let args = vec!["--verbose".to_string()];
+        let expected = vec!["--verbose".to_string(), "--updated".to_string()];
+        assert_eq!(forward_args(args), expected);
+    }
+
+    #[test]
+    fn test_forward_args_empty_argv_yields_single_updated_flag() {
+        let args: Vec<String> = Vec::new();
+        let expected = vec!["--updated".to_string()];
+        assert_eq!(forward_args(args), expected);
+    }
 }

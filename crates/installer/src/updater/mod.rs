@@ -4,12 +4,24 @@ pub mod manifest;
 pub mod platform;
 pub mod replacer;
 
+use std::time::Duration;
+
 use anyhow::{Context, Result};
 
 const GITHUB_OWNER: &str = "Far-Beyond-Pulsar";
 const GITHUB_REPO: &str = "Pulsar-Installer";
 
 pub const MAX_PATCH_CHAIN_LENGTH: usize = 4;
+
+fn update_client() -> reqwest::Client {
+    reqwest_client::apply_bundled_tls(
+        reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(10))
+            .timeout(Duration::from_secs(120)),
+    )
+    .build()
+    .expect("failed to build update HTTP client")
+}
 
 pub fn current_version() -> &'static str {
     env!("CARGO_PKG_VERSION")
@@ -26,8 +38,12 @@ pub async fn check_and_update() -> Result<bool> {
     let version = current_version();
     tracing::info!("Current version: v{}", version);
 
+    let client = update_client();
+
     tracing::info!("Fetching update manifest from {}", manifest_url());
-    let manifest_text = reqwest::get(&manifest_url())
+    let manifest_text = client
+        .get(manifest_url())
+        .send()
         .await
         .context("failed to fetch update manifest")?
         .error_for_status()
@@ -75,7 +91,7 @@ pub async fn check_and_update() -> Result<bool> {
         update_chain.total_download_bytes
     );
 
-    let downloader = downloader::UpdateDownloader::new();
+    let downloader = downloader::UpdateDownloader::new(client);
     let new_binary_path = downloader
         .apply_chain(&update_chain, platform_info)
         .await
