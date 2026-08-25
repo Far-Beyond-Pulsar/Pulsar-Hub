@@ -7,15 +7,16 @@ use crate::updater::chain::{UpdateChain, UpdateStep};
 use crate::updater::manifest::PlatformUpdateInfo;
 
 pub struct UpdateDownloader {
+    client: reqwest::Client,
     temp_dir: PathBuf,
 }
 
 impl UpdateDownloader {
-    pub fn new() -> Self {
+    pub fn new(client: reqwest::Client) -> Self {
         let temp_dir = std::env::temp_dir().join("pulsar-update");
         let _ = std::fs::remove_dir_all(&temp_dir);
         let _ = std::fs::create_dir_all(&temp_dir);
-        Self { temp_dir }
+        Self { client, temp_dir }
     }
 
     pub async fn apply_chain(
@@ -118,7 +119,10 @@ impl UpdateDownloader {
         let dest = dest.to_path_buf();
         let url = url.to_string();
 
-        let response = reqwest::get(&url)
+        let response = self
+            .client
+            .get(&url)
+            .send()
             .await
             .context("HTTP request failed")?
             .error_for_status()
