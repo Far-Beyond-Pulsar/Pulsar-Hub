@@ -13,7 +13,7 @@ edition = "2024"
 
 [workspace.dependencies]
 # GPUI fork (WGPUI) — must match what Pulsar-Native uses
-gpui-ce = { git = "https://github.com/Far-Beyond-Pulsar/WGPUI", rev = "0b555af11e80565429af9405ffd9d17fa832e3fe" }
+gpui-ce = { git = "https://github.com/Far-Beyond-Pulsar/WGPUI", rev = "f9c3abb4aa5317e85cebb4fe3222a52da38b746d" }
 
 # Enable all platform wgpu backends (metal=macOS, vulkan+dx12=Linux/Windows)
 wgpu = { git = "https://github.com/Far-Beyond-Pulsar/wgpu", rev = "fce5b80e8017304449124b12637ec324417e40c8", default-features = false, features = ["metal", "vulkan", "dx12", "wgsl", "webgpu"] }
@@ -29,27 +29,27 @@ reqwest = { git = "https://github.com/zed-industries/reqwest.git", rev = "c15662
 ], package = "zed-reqwest", version = "0.12.15-zed" }
 
 # ---------- Pulsar-Native crates (git ref) ----------
-PN = { git = "https://github.com/Far-Beyond-Pulsar/Pulsar-Native", rev = "e35133a768d4bffef72a6815b9ab318f2d9d9605" }
+PN = { git = "https://github.com/Far-Beyond-Pulsar/Pulsar-Native", rev = "0f4ee7961addc0084ebec427542c26773c7ea0ac" }
 
-ui               = { git = "https://github.com/Far-Beyond-Pulsar/Pulsar-Native", rev = "e35133a768d4bffef72a6815b9ab318f2d9d9605", features = ["inspector", "flamegraph", "tree-sitter-languages"] }
-ui-macros        = { git = "https://github.com/Far-Beyond-Pulsar/Pulsar-Native", rev = "e35133a768d4bffef72a6815b9ab318f2d9d9605" }
-ui_entry         = { git = "https://github.com/Far-Beyond-Pulsar/Pulsar-Native", rev = "e35133a768d4bffef72a6815b9ab318f2d9d9605" }
-pulsar_auth      = { git = "https://github.com/Far-Beyond-Pulsar/Pulsar-Native", rev = "e35133a768d4bffef72a6815b9ab318f2d9d9605" }
-engine_state     = { git = "https://github.com/Far-Beyond-Pulsar/Pulsar-Native", rev = "e35133a768d4bffef72a6815b9ab318f2d9d9605" }
-engine_fs        = { git = "https://github.com/Far-Beyond-Pulsar/Pulsar-Native", rev = "e35133a768d4bffef72a6815b9ab318f2d9d9605", default-features = false }
-window_manager   = { git = "https://github.com/Far-Beyond-Pulsar/Pulsar-Native", rev = "e35133a768d4bffef72a6815b9ab318f2d9d9605" }
-friends_engine   = { git = "https://github.com/Far-Beyond-Pulsar/Pulsar-Native", rev = "e35133a768d4bffef72a6815b9ab318f2d9d9605" }
-ui_common        = { git = "https://github.com/Far-Beyond-Pulsar/Pulsar-Native", rev = "e35133a768d4bffef72a6815b9ab318f2d9d9605" }
-ui_auth          = { git = "https://github.com/Far-Beyond-Pulsar/Pulsar-Native", rev = "e35133a768d4bffef72a6815b9ab318f2d9d9605" }
-ui_git_manager   = { git = "https://github.com/Far-Beyond-Pulsar/Pulsar-Native", rev = "e35133a768d4bffef72a6815b9ab318f2d9d9605" }
-ui_friends       = { git = "https://github.com/Far-Beyond-Pulsar/Pulsar-Native", rev = "e35133a768d4bffef72a6815b9ab318f2d9d9605" }
-ui_settings      = { git = "https://github.com/Far-Beyond-Pulsar/Pulsar-Native", rev = "e35133a768d4bffef72a6815b9ab318f2d9d9605" }
-ui_types_common  = { git = "https://github.com/Far-Beyond-Pulsar/Pulsar-Native", rev = "e35133a768d4bffef72a6815b9ab318f2d9d9605" }
-ui_gen_macros    = { git = "https://github.com/Far-Beyond-Pulsar/Pulsar-Native", rev = "e35133a768d4bffef72a6815b9ab318f2d9d9605" }
-pulsar-config    = { git = "https://github.com/Far-Beyond-Pulsar/Pulsar-Native", rev = "e35133a768d4bffef72a6815b9ab318f2d9d9605" }
-pulsar_settings  = { git = "https://github.com/Far-Beyond-Pulsar/Pulsar-Native", rev = "e35133a768d4bffef72a6815b9ab318f2d9d9605" }
-engine_backend   = { git = "https://github.com/Far-Beyond-Pulsar/Pulsar-Native", rev = "e35133a768d4bffef72a6815b9ab318f2d9d9605", default-features = false, features = ["networking"] }
-pulsar-multiplayer-core = { git = "https://github.com/Far-Beyond-Pulsar/Pulsar-Native", rev = "e35133a768d4bffef72a6815b9ab318f2d9d9605" }
+ui               = { git = "https://github.com/Far-Beyond-Pulsar/Pulsar-Native", rev = "0f4ee7961addc0084ebec427542c26773c7ea0ac", features = ["inspector", "flamegraph", "tree-sitter-languages"] }
+ui-macros        = { git = "https://github.com/Far-Beyond-Pulsar/Pulsar-Native", rev = "0f4ee7961addc0084ebec427542c26773c7ea0ac" }
+ui_entry         = { git = "https://github.com/Far-Beyond-Pulsar/Pulsar-Native", rev = "0f4ee7961addc0084ebec427542c26773c7ea0ac" }
+pulsar_auth      = { git = "https://github.com/Far-Beyond-Pulsar/Pulsar-Native", rev = "0f4ee7961addc0084ebec427542c26773c7ea0ac" }
+engine_state     = { git = "https://github.com/Far-Beyond-Pulsar/Pulsar-Native", rev = "0f4ee7961addc0084ebec427542c26773c7ea0ac" }
+engine_fs        = { git = "https://github.com/Far-Beyond-Pulsar/Pulsar-Native", rev = "0f4ee7961addc0084ebec427542c26773c7ea0ac", default-features = false }
+window_manager   = { git = "https://github.com/Far-Beyond-Pulsar/Pulsar-Native", rev = "0f4ee7961addc0084ebec427542c26773c7ea0ac" }
+friends_engine   = { git = "https://github.com/Far-Beyond-Pulsar/Pulsar-Native", rev = "0f4ee7961addc0084ebec427542c26773c7ea0ac" }
+ui_common        = { git = "https://github.com/Far-Beyond-Pulsar/Pulsar-Native", rev = "0f4ee7961addc0084ebec427542c26773c7ea0ac" }
+ui_auth          = { git = "https://github.com/Far-Beyond-Pulsar/Pulsar-Native", rev = "0f4ee7961addc0084ebec427542c26773c7ea0ac" }
+ui_git_manager   = { git = "https://github.com/Far-Beyond-Pulsar/Pulsar-Native", rev = "0f4ee7961addc0084ebec427542c26773c7ea0ac" }
+ui_friends       = { git = "https://github.com/Far-Beyond-Pulsar/Pulsar-Native", rev = "0f4ee7961addc0084ebec427542c26773c7ea0ac" }
+ui_settings      = { git = "https://github.com/Far-Beyond-Pulsar/Pulsar-Native", rev = "0f4ee7961addc0084ebec427542c26773c7ea0ac" }
+ui_types_common  = { git = "https://github.com/Far-Beyond-Pulsar/Pulsar-Native", rev = "0f4ee7961addc0084ebec427542c26773c7ea0ac" }
+ui_gen_macros    = { git = "https://github.com/Far-Beyond-Pulsar/Pulsar-Native", rev = "0f4ee7961addc0084ebec427542c26773c7ea0ac" }
+pulsar-config    = { git = "https://github.com/Far-Beyond-Pulsar/Pulsar-Native", rev = "0f4ee7961addc0084ebec427542c26773c7ea0ac" }
+pulsar_settings  = { git = "https://github.com/Far-Beyond-Pulsar/Pulsar-Native", rev = "0f4ee7961addc0084ebec427542c26773c7ea0ac" }
+engine_backend   = { git = "https://github.com/Far-Beyond-Pulsar/Pulsar-Native", rev = "0f4ee7961addc0084ebec427542c26773c7ea0ac", default-features = false, features = ["networking"] }
+pulsar-multiplayer-core = { git = "https://github.com/Far-Beyond-Pulsar/Pulsar-Native", rev = "0f4ee7961addc0084ebec427542c26773c7ea0ac" }
 pulsar_reflection       = { git = "https://github.com/Far-Beyond-Pulsar/Pulsar-Reflection", rev = "b0d9b957b00e695d005df4ab18becf82b377b740" }
 pulsar_reflection_derive = { git = "https://github.com/Far-Beyond-Pulsar/Pulsar-Reflection", rev = "b0d9b957b00e695d005df4ab18becf82b377b740" }
 
@@ -155,11 +155,11 @@ files.extend-exclude = ["**/fixtures/*"]
 ###################################
 
 [patch."https://github.com/Far-Beyond-Pulsar/WGPUI"]
-gpui-ce = { git = "https://github.com/Far-Beyond-Pulsar/Pulsar-Native", rev = "e35133a768d4bffef72a6815b9ab318f2d9d9605" }
+gpui-ce = { git = "https://github.com/Far-Beyond-Pulsar/Pulsar-Native", rev = "0f4ee7961addc0084ebec427542c26773c7ea0ac" }
 
 [patch."https://github.com/Far-Beyond-Pulsar/WGPUI-Component"]
-ui = { git = "https://github.com/Far-Beyond-Pulsar/Pulsar-Native", rev = "e35133a768d4bffef72a6815b9ab318f2d9d9605" }
-ui-macros = { git = "https://github.com/Far-Beyond-Pulsar/Pulsar-Native", rev = "e35133a768d4bffef72a6815b9ab318f2d9d9605" }
+ui = { git = "https://github.com/Far-Beyond-Pulsar/Pulsar-Native", rev = "0f4ee7961addc0084ebec427542c26773c7ea0ac" }
+ui-macros = { git = "https://github.com/Far-Beyond-Pulsar/Pulsar-Native", rev = "0f4ee7961addc0084ebec427542c26773c7ea0ac" }
 
 [patch."https://github.com/Far-Beyond-Pulsar/PulsarConfig"]
-pulsar-config = { git = "https://github.com/Far-Beyond-Pulsar/Pulsar-Native", rev = "e35133a768d4bffef72a6815b9ab318f2d9d9605" }
+pulsar-config = { git = "https://github.com/Far-Beyond-Pulsar/Pulsar-Native", rev = "0f4ee7961addc0084ebec427542c26773c7ea0ac" }
