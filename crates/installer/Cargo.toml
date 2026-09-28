@@ -1,10 +1,26 @@
 [package]
 name = "pulsar-installer"
-version = "0.1.8"
+version = "0.1.9"
 edition.workspace = true
 description = "Modern, cross-platform installer for the Pulsar game engine"
 license = "Apache-2.0"
 publish = false
+
+[package.metadata.packager]
+product-name = "Pulsar Hub"
+identifier = "com.far-beyond-pulsar.pulsar-hub"
+publisher = "Far Beyond Pulsar"
+description = "Modern, cross-platform hub for the Pulsar game engine"
+homepage = "https://github.com/Far-Beyond-Pulsar/Pulsar-Hub"
+authors = ["Far Beyond Pulsar"]
+license-file = "../../LICENSE-APACHE"
+icons = ["../../assets/images/logo_sqrkl.png"]
+
+[package.metadata.packager.linux]
+generate-desktop-entry = true
+
+[package.metadata.packager.deb]
+package-name = "pulsar-hub"
 
 [dependencies]
 anyhow.workspace = true

@@ -152,6 +152,9 @@ impl LaunchFlags {
     pub fn save(&self, dir: &Path) -> Result<(), String> {
         let body =
             toml::to_string(&self.to_toml_document()).map_err(|error| error.to_string())?;
+        // Source checkouts keep flags beside their not-yet-built binary in
+        // `<checkout>/target/release`, which may not exist until the first build.
+        std::fs::create_dir_all(dir).map_err(|error| error.to_string())?;
         std::fs::write(Self::file_path(dir), format!("{}{}", HEADER_COMMENT, body))
             .map_err(|error| error.to_string())
     }

@@ -6388,7 +6388,7 @@ dependencies = [
 
 [[package]]
 name = "pulsar-installer"
-version = "0.1.7"
+version = "0.1.9"
 dependencies = [
  "anyhow",
  "bsdiff",

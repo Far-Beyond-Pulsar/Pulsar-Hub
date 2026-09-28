@@ -1266,6 +1266,17 @@ fn src_binary_candidates(src: &Path) -> Vec<PathBuf> {
     names.iter().map(|n| release.join(n)).collect()
 }
 
+/// Directory whose `launch-flags.toml` governs engines launched from a source
+/// checkout: the cargo output directory the compiled engine lands in, since
+/// flags are read from beside the binary at launch.
+pub fn src_flags_dir(src: &Path) -> PathBuf {
+    src_binary_candidates(src)
+        .first()
+        .and_then(|candidate| candidate.parent())
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| src.to_path_buf())
+}
+
 fn launch_engine_inner(install_dir: &Path, project: Option<&Path>) -> Result<(), String> {
     // On macOS prefer launching the `.app` bundle when there is no project to
     // pass (bundle launches via `open` can't take CLI args).

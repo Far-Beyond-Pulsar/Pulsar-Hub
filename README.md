@@ -154,6 +154,19 @@ The Hub depends on Pulsar-Native crates (`ui`, `engine_state`, `ui_git_manager`,
 
 To develop against local checkouts of the engine instead of the pins, redirect the dependencies with `[patch]` sections pointing at your `Pulsar-Native` working tree.
 
+## Packaging releases
+
+Release packaging is driven by Cargo Packager and runs from `.github/workflows/release.yml`. Each platform/architecture is an independent job, so an unavailable runner or unsupported package format does not prevent the other assets from being published.
+
+Install Cargo Packager locally with `cargo install cargo-packager --locked --version 0.11.8`, then package the current host with:
+
+```sh
+cargo build --release -p pulsar-installer
+cargo packager --release --packages pulsar-installer --formats default --out-dir dist
+```
+
+The workflow also uploads the raw updater binaries expected by the in-app updater, plus `.deb`/AppImage, NSIS, and DMG installers where supported. Set the `UPDATE_SIGNING_KEY_SEED` repository secret to sign update manifests.
+
 ## Repository layout
 
 ```
