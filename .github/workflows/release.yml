@@ -158,8 +158,14 @@ jobs:
           raw_name="${PACKAGE_NAME}${{ matrix.suffix }}${{ matrix.extension }}"
           test -f "$binary"
           cp "$binary" "dist/$raw_name"
-          while IFS= read -r -d '' file; do sha256sum "$file" > "$file.sha256"; done < <(find dist -maxdepth 1 -type f -print0)
-          find dist -maxdepth 1 -type f -printf '%f\n' | sort
+          while IFS= read -r -d '' file; do
+            if command -v sha256sum >/dev/null 2>&1; then
+              sha256sum "$file" > "$file.sha256"
+            else
+              shasum -a 256 "$file" > "$file.sha256"
+            fi
+          done < <(find dist -maxdepth 1 -type f -print0)
+          find dist -maxdepth 1 -type f -print | sort | while IFS= read -r file; do basename "$file"; done
       - name: Upload platform assets
         if: always()
         env:
