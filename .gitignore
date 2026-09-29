@@ -2,3 +2,4 @@
 /target
 .vscode/fastsearch/index-terms.json
 .vscode/fastsearch/index-meta.json
+/crates/installer/target
