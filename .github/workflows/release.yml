@@ -133,7 +133,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y dpkg-dev fuse3 libasound2-dev libglib2.0-dev libgtk-3-dev libjavascriptcoregtk-4.1-dev libsoup-3.0-dev libssl-dev libxkbcommon-x11-dev pkg-config
+          sudo apt-get install -y dpkg-dev fuse3 libasound2-dev libfontconfig1-dev libglib2.0-dev libgtk-3-dev libjavascriptcoregtk-4.1-dev libsoup-3.0-dev libssl-dev libxkbcommon-x11-dev pkg-config
       - name: Install macOS dependencies
         if: runner.os == 'macOS'
         run: brew install protobuf
