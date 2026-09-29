@@ -316,8 +316,12 @@ pub enum PluginInstallPhase {
 // ── Onboarding ────────────────────────────────────────────────────────────
 
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
-pub enum OnboardingTab {
+pub enum OnboardingStep {
     #[default]
+    Welcome,
+    Engine,
+    Dependencies,
+    Account,
     Theme,
     Plugins,
 }

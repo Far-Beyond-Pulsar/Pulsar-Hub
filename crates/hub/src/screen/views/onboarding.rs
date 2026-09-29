@@ -1,3 +1,7 @@
+use crate::core::types::*;
+use crate::screen::EntryScreen;
+use crate::service::auth_service::AuthService;
+use crate::service::dependency_service::DependencyService;
 use gpui::prelude::*;
 use gpui::*;
 use ui::{
@@ -6,29 +10,24 @@ use ui::{
     scroll::ScrollbarAxis,
     v_flex, ActiveTheme, Disableable, Icon, IconName, Sizable, StyledExt,
 };
-
-use crate::core::types::*;
-use crate::screen::EntryScreen;
-use crate::service::auth_service::AuthService;
-use crate::service::dependency_service::DependencyService;
-
+mod flow;
+mod steps;
+use flow::ONBOARDING_STEPS;
 pub fn render_onboarding(
     screen: &mut EntryScreen,
     _window: &mut Window,
     cx: &mut Context<EntryScreen>,
 ) -> impl IntoElement {
-    let (rust_installed, build_tools_installed) = screen
-        .state
-        .dependency_status
-        .as_ref()
-        .map(|s| (s.rust_installed, s.build_tools_installed))
-        .unwrap_or((false, false));
-    let all_deps_ok = rust_installed && build_tools_installed;
     let theme = cx.theme().clone();
-
-    let left_column = render_left_column(screen, cx);
-    let right_column = render_right_column(rust_installed, build_tools_installed, screen, cx);
-
+    let step = screen.state.ui.onboarding_step;
+    let content = match step {
+        OnboardingStep::Welcome => steps::welcome::render(cx),
+        OnboardingStep::Engine => steps::engine::render(screen, cx),
+        OnboardingStep::Dependencies => steps::dependencies::render(screen, cx),
+        OnboardingStep::Account => steps::account::render(screen, cx),
+        OnboardingStep::Theme => steps::theme::render(screen, cx),
+        OnboardingStep::Plugins => steps::plugins::render(screen, cx),
+    };
     div()
         .absolute()
         .size_full()
@@ -44,8 +43,7 @@ pub fn render_onboarding(
                     .icon(IconName::X)
                     .tooltip("Close")
                     .on_click(cx.listener(|this, _, _, cx| {
-                        this.state.ui.show_onboarding = false;
-                        cx.notify();
+                        this.finish_onboarding(cx);
                     })),
             ),
         )
@@ -58,8 +56,15 @@ pub fn render_onboarding(
                 .px_12()
                 .pb_6()
                 .gap_6()
-                .child(left_column)
-                .child(right_column),
+                .child(
+                    v_flex()
+                        .w_full()
+                        .max_w(px(980.))
+                        .h_full()
+                        .gap_6()
+                        .child(render_stepper(step, cx))
+                        .child(div().flex_1().min_h_0().child(content)),
+                ),
         )
         .child(
             h_flex()
@@ -71,133 +76,94 @@ pub fn render_onboarding(
                 .gap_3()
                 .justify_between()
                 .child(
-                    Button::new("skip-onboarding")
-                        .label("Skip All")
+                    Button::new("onboarding-back")
+                        .label("Back")
                         .ghost()
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.state.ui.show_onboarding = false;
-                            cx.notify();
-                        })),
+                        .disabled(step.previous().is_none())
+                        .on_click(cx.listener(|this, _, _, cx| this.previous_onboarding_step(cx))),
                 )
                 .child(
-                    Button::new("finish-onboarding")
-                        .label("Get Started")
-                        .primary()
-                        .disabled(!all_deps_ok)
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.state.ui.show_onboarding = false;
-                            cx.notify();
-                        })),
+                    h_flex()
+                        .gap_2()
+                        .child(
+                            Button::new("skip-onboarding-step")
+                                .label("Skip this step")
+                                .ghost()
+                                .on_click(
+                                    cx.listener(|this, _, _, cx| this.skip_onboarding_step(cx)),
+                                ),
+                        )
+                        .child(
+                            Button::new("onboarding-next")
+                                .label(if step.next().is_none() {
+                                    "Finish"
+                                } else {
+                                    "Continue"
+                                })
+                                .primary()
+                                .on_click(
+                                    cx.listener(|this, _, _, cx| this.next_onboarding_step(cx)),
+                                ),
+                        ),
                 ),
         )
 }
-
-fn render_left_column(screen: &mut EntryScreen, cx: &mut Context<EntryScreen>) -> impl IntoElement {
-    let tab = screen.state.ui.onboarding_tab;
-    let theme = cx.theme();
-
-    v_flex()
-        .flex_1()
-        .min_w_0()
-        .h_full()
-        .bg(theme.background)
-        .border_1()
-        .border_color(theme.border)
-        .rounded_lg()
-        .overflow_hidden()
-        .child(render_tab_bar(tab, cx))
-        .child(match tab {
-            OnboardingTab::Theme => render_theme_content(screen, cx).into_any_element(),
-            OnboardingTab::Plugins => render_plugin_content(screen, cx).into_any_element(),
-        })
-}
-
-fn render_tab_bar(active: OnboardingTab, cx: &mut Context<EntryScreen>) -> impl IntoElement {
+fn render_stepper(active: OnboardingStep, cx: &mut Context<EntryScreen>) -> impl IntoElement {
     let theme = cx.theme();
     h_flex()
         .w_full()
-        .border_b_1()
-        .border_color(theme.border)
-        .bg(theme.background)
-        .child(tab_button(
-            "tab-theme",
-            IconName::Palette,
-            "Themes",
-            active == OnboardingTab::Theme,
-            OnboardingTab::Theme,
-            cx,
-        ))
-        .child(tab_button(
-            "tab-plugins",
-            IconName::Package,
-            "Plugins",
-            active == OnboardingTab::Plugins,
-            OnboardingTab::Plugins,
-            cx,
-        ))
-}
-
-fn tab_button(
-    id: &'static str,
-    icon: IconName,
-    label: &'static str,
-    is_active: bool,
-    tab: OnboardingTab,
-    cx: &mut Context<EntryScreen>,
-) -> impl IntoElement {
-    let theme = cx.theme();
-    h_flex()
-        .id(id)
-        .px_5()
-        .py_3()
         .gap_2()
-        .items_center()
-        .cursor_pointer()
-        .border_b_2()
-        .border_color(if is_active {
-            theme.accent
-        } else {
-            gpui::transparent_white()
-        })
-        .bg(gpui::transparent_white())
-        .hover(|s| s.bg(theme.accent.opacity(0.06)))
-        .on_mouse_down(
-            MouseButton::Left,
-            cx.listener(move |screen, _, _, cx| {
-                let was_on_plugin_tab = screen.state.ui.onboarding_tab == OnboardingTab::Plugins;
-                screen.state.ui.onboarding_tab = tab;
-                if tab == OnboardingTab::Plugins
-                    && !was_on_plugin_tab
-                    && screen.state.registry_plugins.is_empty()
-                    && !screen.state.registry_refresh_in_progress
-                {
-                    screen.refresh_plugin_registry(cx);
-                }
-                cx.notify();
-            }),
-        )
-        .child(Icon::new(icon).size_4().text_color(if is_active {
-            theme.foreground
-        } else {
-            theme.muted_foreground
-        }))
-        .child(
-            div()
-                .text_sm()
-                .font_weight(if is_active {
-                    FontWeight::SEMIBOLD
-                } else {
-                    FontWeight::NORMAL
-                })
-                .text_color(if is_active {
-                    theme.foreground
-                } else {
-                    theme.muted_foreground
-                })
-                .child(label),
+        .children(
+            ONBOARDING_STEPS
+                .iter()
+                .enumerate()
+                .map(|(index, definition)| {
+                    let step = definition.step;
+                    let selected = step == active;
+                    h_flex()
+                        .id(SharedString::from(format!("onboarding-step-{index}")))
+                        .flex_1()
+                        .items_center()
+                        .gap_2()
+                        .px_3()
+                        .py_3()
+                        .rounded_md()
+                        .cursor_pointer()
+                        .bg(if selected {
+                            theme.accent.opacity(0.12)
+                        } else {
+                            theme.secondary.opacity(0.2)
+                        })
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(move |this, _, _, cx| {
+                                this.navigate_to_onboarding_step(step, cx);
+                            }),
+                        )
+                        .child(
+                            div()
+                                .text_sm()
+                                .font_weight(FontWeight::SEMIBOLD)
+                                .text_color(if selected {
+                                    theme.accent
+                                } else {
+                                    theme.muted_foreground
+                                })
+                                .child(format!("{}", index + 1)),
+                        )
+                        .child(
+                            div()
+                                .text_sm()
+                                .text_color(if selected {
+                                    theme.foreground
+                                } else {
+                                    theme.muted_foreground
+                                })
+                                .child(definition.title),
+                        )
+                }),
         )
 }
-
 fn render_theme_content(
     screen: &mut EntryScreen,
     cx: &mut Context<EntryScreen>,
@@ -209,7 +175,6 @@ fn render_theme_content(
         .into_iter()
         .cloned()
         .collect();
-
     v_flex().flex_1().min_h_0().child(
         v_flex()
             .id("theme-scroll")
@@ -227,7 +192,6 @@ fn render_theme_content(
             ),
     )
 }
-
 fn render_theme_card(
     config: std::rc::Rc<ui::ThemeConfig>,
     current_name: &str,
@@ -239,7 +203,6 @@ fn render_theme_card(
     let is_active = name == current_name;
     let name_for_click = name.clone();
     let is_dark = config.mode.is_dark();
-
     let swatch_bg = config
         .colors
         .background
@@ -276,7 +239,6 @@ fn render_theme_card(
                 gpui::hsla(0.6, 0.7, 0.4, 1.)
             }
         });
-
     v_flex()
         .id(SharedString::from(format!("theme-card-{}", name)))
         .w(px(160.))
@@ -348,7 +310,6 @@ fn render_theme_card(
                 ),
         )
 }
-
 fn render_plugin_content(
     screen: &mut EntryScreen,
     cx: &mut Context<EntryScreen>,
@@ -359,7 +320,6 @@ fn render_plugin_content(
     let is_refreshing = screen.state.registry_refresh_in_progress;
     let phase = screen.state.plugin_install_phase.clone();
     let has_phase = phase.is_some();
-
     let available: Vec<RegistryPlugin> = screen
         .state
         .registry_plugins
@@ -373,14 +333,12 @@ fn render_plugin_content(
         })
         .cloned()
         .collect();
-
     let installed_urls: std::collections::HashSet<String> = screen
         .state
         .installed_plugins
         .iter()
         .map(|p| p.repo_url.clone())
         .collect();
-
     let custom_installed: Vec<InstalledPlugin> = screen
         .state
         .installed_plugins
@@ -394,7 +352,6 @@ fn render_plugin_content(
         })
         .cloned()
         .collect();
-
     let registries_empty = screen.state.registry_plugins.is_empty();
     let available_empty = available.is_empty();
     let phase_element = phase.map(|p| render_plugin_phase(p, cx));
@@ -410,7 +367,6 @@ fn render_plugin_content(
         .enumerate()
         .map(|(idx, plugin)| render_custom_plugin_row(idx, plugin, cx))
         .collect();
-
     v_flex()
         .flex_1()
         .min_h_0()
@@ -520,7 +476,6 @@ fn render_plugin_content(
                 }),
         )
 }
-
 fn render_registry_plugin_card(
     plugin: RegistryPlugin,
     is_installed: bool,
@@ -533,7 +488,6 @@ fn render_registry_plugin_card(
     let desc = plugin.description.clone();
     let author = plugin.author.clone();
     let tags = plugin.tags.clone();
-
     v_flex()
         .id(SharedString::from(format!("rp-{}", repo_url)))
         .w_full()
@@ -664,7 +618,6 @@ fn render_registry_plugin_card(
             )
         })
 }
-
 fn render_plugin_phase(
     phase: PluginInstallPhase,
     cx: &mut Context<EntryScreen>,
@@ -712,7 +665,6 @@ fn render_plugin_phase(
             false,
         ),
     };
-
     v_flex()
         .mx_4()
         .mb_3()
@@ -780,7 +732,6 @@ fn render_plugin_phase(
             )
         })
 }
-
 fn render_custom_plugin_row(
     idx: usize,
     plugin: InstalledPlugin,
@@ -798,7 +749,6 @@ fn render_custom_plugin_row(
     let name = plugin.name.clone();
     let version = plugin.version.clone();
     let repo = plugin.repo_url.clone();
-
     h_flex()
         .id(SharedString::from(format!("plugin-row-{idx}")))
         .w_full()
@@ -865,7 +815,6 @@ fn render_custom_plugin_row(
                 })),
         )
 }
-
 fn render_right_column(
     rust_installed: bool,
     build_tools_installed: bool,
@@ -885,7 +834,6 @@ fn render_right_column(
         )))
         .child(div().flex_shrink_0().child(render_account_card(screen, cx)))
 }
-
 fn render_deps_card(
     rust_installed: bool,
     build_tools_installed: bool,
@@ -904,7 +852,6 @@ fn render_deps_card(
             )
         })
         .unwrap_or(false);
-
     v_flex()
         .w_full()
         .flex_1()
@@ -958,7 +905,6 @@ fn render_deps_card(
                 ),
         )
 }
-
 fn render_dep_item(
     name: &str,
     installed: bool,
@@ -1002,7 +948,6 @@ fn render_dep_item(
                 .child(status),
         )
 }
-
 fn render_account_card(
     screen: &mut EntryScreen,
     cx: &mut Context<EntryScreen>,
@@ -1013,7 +958,6 @@ fn render_account_card(
     let message = screen.state.auth.message.clone();
     let loading = screen.state.auth.loading;
     let avatar_img = screen.state.auth.onboarding_avatar.clone();
-
     v_flex()
         .w_full()
         .bg(theme.background)
@@ -1162,7 +1106,6 @@ fn render_account_card(
                 ),
         )
 }
-
 fn render_card_header(
     icon: IconName,
     title: &str,
@@ -1195,7 +1138,6 @@ fn render_card_header(
                 ),
         )
 }
-
 fn render_install_progress(
     progress: InstallProgress,
     cx: &mut Context<EntryScreen>,
@@ -1220,7 +1162,6 @@ fn render_install_progress(
         ),
         InstallStatus::Error(e) => (IconName::WarningTriangle, gpui::red(), e.clone()),
     };
-
     v_flex()
         .gap_2()
         .p_4()
@@ -1276,33 +1217,28 @@ fn render_install_progress(
                 })),
         )
 }
-
 fn run_setup_script(screen: &mut EntryScreen, cx: &mut Context<EntryScreen>) {
     screen.state.install_progress = Some(InstallProgress {
         logs: vec!["Starting installation...".to_string()],
         progress: 0.0,
         status: InstallStatus::Downloading,
     });
-
     let progress = std::sync::Arc::new(std::sync::Mutex::new(
         screen.state.install_progress.clone().unwrap(),
     ));
     let progress_clone = std::sync::Arc::clone(&progress);
-
     cx.spawn(async move |this, cx| {
         let p = progress_clone;
         let _ = cx
             .background_executor()
             .spawn(async move { DependencyService::install_rust(p) })
             .await;
-
         loop {
             cx.background_executor()
                 .spawn(async move {
                     std::thread::sleep(std::time::Duration::from_millis(100));
                 })
                 .await;
-
             let should_break = cx
                 .update(|cx| {
                     this.update(cx, |screen, cx| {
@@ -1316,7 +1252,6 @@ fn run_setup_script(screen: &mut EntryScreen, cx: &mut Context<EntryScreen>) {
                     })
                 })
                 .unwrap_or(false);
-
             if should_break {
                 break;
             }

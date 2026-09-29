@@ -60,6 +60,11 @@ fn main() {
         .init();
 
     let skip_update_check = std::env::args().any(|a| a == "--updated");
+    let force_oobe = std::env::args().any(|a| a == "--force-oobe");
+    if force_oobe {
+        pulsar_hub::FORCE_OOBE.store(true, std::sync::atomic::Ordering::Relaxed);
+        tracing::info!("Forcing first-run onboarding (--force-oobe)");
+    }
 
     tracing::info!("Starting Pulsar Hub");
 

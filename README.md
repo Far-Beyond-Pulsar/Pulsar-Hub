@@ -150,7 +150,7 @@ cd Pulsar-Hub
 cargo build --release -p pulsar-installer
 ```
 
-The Hub depends on Pulsar-Native crates (`ui`, `engine_state`, `ui_git_manager`, …) pinned via git revisions in the root [`Cargo.toml`](Cargo.toml), so the first build fetches those. Run it with `cargo run -p pulsar-installer`.
+The Hub depends on Pulsar-Native crates (`ui`, `engine_state`, `ui_git_manager`, …) pinned via git revisions in the root [`Cargo.toml`](Cargo.toml), so the first build fetches those. Run it with `cargo run -p pulsar-installer`. Pass `-- --force-oobe` to reopen the first-run onboarding flow even when its completion marker is already present.
 
 To develop against local checkouts of the engine instead of the pins, redirect the dependencies with `[patch]` sections pointing at your `Pulsar-Native` working tree.
 

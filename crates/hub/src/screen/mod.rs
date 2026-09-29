@@ -1868,9 +1868,7 @@ impl EntryScreen {
     }
 
     pub(crate) fn show_onboarding_flow(&mut self, cx: &mut Context<Self>) {
-        self.state.ui.show_onboarding = true;
-        self.state.ui.onboarding_tab = OnboardingTab::Theme;
-        cx.notify();
+        self.show_onboarding_step(OnboardingStep::Welcome, cx);
     }
 
     pub(crate) fn dismiss_onboarding(&mut self, cx: &mut Context<Self>) {
@@ -1878,9 +1876,52 @@ impl EntryScreen {
         cx.notify();
     }
 
-    pub(crate) fn switch_onboarding_tab(&mut self, tab: OnboardingTab, cx: &mut Context<Self>) {
-        self.state.ui.onboarding_tab = tab;
+    pub(crate) fn show_onboarding_step(&mut self, step: OnboardingStep, cx: &mut Context<Self>) {
+        self.state.ui.show_onboarding = true;
+        self.navigate_to_onboarding_step(step, cx);
+    }
+
+    pub(crate) fn navigate_to_onboarding_step(
+        &mut self,
+        step: OnboardingStep,
+        cx: &mut Context<Self>,
+    ) {
+        self.state.ui.onboarding_step = step;
+        if step == OnboardingStep::Plugins
+            && self.state.registry_plugins.is_empty()
+            && !self.state.registry_refresh_in_progress
+        {
+            self.refresh_plugin_registry(cx);
+        }
+        if step == OnboardingStep::Engine
+            && self.state.versions.available_releases.is_empty()
+            && !self.state.versions.fetching
+        {
+            self.refresh_versions(cx);
+        }
         cx.notify();
+    }
+
+    pub(crate) fn previous_onboarding_step(&mut self, cx: &mut Context<Self>) {
+        if let Some(step) = self.state.ui.onboarding_step.previous() {
+            self.navigate_to_onboarding_step(step, cx);
+        }
+    }
+
+    pub(crate) fn next_onboarding_step(&mut self, cx: &mut Context<Self>) {
+        if let Some(step) = self.state.ui.onboarding_step.next() {
+            self.navigate_to_onboarding_step(step, cx);
+        } else {
+            self.dismiss_onboarding(cx);
+        }
+    }
+
+    pub(crate) fn skip_onboarding_step(&mut self, cx: &mut Context<Self>) {
+        self.next_onboarding_step(cx);
+    }
+
+    pub(crate) fn finish_onboarding(&mut self, cx: &mut Context<Self>) {
+        self.dismiss_onboarding(cx);
     }
 
     pub(crate) fn inject_notification(&mut self, invite: PendingInvite, cx: &mut Context<Self>) {

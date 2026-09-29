@@ -2,8 +2,10 @@ use gpui::prelude::*;
 use gpui::*;
 use ui::{
     button::{Button, ButtonVariants as _},
-    h_flex, scroll::ScrollbarAxis, spinner::Spinner, v_flex, ActiveTheme as _, Icon, IconName,
-    StyledExt as _,
+    h_flex,
+    scroll::ScrollbarAxis,
+    spinner::Spinner,
+    v_flex, ActiveTheme as _, Icon, IconName, StyledExt as _,
 };
 
 use crate::core::types::format_bytes;
@@ -12,11 +14,11 @@ use crate::EntryScreen;
 
 pub fn render_versions(
     screen: &mut EntryScreen,
-    window: &mut Window,
+    _window: &mut Window,
     cx: &mut Context<EntryScreen>,
 ) -> impl IntoElement {
     if screen.state.ui.show_install_modal {
-        return render_install_modal(screen, window, cx).into_any_element();
+        return render_install_panel(screen, cx, false).into_any_element();
     }
 
     render_installed_grid(screen, cx).into_any_element()
@@ -297,10 +299,10 @@ fn render_installed_grid(
         )
 }
 
-fn render_install_modal(
+pub(crate) fn render_install_panel(
     screen: &mut EntryScreen,
-    window: &mut Window,
     cx: &mut Context<EntryScreen>,
+    embedded: bool,
 ) -> impl IntoElement {
     let theme = cx.theme();
 
@@ -317,22 +319,24 @@ fn render_install_modal(
                     h_flex()
                         .gap_3()
                         .items_center()
-                        .child(
-                            Button::new("btn-back")
-                                .icon(IconName::ArrowLeft)
-                                .compact()
-                                .ghost()
-                                .on_click(cx.listener(|this, _, _, cx| {
-                                    this.state.ui.show_install_modal = false;
-                                    cx.notify();
-                                })),
-                        )
+                        .when(!embedded, |this| {
+                            this.child(
+                                Button::new("btn-back")
+                                    .icon(IconName::ArrowLeft)
+                                    .compact()
+                                    .ghost()
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.state.ui.show_install_modal = false;
+                                        cx.notify();
+                                    })),
+                            )
+                        })
                         .child(
                             div()
                                 .text_xl()
                                 .font_weight(gpui::FontWeight::BOLD)
                                 .text_color(theme.foreground)
-                                .child("Install Engine"),
+                                .child(if embedded { "Choose an engine version" } else { "Install Engine" }),
                         ),
                 )
                 .child(
@@ -347,32 +351,36 @@ fn render_install_modal(
                                 .map(|menu| {
                                     ui::popover::Popover::<
                                         crate::screen::views::channel_menu::ChannelMenuView,
-                                    >::new("install-channels-popover")
-                                        .anchor(Corner::TopRight)
-                                        .trigger(
-                                            Button::new("btn-channels")
-                                                .label("Channels")
-                                                .icon(IconName::Settings)
-                                                .compact()
-                                                .ghost()
-                                                .tooltip("Select release channels"),
-                                        )
-                                        .content(move |_, _| menu.clone())
-                                        .into_any_element()
+                                    >::new(
+                                        "install-channels-popover"
+                                    )
+                                    .anchor(Corner::TopRight)
+                                    .trigger(
+                                        Button::new("btn-channels")
+                                            .label("Channels")
+                                            .icon(IconName::Settings)
+                                            .compact()
+                                            .ghost()
+                                            .tooltip("Select release channels"),
+                                    )
+                                    .content(move |_, _| menu.clone())
+                                    .into_any_element()
                                 })
                                 .unwrap_or_else(|| div().into_any_element()),
                         )
-                        .child(
-                            Button::new("btn-debug-install-all")
-                                .label("Debug: install all")
-                                .icon(IconName::Package)
-                                .compact()
-                                .ghost()
-                                .tooltip("Install every available engine version (debug)")
-                                .on_click(cx.listener(|this, _, _, cx| {
-                                    this.install_all_versions(cx);
-                                })),
-                        )
+                        .when(!embedded, |this| {
+                            this.child(
+                                Button::new("btn-debug-install-all")
+                                    .label("Debug: install all")
+                                    .icon(IconName::Package)
+                                    .compact()
+                                    .ghost()
+                                    .tooltip("Install every available engine version (debug)")
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.install_all_versions(cx);
+                                    })),
+                            )
+                        })
                         .child(
                             Button::new("btn-refresh-releases")
                                 .label("Refresh")
