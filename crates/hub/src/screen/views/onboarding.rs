@@ -59,7 +59,6 @@ pub fn render_onboarding(
                 .child(
                     v_flex()
                         .w_full()
-                        .max_w(px(980.))
                         .h_full()
                         .gap_6()
                         .child(render_stepper(step, cx))
