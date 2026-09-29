@@ -308,7 +308,7 @@ pub(crate) fn render_install_panel(
 
     v_flex()
         .size_full()
-        .p_6()
+        .when(!embedded, |this| this.p_6())
         .gap_4()
         .child(
             h_flex()
@@ -331,13 +331,15 @@ pub(crate) fn render_install_panel(
                                     })),
                             )
                         })
-                        .child(
-                            div()
-                                .text_xl()
-                                .font_weight(gpui::FontWeight::BOLD)
-                                .text_color(theme.foreground)
-                                .child(if embedded { "Choose an engine version" } else { "Install Engine" }),
-                        ),
+                        .when(!embedded, |this| {
+                            this.child(
+                                div()
+                                    .text_xl()
+                                    .font_weight(gpui::FontWeight::BOLD)
+                                    .text_color(theme.foreground)
+                                    .child("Install Engine"),
+                            )
+                        }),
                 )
                 .child(
                     h_flex()
@@ -393,7 +395,7 @@ pub(crate) fn render_install_panel(
                         ),
                 ),
         )
-        .child(div().w_full().h(px(1.0)).bg(theme.border))
+        .when(!embedded, |this| this.child(div().w_full().h(px(1.0)).bg(theme.border)))
         .child(
             v_flex()
                 .id("install-releases-list")

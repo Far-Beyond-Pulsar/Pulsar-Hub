@@ -33,17 +33,9 @@ pub fn render(screen: &mut EntryScreen, cx: &mut Context<EntryScreen>) -> AnyEle
                 ),
         )
         .child(
-            div()
-                .flex_1()
-                .min_h_0()
-                .bg(theme.background)
-                .border_1()
-                .border_color(theme.border)
-                .rounded_lg()
-                .overflow_hidden()
-                .child(crate::screen::views::versions::render_install_panel(
-                    screen, cx, true,
-                )),
+            div().flex_1().min_h_0().child(
+                crate::screen::views::versions::render_install_panel(screen, cx, true),
+            ),
         )
         .into_any_element()
 }
