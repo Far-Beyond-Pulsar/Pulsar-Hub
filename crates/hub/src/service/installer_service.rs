@@ -587,8 +587,22 @@ pub fn download_and_extract_blocking(
         }
         #[cfg(not(target_os = "macos"))]
         {
-            let exe_path = dest_dir.join("pulsar.exe");
+            let binary_name = if cfg!(windows) {
+                "pulsar.exe"
+            } else {
+                "pulsar"
+            };
+            let exe_path = dest_dir.join(binary_name);
             crate::service::download::stream_to_file(&client, url, &exe_path, &options)?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let mut permissions = std::fs::metadata(&exe_path)
+                    .map_err(|e| e.to_string())?
+                    .permissions();
+                permissions.set_mode(permissions.mode() | 0o755);
+                std::fs::set_permissions(&exe_path, permissions).map_err(|e| e.to_string())?;
+            }
             write_metadata(dest_dir, version).map_err(|e| e.to_string())?;
         }
     }
@@ -641,28 +655,6 @@ pub fn download_and_extract_with_progress(
             }
         };
 
-    let resp = match client.get(url).send() {
-        Ok(r) => r,
-        Err(e) => {
-            let mut p = progress.lock();
-            p.error = Some(e.to_string());
-            p.done = true;
-            return;
-        }
-    };
-    if !resp.status().is_success() {
-        let mut p = progress.lock();
-        p.error = Some(format!("HTTP {}", resp.status()));
-        p.done = true;
-        return;
-    }
-
-    let total = resp.content_length().unwrap_or(0);
-    {
-        let mut p = progress.lock();
-        p.total_bytes = total;
-    }
-
     if let Err(e) = std::fs::create_dir_all(dest_dir) {
         let mut p = progress.lock();
         p.error = Some(e.to_string());
@@ -670,7 +662,6 @@ pub fn download_and_extract_with_progress(
         return;
     }
 
-    let (_, _, ext) = platform_info();
     // Nightly assets are `.zip` archives — even on Windows, where `ext` is
     // "exe" — so decide on the URL's extension before falling back to the
     // raw-exe / tar.gz paths.
@@ -685,7 +676,7 @@ pub fn download_and_extract_with_progress(
             .unwrap_or(&format!("pulsar-{}.zip", version))
             .to_string();
         let archive_path = dest_dir.parent().unwrap_or(dest_dir).join(&archive_name);
-        let r = download_file_with_progress(resp, archive_path.clone(), &progress);
+        let r = download_asset_with_progress(&client, url, &archive_path, &progress);
         if r.is_ok() {
             {
                 let mut p = progress.lock();
@@ -705,14 +696,7 @@ pub fn download_and_extract_with_progress(
             let _ = std::fs::remove_file(&archive_path);
         }
         r
-    } else if ext == "exe" || (cfg!(target_os = "macos") && !is_tar_gz) {
-        let binary_name = if cfg!(target_os = "macos") {
-            "pulsar"
-        } else {
-            "pulsar.exe"
-        };
-        download_file_with_progress(resp, dest_dir.join(binary_name), &progress)
-    } else {
+    } else if is_tar_gz {
         let archive_name = url
             .rsplit('/')
             .next()
@@ -720,7 +704,7 @@ pub fn download_and_extract_with_progress(
             .unwrap_or(&format!("pulsar-{}.tar.gz", version))
             .to_string();
         let archive_path = dest_dir.parent().unwrap_or(dest_dir).join(&archive_name);
-        let r = download_file_with_progress(resp, archive_path.clone(), &progress);
+        let r = download_asset_with_progress(&client, url, &archive_path, &progress);
         if r.is_ok() {
             {
                 let mut p = progress.lock();
@@ -735,6 +719,15 @@ pub fn download_and_extract_with_progress(
             let _ = std::fs::remove_file(&archive_path);
         }
         r
+    } else {
+        // Stable Linux releases publish a bare executable with no extension.
+        // Treat unknown extensions as raw engine binaries, not tarballs.
+        let binary_name = if cfg!(windows) {
+            "pulsar.exe"
+        } else {
+            "pulsar"
+        };
+        download_asset_with_progress(&client, url, &dest_dir.join(binary_name), &progress)
     };
 
     match write_result {
@@ -920,41 +913,37 @@ fn extract_zip(archive_path: &Path, dest_dir: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn download_file_with_progress(
-    mut reader: reqwest::blocking::Response,
-    dest: PathBuf,
+fn download_asset_with_progress(
+    client: &reqwest::blocking::Client,
+    url: &str,
+    dest: &Path,
     progress: &Arc<Mutex<DownloadProgress>>,
 ) -> Result<(), String> {
-    let mut file = std::fs::File::create(&dest).map_err(|e| e.to_string())?;
-    let mut downloaded: u64 = 0;
-    let mut last_bytes: u64 = 0;
-    let mut last_time = Instant::now();
-    use std::io::Read;
-    let mut buf = [0u8; 8192];
-    loop {
-        let n = reader.read(&mut buf).map_err(|e| e.to_string())?;
-        if n == 0 {
-            break;
-        }
-        std::io::Write::write_all(&mut file, &buf[..n]).map_err(|e| e.to_string())?;
-        downloaded += n as u64;
+    let sample = Mutex::new((Instant::now(), 0_u64));
+    let report = |downloaded: u64, total: Option<u64>| {
         let now = Instant::now();
-        let elapsed = now.duration_since(last_time).as_secs_f64();
-        if elapsed >= 0.15 {
-            let bytes_since = downloaded - last_bytes;
-            let speed = (bytes_since as f64 / elapsed) as u64;
-            let mut p = progress.lock();
-            p.bytes_downloaded = downloaded;
-            p.speed_bps = speed;
-            last_bytes = downloaded;
-            last_time = now;
-        }
-    }
-    {
+        let mut sample = sample.lock();
+        let elapsed = now.duration_since(sample.0).as_secs_f64();
         let mut p = progress.lock();
+        let speed = if elapsed >= 0.15 {
+            let value = ((downloaded.saturating_sub(sample.1)) as f64 / elapsed) as u64;
+            *sample = (now, downloaded);
+            value
+        } else {
+            p.speed_bps
+        };
         p.bytes_downloaded = downloaded;
-        p.speed_bps = 0;
-    }
+        p.total_bytes = total.unwrap_or(0);
+        p.speed_bps = speed;
+    };
+    let options = crate::service::download::StreamOptions {
+        progress: &report,
+        cancelled: &|| false,
+        resume: true,
+    };
+    crate::service::download::stream_to_file(client, url, dest, &options)?;
+    let mut p = progress.lock();
+    p.speed_bps = 0;
     Ok(())
 }
 
