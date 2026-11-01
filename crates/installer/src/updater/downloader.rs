@@ -7,6 +7,8 @@ use tokio::io::AsyncWriteExt;
 use crate::updater::chain::{UpdateChain, UpdateStep};
 use crate::updater::manifest::PlatformUpdateInfo;
 
+const MAX_DOWNLOAD_ATTEMPTS: usize = 4;
+
 pub struct UpdateDownloader {
     client: reqwest::Client,
     temp_dir: PathBuf,
@@ -61,8 +63,7 @@ impl UpdateDownloader {
                         crate::updater::platform::platform_extension()
                     ));
 
-                    let compressed = std::fs::read(&patch_path)
-                        .context("reading patch file")?;
+                    let compressed = std::fs::read(&patch_path).context("reading patch file")?;
                     let uncompressed = zstd::decode_all(compressed.as_slice())
                         .context("zstd decompression failed")?;
 
@@ -71,8 +72,7 @@ impl UpdateDownloader {
                     bsdiff::patch(&old, &mut uncompressed.as_slice(), &mut new)
                         .context("bsdiff::patch failed")?;
 
-                    std::fs::write(&patched_file, &new)
-                        .context("writing patched binary")?;
+                    std::fs::write(&patched_file, &new).context("writing patched binary")?;
 
                     current_file = Some(patched_file);
                 }
@@ -82,11 +82,7 @@ impl UpdateDownloader {
                     sha256,
                     size_bytes,
                 } => {
-                    tracing::info!(
-                        "Full download for v{} ({} bytes)",
-                        version,
-                        size_bytes
-                    );
+                    tracing::info!("Full download for v{} ({} bytes)", version, size_bytes);
 
                     let binary_name = format!(
                         "pulsar-installer{}",
@@ -116,16 +112,6 @@ impl UpdateDownloader {
 
     async fn download_file(&self, url: &str, dest: &Path) -> Result<()> {
         tracing::info!("Downloading {} -> {}", url, dest.display());
-
-        let mut response = self
-            .client
-            .get(url)
-            .send()
-            .await
-            .context("HTTP request failed")?
-            .error_for_status()
-            .context("HTTP error response")?;
-
         let mut staged_name = dest
             .file_name()
             .context("invalid destination path")?
@@ -133,21 +119,59 @@ impl UpdateDownloader {
         staged_name.push(".part");
         let part = dest.with_file_name(staged_name);
 
-        let mut file = tokio::fs::File::create(&part)
-            .await
-            .with_context(|| format!("creating staging file {}", part.display()))?;
-        while let Some(chunk) = response.chunk().await.context("reading response body")? {
-            file.write_all(&chunk)
-                .await
-                .context("writing downloaded file")?;
-        }
-        file.flush().await.context("flushing downloaded file")?;
-        drop(file);
-        tokio::fs::rename(&part, dest)
-            .await
-            .context("finalizing downloaded file")?;
+        let mut last_error = None;
+        for attempt in 0..MAX_DOWNLOAD_ATTEMPTS {
+            let result = async {
+                let mut response = self
+                    .client
+                    .get(url)
+                    .send()
+                    .await
+                    .context("HTTP request failed")?
+                    .error_for_status()
+                    .context("HTTP error response")?;
 
-        Ok(())
+                let mut file = tokio::fs::File::create(&part)
+                    .await
+                    .with_context(|| format!("creating staging file {}", part.display()))?;
+                while let Some(chunk) = response.chunk().await.context("reading response body")? {
+                    file.write_all(&chunk)
+                        .await
+                        .context("writing downloaded file")?;
+                }
+                file.flush().await.context("flushing downloaded file")?;
+                drop(file);
+                tokio::fs::rename(&part, dest)
+                    .await
+                    .context("finalizing downloaded file")?;
+                Ok::<(), anyhow::Error>(())
+            }
+            .await;
+
+            match result {
+                Ok(()) => return Ok(()),
+                Err(error) => {
+                    let _ = tokio::fs::remove_file(&part).await;
+                    if attempt + 1 == MAX_DOWNLOAD_ATTEMPTS {
+                        return Err(error).context(format!(
+                            "download failed after {} attempts",
+                            MAX_DOWNLOAD_ATTEMPTS
+                        ));
+                    }
+                    tracing::warn!(
+                        "Update download attempt {}/{} failed for {}: {:#}; retrying",
+                        attempt + 1,
+                        MAX_DOWNLOAD_ATTEMPTS,
+                        url,
+                        error
+                    );
+                    last_error = Some(error);
+                    tokio::time::sleep(std::time::Duration::from_secs(1 << attempt)).await;
+                }
+            }
+        }
+
+        Err(last_error.expect("download attempt loop always runs"))
     }
 }
 

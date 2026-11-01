@@ -1,7 +1,7 @@
 use gpui::prelude::*;
 use gpui::*;
 use ui::{
-    h_flex, v_flex, ActiveTheme as _, StyledExt as _, scroll::ScrollbarAxis, spinner::Spinner,
+    h_flex, scroll::ScrollbarAxis, spinner::Spinner, v_flex, ActiveTheme as _, StyledExt as _,
 };
 
 use crate::screen::EntryScreen;
@@ -24,7 +24,12 @@ pub fn render_src_build_overlay(
             .justify_center()
             .gap_3()
             .child(Spinner::new().color(theme.muted_foreground))
-            .child(div().text_sm().text_color(theme.foreground).child("Building engine from source…"))
+            .child(
+                div()
+                    .text_sm()
+                    .text_color(theme.foreground)
+                    .child("Building engine from source…"),
+            )
             .into_any_element();
     };
 
@@ -44,7 +49,11 @@ pub fn render_src_build_overlay(
     } else {
         0.0
     };
-    let done_text = if done == 0 { "…".to_string() } else { done.to_string() };
+    let done_text = if done == 0 {
+        "…".to_string()
+    } else {
+        done.to_string()
+    };
     let status_text = match &error {
         Some(e) => format!("Build failed: {}", e),
         None if done == 0 => "Preparing…".to_string(),
@@ -80,7 +89,7 @@ pub fn render_src_build_overlay(
                             h_flex()
                                 .gap_2()
                                 .items_center()
-                                .child(Spinner::new().color(theme.accent))
+                                .child(Spinner::new().color(theme.foreground))
                                 .child(
                                     div()
                                         .text_lg()
@@ -93,7 +102,10 @@ pub fn render_src_build_overlay(
                             div()
                                 .text_sm()
                                 .text_color(theme.muted_foreground)
-                                .child(format!("{} · {} done / {} remaining", status_text, done_text, remaining)),
+                                .child(format!(
+                                    "{} · {} done / {} remaining",
+                                    status_text, done_text, remaining
+                                )),
                         ),
                 )
                 .child(
@@ -121,13 +133,11 @@ pub fn render_src_build_overlay(
                         .px_3()
                         .py_2()
                         .text_size(px(12.0))
-                        .text_color(
-                            if error.is_some() {
-                                theme.danger
-                            } else {
-                                theme.foreground
-                            },
-                        )
+                        .text_color(if error.is_some() {
+                            theme.danger
+                        } else {
+                            theme.foreground
+                        })
                         .children({
                             let lines: Vec<AnyElement> = logs
                                 .iter()

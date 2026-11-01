@@ -4,7 +4,10 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "pulsar-patch-tool", about = "Binary patch tool for Pulsar self-updater")]
+#[command(
+    name = "pulsar-patch-tool",
+    about = "Binary patch tool for Pulsar self-updater"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -126,4 +129,3 @@ fn main() -> Result<()> {
 
     Ok(())
 }
-

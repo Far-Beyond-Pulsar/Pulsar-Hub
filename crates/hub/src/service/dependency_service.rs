@@ -127,12 +127,11 @@ impl DependencyService {
             p.status = InstallStatus::Downloading;
         }
 
-        let client = reqwest_client::apply_bundled_tls_blocking(
-            reqwest::blocking::Client::builder(),
-        )
-            .timeout(std::time::Duration::from_secs(300))
-            .build()
-            .map_err(|e| e.to_string())?;
+        let client =
+            reqwest_client::apply_bundled_tls_blocking(reqwest::blocking::Client::builder())
+                .timeout(std::time::Duration::from_secs(300))
+                .build()
+                .map_err(|e| e.to_string())?;
         let response = client.get(RUSTUP_URL).send().map_err(|e| e.to_string())?;
         let bytes = response.bytes().map_err(|e| e.to_string())?;
         {
@@ -230,12 +229,11 @@ impl DependencyService {
             p.progress = 0.1;
             p.status = InstallStatus::Downloading;
         }
-        let client = reqwest_client::apply_bundled_tls_blocking(
-            reqwest::blocking::Client::builder(),
-        )
-            .timeout(std::time::Duration::from_secs(300))
-            .build()
-            .map_err(|e| e.to_string())?;
+        let client =
+            reqwest_client::apply_bundled_tls_blocking(reqwest::blocking::Client::builder())
+                .timeout(std::time::Duration::from_secs(300))
+                .build()
+                .map_err(|e| e.to_string())?;
         let response = client.get(RUSTUP_URL).send().map_err(|e| e.to_string())?;
         let bytes = response.bytes().map_err(|e| e.to_string())?;
         {

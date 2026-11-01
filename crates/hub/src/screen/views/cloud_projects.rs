@@ -16,7 +16,8 @@ pub fn render_cloud_projects(
     _window: &mut Window,
     cx: &mut Context<EntryScreen>,
 ) -> impl IntoElement {
-    if !crate::util::path_helpers::is_cloud_intro_seen() && !screen.state.ui.show_cloud_intro_modal {
+    if !crate::util::path_helpers::is_cloud_intro_seen() && !screen.state.ui.show_cloud_intro_modal
+    {
         screen.state.ui.show_cloud_intro_modal = true;
         screen.state.ui.cloud_intro_page = 0;
     }
@@ -43,7 +44,12 @@ pub fn render_cloud_projects(
 }
 
 fn status_dot(color: gpui::Hsla, animated: bool) -> AnyElement {
-    let dot = div().flex_shrink_0().w(px(8.)).h(px(8.)).rounded_full().bg(color);
+    let dot = div()
+        .flex_shrink_0()
+        .w(px(8.))
+        .h(px(8.))
+        .rounded_full()
+        .bg(color);
     if animated {
         dot.with_animation(
             "status-dot-pulse",
@@ -162,12 +168,14 @@ fn render_server_list(screen: &mut EntryScreen, cx: &mut Context<EntryScreen>) -
                     .scrollable(gpui::Axis::Vertical)
                     .px_8()
                     .pb_6()
-                    .child(v_flex().max_w(px(800.)).gap_4().children(
-                        servers
-                            .iter()
-                            .enumerate()
-                            .map(|(idx, server)| render_server_card(screen, idx, server, cx)),
-                    )),
+                    .child(
+                        v_flex().max_w(px(800.)).gap_4().children(
+                            servers
+                                .iter()
+                                .enumerate()
+                                .map(|(idx, server)| render_server_card(screen, idx, server, cx)),
+                        ),
+                    ),
             )
         })
 }
@@ -186,7 +194,7 @@ fn render_server_card(
             theme.success_foreground,
             format!("Online \u{00B7} {}ms", latency_ms),
         ),
-        CloudServerStatus::Connecting => (theme.accent, "Connecting\u{2026}".to_string()),
+        CloudServerStatus::Connecting => (theme.foreground, "Connecting\u{2026}".to_string()),
         CloudServerStatus::Offline => (theme.muted_foreground, "Offline".to_string()),
         CloudServerStatus::Unauthorized => (theme.warning, "Unauthorized".to_string()),
         CloudServerStatus::Unknown => (theme.muted_foreground, "Unknown".to_string()),
@@ -348,18 +356,20 @@ fn render_add_server_form(
                         })),
                 )
                 .child(
-                    div().child(
-                        div()
-                            .text_xl()
-                            .font_weight(gpui::FontWeight::BOLD)
-                            .text_color(theme.foreground)
-                            .child("Add Server"),
-                    ).child(
-                        div()
-                            .text_sm()
-                            .text_color(theme.muted_foreground)
-                            .child("Sign in to your Pulsar Host server"),
-                    ),
+                    div()
+                        .child(
+                            div()
+                                .text_xl()
+                                .font_weight(gpui::FontWeight::BOLD)
+                                .text_color(theme.foreground)
+                                .child("Add Server"),
+                        )
+                        .child(
+                            div()
+                                .text_sm()
+                                .text_color(theme.muted_foreground)
+                                .child("Sign in to your Pulsar Host server"),
+                        ),
                 ),
         )
         .child(
@@ -429,12 +439,7 @@ fn render_add_server_form(
                                     .size(px(16.))
                                     .text_color(theme.danger),
                             )
-                            .child(
-                                div()
-                                    .text_sm()
-                                    .text_color(theme.danger)
-                                    .child(err),
-                            ),
+                            .child(div().text_sm().text_color(theme.danger).child(err)),
                     )
                 })
                 .child(
@@ -465,9 +470,7 @@ fn render_server_detail(
     let alias = server.alias.clone();
     let is_connecting = matches!(&server.status, CloudServerStatus::Connecting);
     let url = match &server.status {
-        CloudServerStatus::Online { version, .. }
-            if !version.is_empty() && version != "?" =>
-        {
+        CloudServerStatus::Online { version, .. } if !version.is_empty() && version != "?" => {
             format!("{} \u{00B7} v{}", server.url, version)
         }
         _ => server.url.clone(),
@@ -588,11 +591,13 @@ fn render_server_detail(
                     .scrollable(gpui::Axis::Vertical)
                     .px_8()
                     .pb_6()
-                    .child(v_flex().max_w(px(800.)).gap_4().children(
-                        projects
-                            .into_iter()
-                            .map(|project| render_project_card(screen, server_idx, project, cx)),
-                    )),
+                    .child(
+                        v_flex().max_w(px(800.)).gap_4().children(
+                            projects.into_iter().map(|project| {
+                                render_project_card(screen, server_idx, project, cx)
+                            }),
+                        ),
+                    ),
             )
         })
 }
@@ -618,7 +623,7 @@ fn render_project_card(
     let (status_color, status_label, is_preparing, error_message) = match &project.status {
         CloudProjectStatus::Idle => (theme.muted_foreground, "Idle".to_string(), false, None),
         CloudProjectStatus::Preparing => (
-            theme.accent,
+            theme.foreground,
             "Preparing\u{2026}".to_string(),
             true,
             None,
@@ -629,12 +634,7 @@ fn render_project_card(
             false,
             None,
         ),
-        CloudProjectStatus::Error(e) => (
-            theme.danger,
-            "Error".to_string(),
-            false,
-            Some(e.clone()),
-        ),
+        CloudProjectStatus::Error(e) => (theme.danger, "Error".to_string(), false, Some(e.clone())),
     };
 
     v_flex()
@@ -869,19 +869,21 @@ fn render_create_project_form(
                         })),
                 )
                 .child(
-                    div().child(
-                        div()
-                            .text_xl()
-                            .font_weight(gpui::FontWeight::BOLD)
-                            .text_color(theme.foreground)
-                            .child("Create Cloud Project"),
-                    ).child(
-                        div()
-                            .text_sm()
-                            .text_color(theme.muted_foreground)
-                            .truncate()
-                            .child(format!("New project on {}", server_alias)),
-                    ),
+                    div()
+                        .child(
+                            div()
+                                .text_xl()
+                                .font_weight(gpui::FontWeight::BOLD)
+                                .text_color(theme.foreground)
+                                .child("Create Cloud Project"),
+                        )
+                        .child(
+                            div()
+                                .text_sm()
+                                .text_color(theme.muted_foreground)
+                                .truncate()
+                                .child(format!("New project on {}", server_alias)),
+                        ),
                 ),
         )
         .child(

@@ -20,12 +20,11 @@ impl CloudService {
     pub fn login(base_url: &str, email: &str, password: &str) -> Option<(String, String)> {
         let login_url = format!("{}/api/v1/auth/login", base_url);
         let body = serde_json::json!({ "email": email, "password": password });
-        let client = reqwest_client::apply_bundled_tls_blocking(
-            reqwest::blocking::Client::builder(),
-        )
-            .timeout(std::time::Duration::from_secs(10))
-            .build()
-            .ok()?;
+        let client =
+            reqwest_client::apply_bundled_tls_blocking(reqwest::blocking::Client::builder())
+                .timeout(std::time::Duration::from_secs(10))
+                .build()
+                .ok()?;
         let resp = client.post(&login_url).json(&body).send().ok()?;
         if !resp.status().is_success() {
             return None;
@@ -49,12 +48,11 @@ impl CloudService {
             Some(token.to_string())
         };
 
-        let client = reqwest_client::apply_bundled_tls_blocking(
-            reqwest::blocking::Client::builder(),
-        )
-            .timeout(std::time::Duration::from_secs(6))
-            .build()
-            .ok()?;
+        let client =
+            reqwest_client::apply_bundled_tls_blocking(reqwest::blocking::Client::builder())
+                .timeout(std::time::Duration::from_secs(6))
+                .build()
+                .ok()?;
 
         let started = std::time::Instant::now();
         let build_req = |url: &str| {
@@ -214,11 +212,10 @@ impl CloudService {
         } else {
             Some(token.to_string())
         };
-        let Ok(client) = reqwest_client::apply_bundled_tls_blocking(
-            reqwest::blocking::Client::builder(),
-        )
-            .timeout(std::time::Duration::from_secs(10))
-            .build()
+        let Ok(client) =
+            reqwest_client::apply_bundled_tls_blocking(reqwest::blocking::Client::builder())
+                .timeout(std::time::Duration::from_secs(10))
+                .build()
         else {
             return;
         };
@@ -233,11 +230,10 @@ impl CloudService {
 
     pub fn delete_workspace(base_url: &str, workspace_id: &str, token: &str) {
         let url = format!("{}/api/v1/workspaces/{}", base_url, workspace_id);
-        let Ok(client) = reqwest_client::apply_bundled_tls_blocking(
-            reqwest::blocking::Client::builder(),
-        )
-            .timeout(std::time::Duration::from_secs(10))
-            .build()
+        let Ok(client) =
+            reqwest_client::apply_bundled_tls_blocking(reqwest::blocking::Client::builder())
+                .timeout(std::time::Duration::from_secs(10))
+                .build()
         else {
             return;
         };
@@ -251,11 +247,10 @@ impl CloudService {
     }
 
     fn send_post(url: &str, token: Option<String>) {
-        let Ok(client) = reqwest_client::apply_bundled_tls_blocking(
-            reqwest::blocking::Client::builder(),
-        )
-            .timeout(std::time::Duration::from_secs(10))
-            .build()
+        let Ok(client) =
+            reqwest_client::apply_bundled_tls_blocking(reqwest::blocking::Client::builder())
+                .timeout(std::time::Duration::from_secs(10))
+                .build()
         else {
             return;
         };

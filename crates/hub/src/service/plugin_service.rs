@@ -60,13 +60,12 @@ impl PluginService {
         registries: &[PluginRegistry],
         registries_path: &Path,
     ) -> Vec<RegistryPlugin> {
-        let http_client = reqwest_client::apply_bundled_tls_blocking(
-            reqwest::blocking::Client::builder(),
-        )
-            .timeout(std::time::Duration::from_secs(15))
-            .user_agent("Pulsar-Native/1.0")
-            .build()
-            .ok();
+        let http_client =
+            reqwest_client::apply_bundled_tls_blocking(reqwest::blocking::Client::builder())
+                .timeout(std::time::Duration::from_secs(15))
+                .user_agent("Pulsar-Native/1.0")
+                .build()
+                .ok();
         let mut seen = std::collections::HashSet::new();
         let mut result = Vec::new();
         for reg in registries {
@@ -176,13 +175,12 @@ impl PluginService {
         repo: &str,
     ) -> Result<Option<(String, Option<String>)>, String> {
         let url = format!("https://api.github.com/repos/{}/{}/releases", owner, repo);
-        let client = reqwest_client::apply_bundled_tls_blocking(
-            reqwest::blocking::Client::builder(),
-        )
-            .timeout(std::time::Duration::from_secs(15))
-            .user_agent("Pulsar-Native/1.0")
-            .build()
-            .map_err(|e| e.to_string())?;
+        let client =
+            reqwest_client::apply_bundled_tls_blocking(reqwest::blocking::Client::builder())
+                .timeout(std::time::Duration::from_secs(15))
+                .user_agent("Pulsar-Native/1.0")
+                .build()
+                .map_err(|e| e.to_string())?;
         let resp = client.get(&url).send().map_err(|e| e.to_string())?;
         if !resp.status().is_success() {
             return Err(format!("GitHub API returned {}", resp.status()));
@@ -220,23 +218,22 @@ impl PluginService {
         plugins_dir: &Path,
         lib_name: &str,
     ) -> Result<String, String> {
-        use std::io::Write;
-        let client = reqwest_client::apply_bundled_tls_blocking(
-            reqwest::blocking::Client::builder(),
-        )
-            .timeout(std::time::Duration::from_secs(120))
-            .user_agent("Pulsar-Native/1.0")
-            .build()
-            .map_err(|e| e.to_string())?;
-        let resp = client.get(url).send().map_err(|e| e.to_string())?;
-        if !resp.status().is_success() {
-            return Err(format!("Download failed: HTTP {}", resp.status()));
-        }
-        let bytes = resp.bytes().map_err(|e| e.to_string())?;
+        let client =
+            reqwest_client::apply_bundled_tls_blocking(reqwest::blocking::Client::builder())
+                .timeout(std::time::Duration::from_secs(120))
+                .user_agent("Pulsar-Native/1.0")
+                .build()
+                .map_err(|e| e.to_string())?;
         std::fs::create_dir_all(plugins_dir).map_err(|e| e.to_string())?;
         let dest = plugins_dir.join(lib_name);
-        let mut file = std::fs::File::create(&dest).map_err(|e| e.to_string())?;
-        file.write_all(&bytes).map_err(|e| e.to_string())?;
+        let report_progress = |_: u64, _: Option<u64>| {};
+        let not_cancelled = || false;
+        let options = crate::service::download::StreamOptions {
+            progress: &report_progress,
+            cancelled: &not_cancelled,
+            resume: true,
+        };
+        crate::service::download::stream_to_file(&client, url, &dest, &options)?;
         Ok(dest.to_string_lossy().to_string())
     }
 

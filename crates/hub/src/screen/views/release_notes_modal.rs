@@ -2,8 +2,10 @@ use gpui::prelude::*;
 use gpui::*;
 use ui::{
     button::{Button, ButtonVariants as _},
-    h_flex, scroll::ScrollbarAxis, text::TextView, v_flex, ActiveTheme as _, Icon, IconName,
-    StyledExt as _,
+    h_flex,
+    scroll::ScrollbarAxis,
+    text::TextView,
+    v_flex, ActiveTheme as _, Icon, IconName, StyledExt as _,
 };
 
 use crate::screen::EntryScreen;
@@ -53,7 +55,7 @@ pub fn render_release_notes_modal(
                                 .child(
                                     Icon::new(IconName::Label)
                                         .size(px(18.))
-                                        .text_color(theme.accent),
+                                        .text_color(theme.foreground),
                                 )
                                 .child(
                                     div()

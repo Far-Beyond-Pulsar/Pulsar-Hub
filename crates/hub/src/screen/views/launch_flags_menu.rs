@@ -124,17 +124,20 @@ impl Render for LaunchFlagsMenuView {
                             }),
                     )
                     .child(
-                        v_flex().gap_0p5().child(
-                            div()
-                                .text_sm()
-                                .text_color(theme.foreground)
-                                .child(flag.label),
-                        ).child(
-                            div()
-                                .text_xs()
-                                .text_color(theme.muted_foreground)
-                                .child(flag.description),
-                        ),
+                        v_flex()
+                            .gap_0p5()
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .text_color(theme.foreground)
+                                    .child(flag.label),
+                            )
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(theme.muted_foreground)
+                                    .child(flag.description),
+                            ),
                     )
             }))
     }

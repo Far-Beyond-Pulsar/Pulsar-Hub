@@ -18,7 +18,8 @@ impl HubSettingsWindow {
     pub fn new(project_path: Option<PathBuf>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         // Populate the settings schema registry before rendering.
         engine_state::register_default_settings();
-        let screen = cx.new(|cx| ui_settings::ModernSettingsScreen::new(project_path.clone(), window, cx));
+        let screen =
+            cx.new(|cx| ui_settings::ModernSettingsScreen::new(project_path.clone(), window, cx));
         Self {
             screen,
             project_path,
@@ -37,16 +38,18 @@ impl Render for HubSettingsWindow {
         v_flex()
             .size_full()
             .bg(cx.theme().background)
-            .child(TitleBar::new().child(
-                div()
-                    .flex()
-                    .items_center()
-                    .px_2()
-                    .text_sm()
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_color(cx.theme().foreground)
-                    .child(title),
-            ))
+            .child(
+                TitleBar::new().child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .px_2()
+                        .text_sm()
+                        .font_weight(FontWeight::MEDIUM)
+                        .text_color(cx.theme().foreground)
+                        .child(title),
+                ),
+            )
             .child(self.screen.clone())
     }
 }

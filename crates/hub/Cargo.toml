@@ -9,6 +9,7 @@ description = "Pulsar Engine Hub - project launcher, version manager, and instal
 # UI framework - use Pulsar-Native's ui (wgpui-component) for consistency
 ui.workspace = true
 gpui-ce.workspace = true
+wgpui-motion = { git = "https://github.com/Far-Beyond-Pulsar/WGPUI-Motion", rev = "7e8a5dadd0247d7dbea5ccdd5f5846afbcc86b8a" }
 
 # Pulsar-Native crates
 pulsar_auth.workspace = true

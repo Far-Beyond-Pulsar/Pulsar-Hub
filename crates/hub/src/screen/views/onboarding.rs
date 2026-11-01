@@ -20,6 +20,11 @@ pub fn render_onboarding(
 ) -> impl IntoElement {
     let theme = cx.theme().clone();
     let step = screen.state.ui.onboarding_step;
+    let step_number = ONBOARDING_STEPS
+        .iter()
+        .position(|definition| definition.step == step)
+        .map(|index| index + 1)
+        .unwrap_or(1);
     let content = match step {
         OnboardingStep::Welcome => steps::welcome::render(cx),
         OnboardingStep::Engine => steps::engine::render(screen, cx),
@@ -36,72 +41,109 @@ pub fn render_onboarding(
         .flex_col()
         .bg(theme.background)
         .child(
-            h_flex().w_full().justify_end().px_4().py_3().child(
-                Button::new("close-onboarding")
-                    .compact()
-                    .ghost()
-                    .icon(IconName::X)
-                    .tooltip("Close")
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.finish_onboarding(cx);
-                    })),
-            ),
+            h_flex()
+                .w_full()
+                .px_8()
+                .py_3()
+                .items_center()
+                .border_b_1()
+                .border_color(theme.border)
+                .child(
+                    Icon::new(IconName::Package)
+                        .size(px(18.))
+                        .text_color(theme.foreground),
+                )
+                .child(
+                    div()
+                        .ml_2()
+                        .flex_1()
+                        .text_sm()
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(theme.foreground)
+                        .child("Pulsar Hub Setup"),
+                )
+                .child(
+                    div()
+                        .mr_3()
+                        .text_xs()
+                        .text_color(theme.muted_foreground)
+                        .child(format!("Step {step_number} of {}", ONBOARDING_STEPS.len())),
+                )
+                .child(
+                    Button::new("close-onboarding")
+                        .compact()
+                        .ghost()
+                        .icon(IconName::X)
+                        .tooltip("Close setup")
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.finish_onboarding(cx);
+                        })),
+                ),
         )
         .child(
             h_flex()
                 .w_full()
                 .flex_1()
                 .min_h_0()
+                .justify_center()
                 .overflow_hidden()
-                .px_12()
-                .pb_6()
-                .gap_6()
+                .px_8()
+                .py_6()
                 .child(
                     v_flex()
                         .w_full()
+                        .max_w(px(1000.))
                         .h_full()
-                        .gap_6()
+                        .gap_5()
                         .child(render_stepper(step, cx))
-                        .child(div().flex_1().min_h_0().child(content)),
+                        .child(div().flex_1().min_h_0().w_full().child(content)),
                 ),
         )
         .child(
             h_flex()
                 .w_full()
-                .px_12()
-                .py_6()
+                .justify_center()
+                .px_8()
+                .py_4()
                 .border_t_1()
                 .border_color(theme.border)
-                .gap_3()
-                .justify_between()
-                .child(
-                    Button::new("onboarding-back")
-                        .label("Back")
-                        .ghost()
-                        .disabled(step.previous().is_none())
-                        .on_click(cx.listener(|this, _, _, cx| this.previous_onboarding_step(cx))),
-                )
                 .child(
                     h_flex()
-                        .gap_2()
+                        .w_full()
+                        .max_w(px(1000.))
+                        .gap_3()
+                        .justify_between()
                         .child(
-                            Button::new("skip-onboarding-step")
-                                .label("Skip this step")
+                            Button::new("onboarding-back")
+                                .label("Back")
                                 .ghost()
+                                .disabled(step.previous().is_none())
                                 .on_click(
-                                    cx.listener(|this, _, _, cx| this.skip_onboarding_step(cx)),
+                                    cx.listener(|this, _, _, cx| this.previous_onboarding_step(cx)),
                                 ),
                         )
                         .child(
-                            Button::new("onboarding-next")
-                                .label(if step.next().is_none() {
-                                    "Finish"
-                                } else {
-                                    "Continue"
-                                })
-                                .primary()
-                                .on_click(
-                                    cx.listener(|this, _, _, cx| this.next_onboarding_step(cx)),
+                            h_flex()
+                                .gap_2()
+                                .child(
+                                    Button::new("skip-onboarding-step")
+                                        .label("Skip this step")
+                                        .ghost()
+                                        .on_click(cx.listener(|this, _, _, cx| {
+                                            this.skip_onboarding_step(cx)
+                                        })),
+                                )
+                                .child(
+                                    Button::new("onboarding-next")
+                                        .label(if step.next().is_none() {
+                                            "Finish"
+                                        } else {
+                                            "Continue"
+                                        })
+                                        .primary()
+                                        .on_click(cx.listener(|this, _, _, cx| {
+                                            this.next_onboarding_step(cx)
+                                        })),
                                 ),
                         ),
                 ),
@@ -127,6 +169,12 @@ fn render_stepper(active: OnboardingStep, cx: &mut Context<EntryScreen>) -> impl
                         .px_3()
                         .py_3()
                         .rounded_md()
+                        .border_1()
+                        .border_color(if selected {
+                            theme.accent.opacity(0.45)
+                        } else {
+                            theme.border.opacity(0.5)
+                        })
                         .cursor_pointer()
                         .bg(if selected {
                             theme.accent.opacity(0.12)
@@ -144,7 +192,7 @@ fn render_stepper(active: OnboardingStep, cx: &mut Context<EntryScreen>) -> impl
                                 .text_sm()
                                 .font_weight(FontWeight::SEMIBOLD)
                                 .text_color(if selected {
-                                    theme.accent
+                                    theme.foreground
                                 } else {
                                     theme.muted_foreground
                                 })
@@ -625,7 +673,7 @@ fn render_plugin_phase(
     let (icon, color, headline, sub, progress_val, show_bar) = match &phase {
         PluginInstallPhase::FetchingMetadata => (
             IconName::Download,
-            theme.accent,
+            theme.foreground,
             "Fetching release info...",
             String::new(),
             None,
@@ -633,7 +681,7 @@ fn render_plugin_phase(
         ),
         PluginInstallPhase::Downloading { progress } => (
             IconName::Download,
-            theme.accent,
+            theme.foreground,
             "Downloading binary...",
             format!("{:.0}%", progress * 100.0),
             Some(*progress),
@@ -641,7 +689,7 @@ fn render_plugin_phase(
         ),
         PluginInstallPhase::Building { logs } => (
             IconName::Settings,
-            theme.accent,
+            theme.foreground,
             "Building from source...",
             logs.last().cloned().unwrap_or_default(),
             None,
@@ -743,7 +791,7 @@ fn render_custom_plugin_row(
     };
     let method_color = match plugin.install_method {
         PluginInstallMethod::BinaryDownload => theme.success_foreground,
-        PluginInstallMethod::BuiltFromSource => theme.accent,
+        PluginInstallMethod::BuiltFromSource => theme.foreground,
     };
     let name = plugin.name.clone();
     let version = plugin.version.clone();
@@ -1143,15 +1191,15 @@ fn render_install_progress(
 ) -> impl IntoElement {
     let theme = cx.theme();
     let (icon, color, status_text) = match &progress.status {
-        InstallStatus::Idle => (IconName::Circle, theme.accent, "Ready".to_string()),
+        InstallStatus::Idle => (IconName::Circle, theme.foreground, "Ready".to_string()),
         InstallStatus::Downloading => (
             IconName::Download,
-            theme.accent,
+            theme.foreground,
             "Downloading installer...".to_string(),
         ),
         InstallStatus::Installing => (
             IconName::Settings,
-            theme.accent,
+            theme.foreground,
             "Installing dependencies...".to_string(),
         ),
         InstallStatus::Complete => (

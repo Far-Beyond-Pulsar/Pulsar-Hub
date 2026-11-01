@@ -25,9 +25,9 @@ pub struct EnginePrompt {
 
 // ── Navigation ────────────────────────────────────────────────────────────
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub enum EntryScreenView {
-    Recent,
+    Home,
     Templates,
     Storage,
     Versions,
@@ -394,7 +394,11 @@ impl DownloadItem {
                 bytes_downloaded,
                 total_bytes,
                 ..
-            } => format!("{} / {}", format_bytes(*bytes_downloaded), format_bytes(*total_bytes)),
+            } => format!(
+                "{} / {}",
+                format_bytes(*bytes_downloaded),
+                format_bytes(*total_bytes)
+            ),
             DownloadStatus::Complete => "Complete".to_string(),
             DownloadStatus::Failed(e) => e.clone(),
         }

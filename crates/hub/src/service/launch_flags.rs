@@ -150,8 +150,7 @@ impl LaunchFlags {
     /// Write the flag file for the install in `dir`. Called on first toggle so
     /// installs never touched in the Versions screen stay pristine.
     pub fn save(&self, dir: &Path) -> Result<(), String> {
-        let body =
-            toml::to_string(&self.to_toml_document()).map_err(|error| error.to_string())?;
+        let body = toml::to_string(&self.to_toml_document()).map_err(|error| error.to_string())?;
         // Source checkouts keep flags beside their not-yet-built binary in
         // `<checkout>/target/release`, which may not exist until the first build.
         std::fs::create_dir_all(dir).map_err(|error| error.to_string())?;

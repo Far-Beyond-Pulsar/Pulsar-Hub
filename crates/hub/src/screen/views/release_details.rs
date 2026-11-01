@@ -1,8 +1,8 @@
 use gpui::prelude::*;
 use gpui::*;
 use ui::{
-    h_flex, scroll::ScrollbarAxis, v_flex, ActiveTheme as _, Icon, IconName, StyledExt as _,
-    text::TextView,
+    h_flex, scroll::ScrollbarAxis, text::TextView, v_flex, ActiveTheme as _, Icon, IconName,
+    StyledExt as _,
 };
 
 /// A lightweight managed view shown inside a `Popover` that displays a full
@@ -73,7 +73,7 @@ impl Render for ReleaseDetailsView {
                             .child(
                                 Icon::new(IconName::Label)
                                     .size(px(14.))
-                                    .text_color(theme.accent),
+                                    .text_color(theme.foreground),
                             )
                             .child(
                                 div()
@@ -95,12 +95,7 @@ impl Render for ReleaseDetailsView {
                     .p_4()
                     .gap_2()
                     .scrollable(ScrollbarAxis::Vertical)
-                    .child(TextView::markdown(
-                        "release-details-md",
-                        body,
-                        window,
-                        cx,
-                    )),
+                    .child(TextView::markdown("release-details-md", body, window, cx)),
             )
     }
 }

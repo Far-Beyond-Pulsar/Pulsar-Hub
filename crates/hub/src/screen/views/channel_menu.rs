@@ -1,8 +1,6 @@
 use gpui::prelude::*;
 use gpui::*;
-use ui::{
-    checkbox::Checkbox, h_flex, v_flex, ActiveTheme as _, StyledExt as _,
-};
+use ui::{checkbox::Checkbox, h_flex, v_flex, ActiveTheme as _, StyledExt as _};
 
 use crate::service::installer_service::ReleaseChannel;
 use crate::EntryScreen;

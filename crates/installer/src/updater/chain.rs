@@ -52,11 +52,7 @@ pub fn compute_update_chain(
             .find(|p| p.from_version == current_version && p.to_version == to_version)
         {
             Some(patch) => {
-                tracing::info!(
-                    "Found patch: {} -> {}",
-                    current_version,
-                    patch.to_version
-                );
+                tracing::info!("Found patch: {} -> {}", current_version, patch.to_version);
                 steps.push(UpdateStep::Patch {
                     from_version: current_version.clone(),
                     to_version: patch.to_version.clone(),

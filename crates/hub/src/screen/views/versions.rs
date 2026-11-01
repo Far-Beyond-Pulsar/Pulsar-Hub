@@ -17,10 +17,6 @@ pub fn render_versions(
     _window: &mut Window,
     cx: &mut Context<EntryScreen>,
 ) -> impl IntoElement {
-    if screen.state.ui.show_install_modal {
-        return render_install_panel(screen, cx, false).into_any_element();
-    }
-
     render_installed_grid(screen, cx).into_any_element()
 }
 
@@ -146,7 +142,7 @@ fn render_installed_grid(
                                 .child(
                                     Icon::new(IconName::Package)
                                         .size(px(18.))
-                                        .text_color(theme.accent),
+                                        .text_color(theme.foreground),
                                 )
                                 .child(
                                     div()
@@ -167,7 +163,7 @@ fn render_installed_grid(
                                         .py_0p5()
                                         .rounded_md()
                                         .bg(theme.accent.opacity(0.12))
-                                        .text_color(theme.accent)
+                                        .text_color(theme.foreground)
                                         .child(size),
                                 )
                                 .child(
@@ -395,7 +391,9 @@ pub(crate) fn render_install_panel(
                         ),
                 ),
         )
-        .when(!embedded, |this| this.child(div().w_full().h(px(1.0)).bg(theme.border)))
+        .when(!embedded, |this| {
+            this.child(div().w_full().h(px(1.0)).bg(theme.border))
+        })
         .child(
             v_flex()
                 .id("install-releases-list")

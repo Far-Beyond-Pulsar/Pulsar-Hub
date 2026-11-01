@@ -92,7 +92,8 @@ pub fn apply_patch(old_path: &Path, patch_path: &Path, new_path: &Path) -> Resul
     bsdiff::patch(&old, &mut uncompressed_patch.as_slice(), &mut new)
         .context("bsdiff::patch failed")?;
 
-    std::fs::write(new_path, &new).with_context(|| format!("writing result: {}", new_path.display()))?;
+    std::fs::write(new_path, &new)
+        .with_context(|| format!("writing result: {}", new_path.display()))?;
 
     Ok(())
 }
@@ -227,14 +228,17 @@ pub fn generate_manifest(
         } else if let Some(parsed) = parse_patch_asset(&name) {
             let sha256 = sha256_file(&path)?;
             let size_bytes = std::fs::metadata(&path)?.len();
-            new_patches.entry(parsed.triple).or_default().push(PatchInfo {
-                from_version: parsed.from_version,
-                to_version: parsed.to_version,
-                asset_name: name,
-                url: String::new(),
-                sha256,
-                size_bytes,
-            });
+            new_patches
+                .entry(parsed.triple)
+                .or_default()
+                .push(PatchInfo {
+                    from_version: parsed.from_version,
+                    to_version: parsed.to_version,
+                    asset_name: name,
+                    url: String::new(),
+                    sha256,
+                    size_bytes,
+                });
         }
     }
 
@@ -409,7 +413,10 @@ mod tests {
 
     #[test]
     fn rejects_non_asset_filenames() {
-        assert_eq!(parse_full_asset("pulsar-installer-windows-x86_64.exe.sha256"), None);
+        assert_eq!(
+            parse_full_asset("pulsar-installer-windows-x86_64.exe.sha256"),
+            None
+        );
         assert_eq!(parse_full_asset("update-manifest.json"), None);
         assert_eq!(parse_full_asset("pulsar-installer-unknown-platform"), None);
     }
@@ -417,23 +424,20 @@ mod tests {
     #[test]
     fn parses_patch_names() {
         let parsed =
-            parse_patch_asset("pulsar-installer-patch-0.1.5-0.1.6-windows-x86_64.exe.zst")
-                .unwrap();
+            parse_patch_asset("pulsar-installer-patch-0.1.5-0.1.6-windows-x86_64.exe.zst").unwrap();
         assert_eq!(parsed.from_version, "0.1.5");
         assert_eq!(parsed.to_version, "0.1.6");
         assert_eq!(parsed.triple, "x86_64-pc-windows-msvc");
 
-        let parsed = parse_patch_asset("pulsar-installer-patch-0.1.5-0.1.6-macos-arm64.zst")
-            .unwrap();
+        let parsed =
+            parse_patch_asset("pulsar-installer-patch-0.1.5-0.1.6-macos-arm64.zst").unwrap();
         assert_eq!(parsed.triple, "aarch64-apple-darwin");
     }
 
     #[test]
     fn parses_patch_names_with_prerelease_versions() {
-        let parsed = parse_patch_asset(
-            "pulsar-installer-patch-0.2.0-beta.1-0.2.0-linux-armv7.zst",
-        )
-        .unwrap();
+        let parsed =
+            parse_patch_asset("pulsar-installer-patch-0.2.0-beta.1-0.2.0-linux-armv7.zst").unwrap();
         assert_eq!(parsed.from_version, "0.2.0-beta.1");
         assert_eq!(parsed.to_version, "0.2.0");
         assert_eq!(parsed.triple, "armv7-unknown-linux-gnueabihf");
@@ -449,7 +453,10 @@ mod tests {
             parse_patch_asset("pulsar-installer-patch-0.1.5-notaversion-linux-x86_64.zst"),
             None
         );
-        assert_eq!(parse_patch_asset("pulsar-installer-windows-x86_64.exe"), None);
+        assert_eq!(
+            parse_patch_asset("pulsar-installer-windows-x86_64.exe"),
+            None
+        );
     }
 
     #[test]
@@ -506,10 +513,7 @@ mod tests {
             size_bytes: 0,
         };
 
-        let patches = vec![
-            mk("0.9.0", "0.9.1"),
-            mk("0.1.4", "0.1.5"),
-        ];
+        let patches = vec![mk("0.9.0", "0.9.1"), mk("0.1.4", "0.1.5")];
         let pruned = prune_patch_chain(&patches, "0.1.5", MAX_PATCH_CHAIN_LENGTH);
         assert_eq!(pruned, vec![mk("0.1.4", "0.1.5")]);
     }
@@ -555,7 +559,11 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
 
-        std::fs::write(dir.join("pulsar-installer-windows-x86_64.exe"), b"binary-v2").unwrap();
+        std::fs::write(
+            dir.join("pulsar-installer-windows-x86_64.exe"),
+            b"binary-v2",
+        )
+        .unwrap();
         std::fs::write(dir.join("pulsar-installer-linux-x86_64"), b"binary-v2").unwrap();
         std::fs::write(
             dir.join("pulsar-installer-patch-0.1.5-0.1.6-windows-x86_64.exe.zst"),
@@ -589,24 +597,32 @@ mod tests {
         let prev_path = dir.join("prev-update-manifest.json");
         std::fs::write(&prev_path, prev_json).unwrap();
 
-        let manifest =
-            generate_manifest(&dir, Some(&prev_path), Some("0.1.6")).unwrap();
+        let manifest = generate_manifest(&dir, Some(&prev_path), Some("0.1.6")).unwrap();
 
         assert_eq!(manifest.latest_version, "0.1.6");
         assert_eq!(manifest.schema_version, 1);
         assert_eq!(manifest.platforms.len(), 2);
 
         let windows = &manifest.platforms["x86_64-pc-windows-msvc"];
-        assert_eq!(windows.full_asset_name, "pulsar-installer-windows-x86_64.exe");
+        assert_eq!(
+            windows.full_asset_name,
+            "pulsar-installer-windows-x86_64.exe"
+        );
         assert_eq!(
             windows.full_url,
             "https://github.com/Far-Beyond-Pulsar/Pulsar-Installer/releases/download/v0.1.6/pulsar-installer-windows-x86_64.exe"
         );
-        assert_eq!(windows.full_sha256, hex::encode(Sha256::digest(b"binary-v2")));
+        assert_eq!(
+            windows.full_sha256,
+            hex::encode(Sha256::digest(b"binary-v2"))
+        );
         assert_eq!(windows.full_size_bytes, 9);
         assert_eq!(windows.patches.len(), 2);
         assert_eq!(windows.patches[0].from_version, "0.1.4");
-        assert_eq!(windows.patches[0].url, "https://example.com/v0.1.5/pulsar-installer-patch-0.1.4-0.1.5-windows-x86_64.exe.zst");
+        assert_eq!(
+            windows.patches[0].url,
+            "https://example.com/v0.1.5/pulsar-installer-patch-0.1.4-0.1.5-windows-x86_64.exe.zst"
+        );
         assert_eq!(windows.patches[1].to_version, "0.1.6");
         assert_eq!(
             windows.patches[1].url,
@@ -662,7 +678,11 @@ mod tests {
         fs::create_dir_all(&dir).unwrap();
 
         let manifest_path = dir.join("update-manifest.json");
-        fs::write(&manifest_path, br#"{"schema_version":1,"latest_version":"0.0.0"}"#).unwrap();
+        fs::write(
+            &manifest_path,
+            br#"{"schema_version":1,"latest_version":"0.0.0"}"#,
+        )
+        .unwrap();
 
         let (seed_hex, pubkey_hex) = generate_keypair().unwrap();
         assert_eq!(seed_hex.len(), 64);
@@ -676,11 +696,18 @@ mod tests {
         let sig_bytes = hex::decode(sig_hex.trim()).unwrap();
         let signature = ed25519_dalek::Signature::from_slice(&sig_bytes).unwrap();
         let verifying = VerifyingKey::from_bytes(
-            &hex::decode(pubkey_hex).unwrap().as_slice().try_into().unwrap(),
+            &hex::decode(pubkey_hex)
+                .unwrap()
+                .as_slice()
+                .try_into()
+                .unwrap(),
         )
         .unwrap();
         verifying
-            .verify(b"{\"schema_version\":1,\"latest_version\":\"0.0.0\"}", &signature)
+            .verify(
+                b"{\"schema_version\":1,\"latest_version\":\"0.0.0\"}",
+                &signature,
+            )
             .expect("signature must verify");
 
         let mut tampered = b"{\"schema_version\":1,\"latest_version\":\"0.0.0\"}".to_vec();

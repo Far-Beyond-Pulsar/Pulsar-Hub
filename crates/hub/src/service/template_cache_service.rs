@@ -97,7 +97,13 @@ fn entry_name(repo_url: &str) -> String {
         .unwrap_or("template")
         .trim_end_matches(".git")
         .chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '-'
+            }
+        })
         .collect();
     let slug = if slug.is_empty() { "template" } else { &slug };
     format!("{}-{:08x}", slug, fnv1a(repo_url) as u32)

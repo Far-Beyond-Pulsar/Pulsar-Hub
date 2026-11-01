@@ -10,6 +10,7 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 const CHUNK_SIZE: usize = 64 * 1024;
+const MAX_ATTEMPTS: usize = 4;
 
 pub struct StreamOptions<'a> {
     /// Called per chunk: cumulative bytes on disk, total size when known.
@@ -27,7 +28,43 @@ pub fn stream_to_file(
     opts: &StreamOptions,
 ) -> Result<(), String> {
     let part = part_path(dest)?;
-    let result = stream_to_part(client, url, dest, &part, opts);
+    let mut result = Err("Download did not start".to_string());
+    for attempt in 0..MAX_ATTEMPTS {
+        if (opts.cancelled)() {
+            result = Err("Cancelled".to_string());
+            break;
+        }
+
+        // Retry from the existing partial file after transient TLS, connection,
+        // or interrupted-stream errors even when the caller did not request
+        // resume across separate runs.
+        result = stream_to_part(client, url, dest, &part, opts, opts.resume || attempt > 0);
+        if result.is_ok() || matches!(&result, Err(error) if error == "Cancelled") {
+            break;
+        }
+
+        if attempt + 1 < MAX_ATTEMPTS {
+            tracing::warn!(
+                "Download attempt {}/{} failed for {}: {}; retrying",
+                attempt + 1,
+                MAX_ATTEMPTS,
+                url,
+                result.as_ref().unwrap_err()
+            );
+            let delay = std::time::Duration::from_secs(1 << attempt);
+            let deadline = std::time::Instant::now() + delay;
+            while std::time::Instant::now() < deadline {
+                if (opts.cancelled)() {
+                    result = Err("Cancelled".to_string());
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            if matches!(&result, Err(error) if error == "Cancelled") {
+                break;
+            }
+        }
+    }
     // Non-resuming downloads have no future use for a partial staging file.
     if result.is_err() && !opts.resume {
         let _ = std::fs::remove_file(&part);
@@ -41,9 +78,9 @@ fn stream_to_part(
     dest: &Path,
     part: &Path,
     opts: &StreamOptions,
+    resume: bool,
 ) -> Result<(), String> {
-    let mut requested =
-        initial_offset(std::fs::metadata(part).ok().map(|m| m.len()), opts.resume);
+    let mut requested = initial_offset(std::fs::metadata(part).ok().map(|m| m.len()), resume);
 
     let mut response = send(client, url, requested)?;
     if requested > 0 && response.status() == reqwest::StatusCode::RANGE_NOT_SATISFIABLE {
@@ -81,6 +118,14 @@ fn stream_to_part(
         file.write_all(&buffer[..read]).map_err(|e| e.to_string())?;
         received += read as u64;
         (opts.progress)(offset + received, total);
+    }
+
+    if total.is_some_and(|expected| offset + received < expected) {
+        return Err(format!(
+            "Download ended early: received {} of {} bytes",
+            offset + received,
+            total.unwrap()
+        ));
     }
 
     drop(file);
@@ -126,7 +171,11 @@ fn initial_offset(part_len: Option<u64>, resume: bool) -> u64 {
 /// effective total size. A `200` despite a Range request means the server
 /// ignored it — restart from zero. On `206`, the content length covers only
 /// the remaining bytes, so the total includes what is already on disk.
-fn negotiate(requested_offset: u64, status: u16, content_length: Option<u64>) -> (u64, Option<u64>) {
+fn negotiate(
+    requested_offset: u64,
+    status: u16,
+    content_length: Option<u64>,
+) -> (u64, Option<u64>) {
     if requested_offset > 0 && status == 206 {
         (
             requested_offset,

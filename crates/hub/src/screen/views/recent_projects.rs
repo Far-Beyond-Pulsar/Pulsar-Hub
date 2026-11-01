@@ -20,7 +20,12 @@ pub fn render_recent_projects(
     let columns = screen.calculate_columns(px(available_width + 220.0 + 64.0));
 
     let total_count = screen.state.recent_projects.projects.len();
-    let query = screen.state.input.project_search_query.trim().to_lowercase();
+    let query = screen
+        .state
+        .input
+        .project_search_query
+        .trim()
+        .to_lowercase();
     let is_filtering = !query.is_empty();
     let projects: Vec<crate::service::project_service::RecentProject> = screen
         .state
@@ -41,14 +46,13 @@ pub fn render_recent_projects(
     let no_matches = !is_empty && project_count == 0;
 
     v_flex()
-        .flex_1()
-        .h_full()
-        .overflow_hidden()
+        .w_full()
+        .px_8()
+        .pt_5()
+        .pb_6()
         .child(
             h_flex()
                 .w_full()
-                .px_8()
-                .pt_6()
                 .pb_4()
                 .gap_3()
                 .items_center()
@@ -58,7 +62,7 @@ pub fn render_recent_projects(
                         .text_2xl()
                         .font_weight(gpui::FontWeight::BOLD)
                         .text_color(theme.foreground)
-                        .child(format!("Recent Projects")),
+                        .child("Projects"),
                 )
                 .child(
                     div()
@@ -90,45 +94,16 @@ pub fn render_recent_projects(
                         .on_click(cx.listener(|this, _, _, cx| {
                             this.start_git_fetch_all(cx);
                         })),
-                )
-                .child(
-                    Button::new("open-folder-btn")
-                        .icon(IconName::FolderOpen)
-                        .label("Open Folder")
-                        .primary()
-                        .compact()
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.open_folder_dialog(cx);
-                        })),
-                )
-                .child(
-                    Button::new("new-project-btn")
-                        .icon(IconName::Plus)
-                        .label("New Project")
-                        .compact()
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.open_new_project_modal(cx);
-                        })),
-                )
-                .child(
-                    Button::new("clone-git-btn")
-                        .icon(IconName::Github)
-                        .label("Clone from Git")
-                        .compact()
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.open_clone_git_modal(cx);
-                        })),
                 ),
         )
         .child(
             v_flex()
-                .flex_1()
-                .min_h_0()
                 .w_full()
                 .when(is_empty, |this| {
                     this.child(
                         v_flex()
-                            .size_full()
+                            .w_full()
+                            .min_h(px(190.))
                             .items_center()
                             .justify_center()
                             .gap_3()
@@ -142,20 +117,21 @@ pub fn render_recent_projects(
                                     .text_lg()
                                     .font_weight(gpui::FontWeight::SEMIBOLD)
                                     .text_color(theme.foreground)
-                                    .child("No recent projects"),
+                                    .child("No projects yet"),
                             )
                             .child(
                                 div()
                                     .text_sm()
                                     .text_color(theme.muted_foreground.opacity(0.7))
-                                    .child("Open a folder or create a new project to get started"),
+                                    .child("Open a folder from the sidebar or choose a template to get started"),
                             ),
                     )
                 })
                 .when(no_matches, |this| {
                     this.child(
                         v_flex()
-                            .size_full()
+                            .w_full()
+                            .min_h(px(140.))
                             .items_center()
                             .justify_center()
                             .gap_2()
@@ -175,12 +151,7 @@ pub fn render_recent_projects(
                 .when(!is_empty && !no_matches, |this| {
                     this.child(
                     v_flex()
-                        .id("recent-projects-scroll")
-                        .flex_1()
-                        .min_h_0()
-                        .scrollable(gpui::Axis::Vertical)
-                        .px_8()
-                        .pb_6()
+                            .w_full()
                             .child(h_flex().flex_wrap().gap_6().children(
                                 projects.iter().map(
                                     |project| render_project_card(screen, project, columns, cx),
@@ -240,13 +211,19 @@ fn render_project_card(
         });
         let (w, p) = (weak.clone(), m_path.clone());
         menu = menu.menu_handler_with_icon("Project Settings", IconName::Settings, move |_, cx| {
-            let _ = w.update(cx, |this, cx| this.open_project_settings(PathBuf::from(&p), cx));
+            let _ = w.update(cx, |this, cx| {
+                this.open_project_settings(PathBuf::from(&p), cx)
+            });
         });
         menu = menu.separator();
         let p = m_path.clone();
-        menu = menu.menu_handler_with_icon("Reveal in File Explorer", IconName::FolderOpen, move |_, _| {
-            let _ = open::that(&p);
-        });
+        menu = menu.menu_handler_with_icon(
+            "Reveal in File Explorer",
+            IconName::FolderOpen,
+            move |_, _| {
+                let _ = open::that(&p);
+            },
+        );
         let p = m_path.clone();
         menu = menu.menu_handler_with_icon("Copy Path", IconName::Copy, move |_, cx| {
             cx.write_to_clipboard(ClipboardItem::new_string(p.clone()));

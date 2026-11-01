@@ -85,21 +85,17 @@ pub fn download_repo_snapshot(
     let parent = target
         .parent()
         .ok_or_else(|| "Invalid destination path".to_string())?;
-    let staging = parent.join(format!(
-        ".pulsar-archive-{}",
-        std::process::id()
-    ));
+    let staging = parent.join(format!(".pulsar-archive-{}", std::process::id()));
     let archive_path = staging.with_extension("tar.gz");
     let _ = std::fs::create_dir_all(parent);
 
     let result = (|| -> Result<(), String> {
-        let client = reqwest_client::apply_bundled_tls_blocking(
-            reqwest::blocking::Client::builder(),
-        )
-        .connect_timeout(std::time::Duration::from_secs(10))
-        .user_agent("Pulsar-Hub/1.0")
-        .build()
-        .map_err(|e| e.to_string())?;
+        let client =
+            reqwest_client::apply_bundled_tls_blocking(reqwest::blocking::Client::builder())
+                .connect_timeout(std::time::Duration::from_secs(10))
+                .user_agent("Pulsar-Hub/1.0")
+                .build()
+                .map_err(|e| e.to_string())?;
 
         let mut last_error = String::from("no archive URL attempted");
         let mut downloaded = false;
@@ -157,7 +153,10 @@ fn download_archive(
         let mut p = progress.lock();
         p.current = received.min(usize::MAX as u64) as usize;
         p.total = total.unwrap_or(0) as usize;
-        p.message = format!("Downloading archive: {:.1} MB", received as f32 / 1_048_576.0);
+        p.message = format!(
+            "Downloading archive: {:.1} MB",
+            received as f32 / 1_048_576.0
+        );
     };
     let options = crate::service::download::StreamOptions {
         progress: &report,

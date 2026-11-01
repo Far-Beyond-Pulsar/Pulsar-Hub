@@ -104,9 +104,7 @@ pub struct EntryScreen {
     pub inputs: InputEntities,
     /// Component list view for the engine release list (infinite scroll).
     pub(crate) release_list: Option<
-        gpui::Entity<
-            ui::list::List<crate::screen::views::release_list::ReleaseListDelegate>,
-        >,
+        gpui::Entity<ui::list::List<crate::screen::views::release_list::ReleaseListDelegate>>,
     >,
     /// Channel-selection dropdown content (multi-select checkboxes).
     pub(crate) channel_menu:
@@ -121,16 +119,11 @@ impl EntryScreen {
         let release_delegate_weak = self_entity.downgrade();
         let release_list = cx.new(|cx| {
             let delegate =
-                crate::screen::views::release_list::ReleaseListDelegate::new(
-                    release_delegate_weak,
-                );
+                crate::screen::views::release_list::ReleaseListDelegate::new(release_delegate_weak);
             ui::list::List::new(delegate, window, cx).no_query()
         });
         let channel_menu = Some(cx.new(|cx| {
-            crate::screen::views::channel_menu::ChannelMenuView::new(
-                self_entity.downgrade(),
-                cx,
-            )
+            crate::screen::views::channel_menu::ChannelMenuView::new(self_entity.downgrade(), cx)
         }));
 
         cx.subscribe_in(
@@ -188,6 +181,7 @@ impl EntryScreen {
         };
         this.state.git_auto_fetch_task = Some(Self::start_git_auto_fetch_task(cx));
         this.load_thumbnails(cx);
+        this.load_home_feed(cx);
         if this.state.ui.show_onboarding {
             this.refresh_plugin_registry(cx);
         }
@@ -196,6 +190,20 @@ impl EntryScreen {
 
     pub fn inputs(&self) -> &InputEntities {
         &self.inputs
+    }
+
+    fn load_home_feed(&mut self, cx: &mut Context<EntryScreen>) {
+        let weak = cx.entity().downgrade();
+        cx.spawn(async move |_, cx| {
+            let slides = smol::unblock(crate::service::home_feed::load_home_feed_blocking).await;
+            let _ = weak.update(cx, |screen, cx| {
+                screen.state.home_slides = slides;
+                screen.state.home_slide_index = 0;
+                screen.state.home_feed_loading = false;
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     pub(crate) fn check_dependencies_async(&mut self, cx: &mut Context<Self>) {
@@ -488,15 +496,10 @@ impl EntryScreen {
                             this.state.clone_error = Some(err.clone());
                             this.state.download_manager_view.update(cx, |view, cx| {
                                 for item in &mut view.items {
-                                    if matches!(
-                                        item.kind,
-                                        DownloadKind::TemplateClone { .. }
-                                    ) && matches!(
-                                        item.status,
-                                        DownloadStatus::Downloading { .. }
-                                    ) {
-                                        item.status =
-                                            DownloadStatus::Failed(err.clone());
+                                    if matches!(item.kind, DownloadKind::TemplateClone { .. })
+                                        && matches!(item.status, DownloadStatus::Downloading { .. })
+                                    {
+                                        item.status = DownloadStatus::Failed(err.clone());
                                     }
                                 }
                                 cx.notify();
@@ -506,8 +509,8 @@ impl EntryScreen {
                     });
                     return;
                 }
-                let show_upstream = ProjectService::is_git_repo(&target)
-                    && !GitService::has_origin_remote(&target);
+                let show_upstream =
+                    ProjectService::is_git_repo(&target) && !GitService::has_origin_remote(&target);
                 let _ = cx.update(|cx| {
                     let _ = entity.update(cx, |this, cx| {
                         this.state.clone_progress = None;
@@ -515,13 +518,9 @@ impl EntryScreen {
                         this.state.input.new_project_path = Some(target.clone());
                         this.state.download_manager_view.update(cx, |view, cx| {
                             for item in &mut view.items {
-                                if matches!(
-                                    item.kind,
-                                    DownloadKind::TemplateClone { .. }
-                                ) && matches!(
-                                    item.status,
-                                    DownloadStatus::Downloading { .. }
-                                ) {
+                                if matches!(item.kind, DownloadKind::TemplateClone { .. })
+                                    && matches!(item.status, DownloadStatus::Downloading { .. })
+                                {
                                     item.status = DownloadStatus::Complete;
                                 }
                             }
@@ -588,11 +587,7 @@ impl EntryScreen {
     }
 
     /// Create a project by copying an already-cached template — no download.
-    fn create_project_from_template_cache(
-        &mut self,
-        template: Template,
-        cx: &mut Context<Self>,
-    ) {
+    fn create_project_from_template_cache(&mut self, template: Template, cx: &mut Context<Self>) {
         let recent_projects_path = self.state.recent_projects_path.clone();
         let url = template.repo_url.clone();
         let progress = Arc::new(Mutex::new(CloneProgress {
@@ -669,7 +664,11 @@ impl EntryScreen {
     }
 
     /// Save a template into the local cache for offline/fast reuse (#375).
-    pub(crate) fn download_template_to_cache(&mut self, template: Template, cx: &mut Context<Self>) {
+    pub(crate) fn download_template_to_cache(
+        &mut self,
+        template: Template,
+        cx: &mut Context<Self>,
+    ) {
         let url = template.repo_url.clone();
         if TemplateCacheService::is_cached(&url) {
             return;
@@ -718,9 +717,7 @@ impl EntryScreen {
                 let _ = entity.update(cx, |this, cx| {
                     this.state.clone_progress = None;
                     this.state.download_manager_view.update(cx, |view, cx| {
-                        if let Some(item) =
-                            view.items.iter_mut().find(|i| i.id == dl_id)
-                        {
+                        if let Some(item) = view.items.iter_mut().find(|i| i.id == dl_id) {
                             item.status = match &result {
                                 Ok(_) => DownloadStatus::Complete,
                                 Err(e) => DownloadStatus::Failed(e.to_string()),
@@ -732,10 +729,9 @@ impl EntryScreen {
                         url.clone(),
                         match &result {
                             Ok(_) => GitFetchStatus::UpToDate,
-                            Err(e) => GitFetchStatus::Error(format!(
-                                "Cache download failed: {}",
-                                e
-                            )),
+                            Err(e) => {
+                                GitFetchStatus::Error(format!("Cache download failed: {}", e))
+                            }
                         },
                     );
                     cx.notify();
@@ -768,8 +764,7 @@ impl EntryScreen {
                 .await;
 
             let status = match result {
-                Ok(outcome) => git_fetch_status(Ok(outcome))
-                    .unwrap_or(GitFetchStatus::NotStarted),
+                Ok(outcome) => git_fetch_status(Ok(outcome)).unwrap_or(GitFetchStatus::NotStarted),
                 Err(error) => GitFetchStatus::Error(error.to_string()),
             };
             let _ = cx.update(|cx| {
@@ -940,12 +935,7 @@ impl EntryScreen {
     /// Compile the engine from the local `src` checkout in the background, then
     /// launch the target project in it. Keeps the hub window open (showing the
     /// build overlay) until the build finishes so the task isn't cancelled.
-    fn launch_src_project(
-        &mut self,
-        src: PathBuf,
-        project: &Path,
-        cx: &mut Context<Self>,
-    ) {
+    fn launch_src_project(&mut self, src: PathBuf, project: &Path, cx: &mut Context<Self>) {
         self.start_src_build(src, Some(project.to_path_buf()), cx);
     }
 
@@ -958,12 +948,7 @@ impl EntryScreen {
     /// progress into `ui.build_progress` (re-rendering the overlay via a poll),
     /// then launch the built engine — with `project` (and close the window) when
     /// provided, otherwise standalone.
-    fn start_src_build(
-        &mut self,
-        src: PathBuf,
-        project: Option<PathBuf>,
-        cx: &mut Context<Self>,
-    ) {
+    fn start_src_build(&mut self, src: PathBuf, project: Option<PathBuf>, cx: &mut Context<Self>) {
         use parking_lot::Mutex as PM;
         let progress = std::sync::Arc::new(PM::new(
             crate::service::installer_service::BuildProgress::default(),
@@ -1034,7 +1019,9 @@ impl EntryScreen {
     }
 
     /// The installed-version list, including the special local "src" engine.
-    pub(crate) fn installed_versions(&self) -> Vec<crate::service::installer_service::InstalledVersion> {
+    pub(crate) fn installed_versions(
+        &self,
+    ) -> Vec<crate::service::installer_service::InstalledVersion> {
         crate::service::installer_service::installed_versions_with_src(
             self.state.src_engine_path.as_deref(),
         )
@@ -1081,7 +1068,8 @@ impl EntryScreen {
             .iter()
             .filter(|v| svc::installed_satisfies(&v.metadata.version, required))
             .max_by(|a, b| {
-                svc::parse_version(&a.metadata.version).cmp(&svc::parse_version(&b.metadata.version))
+                svc::parse_version(&a.metadata.version)
+                    .cmp(&svc::parse_version(&b.metadata.version))
             })
             .map(|v| v.metadata.install_path.clone())
     }
@@ -1114,7 +1102,7 @@ impl EntryScreen {
     }
 
     pub(crate) fn open_new_project_modal(&mut self, cx: &mut Context<Self>) {
-        self.state.ui.view = EntryScreenView::Recent;
+        self.state.ui.view = EntryScreenView::Home;
         self.state.ui.show_new_project_modal = true;
         cx.notify();
     }
@@ -1125,7 +1113,7 @@ impl EntryScreen {
     }
 
     pub(crate) fn open_clone_git_modal(&mut self, cx: &mut Context<Self>) {
-        self.state.ui.view = EntryScreenView::Recent;
+        self.state.ui.view = EntryScreenView::Home;
         self.state.ui.show_clone_git_modal = true;
         cx.notify();
     }
@@ -2076,8 +2064,7 @@ impl EntryScreen {
                         };
                         match result {
                             Ok(list) => {
-                                let has_more = list.len()
-                                    == svc::RELEASES_PER_PAGE as usize;
+                                let has_more = list.len() == svc::RELEASES_PER_PAGE as usize;
                                 let mut seen: std::collections::HashSet<String> =
                                     src.fetched.iter().map(|r| r.tag_name.clone()).collect();
                                 for release in list {
@@ -2199,7 +2186,10 @@ impl EntryScreen {
                 v.selected_channels.push(channel);
             }
         } else {
-            self.state.versions.selected_channels.retain(|c| *c != channel);
+            self.state
+                .versions
+                .selected_channels
+                .retain(|c| *c != channel);
         }
         self.rebuild_available_releases();
         self.recompute_has_more();
@@ -2250,8 +2240,7 @@ impl EntryScreen {
                             };
                             match result {
                                 Ok(list) => {
-                                    let has_more = list.len()
-                                        == svc::RELEASES_PER_PAGE as usize;
+                                    let has_more = list.len() == svc::RELEASES_PER_PAGE as usize;
                                     let mut seen: std::collections::HashSet<String> =
                                         src.fetched.iter().map(|r| r.tag_name.clone()).collect();
                                     for release in list {
@@ -2504,7 +2493,13 @@ impl EntryScreen {
 
                 let snapshot = {
                     let p = progress.lock();
-                    (p.bytes_downloaded, p.total_bytes, p.speed_bps, p.done, p.error.clone())
+                    (
+                        p.bytes_downloaded,
+                        p.total_bytes,
+                        p.speed_bps,
+                        p.done,
+                        p.error.clone(),
+                    )
                 };
                 let (bytes, total, speed, done, _error) = snapshot;
                 let _ = cx.update(|cx| {
@@ -2650,7 +2645,10 @@ impl Render for EntryScreen {
         if let Some(ref code) = self.state.auth.device_code {
             if !self.state.ui.auth_device_modal_shown {
                 self.state.ui.auth_device_modal_shown = true;
-                let url = self.state.auth.device_verification_url
+                let url = self
+                    .state
+                    .auth
+                    .device_verification_url
                     .as_deref()
                     .unwrap_or("https://github.com/login/device")
                     .to_string();

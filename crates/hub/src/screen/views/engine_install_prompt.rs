@@ -29,15 +29,10 @@ pub fn render_engine_install_prompt(
             .child(div().child("Engine Required")),
         v_flex()
             .gap_4()
-            .child(
-                div()
-                    .text_sm()
-                    .text_color(theme.foreground)
-                    .child(format!(
-                        "“{}” requires engine “{}”, which isn’t installed.",
-                        prompt.project_name, prompt.required
-                    )),
-            )
+            .child(div().text_sm().text_color(theme.foreground).child(format!(
+                "“{}” requires engine “{}”, which isn’t installed.",
+                prompt.project_name, prompt.required
+            )))
             .child(
                 div()
                     .text_sm()

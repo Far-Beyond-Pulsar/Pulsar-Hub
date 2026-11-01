@@ -1,15 +1,8 @@
 use gpui::prelude::*;
 use gpui::*;
 use ui::{
-    button::Button,
-    button::ButtonVariants as _,
-    h_flex,
-    v_flex,
-    ActiveTheme as _,
-    Disableable as _,
-    Icon,
-    IconName,
-    StyledExt as _,
+    button::Button, button::ButtonVariants as _, h_flex, v_flex, ActiveTheme as _,
+    Disableable as _, Icon, IconName, StyledExt as _,
 };
 
 use crate::screen::EntryScreen;
@@ -126,10 +119,7 @@ pub fn render_storage(screen: &mut EntryScreen, cx: &mut Context<EntryScreen>) -
         })
 }
 
-fn render_storage_row(
-    row: &ProjectDiskStats,
-    cx: &mut Context<EntryScreen>,
-) -> impl IntoElement {
+fn render_storage_row(row: &ProjectDiskStats, cx: &mut Context<EntryScreen>) -> impl IntoElement {
     let theme = cx.theme();
     let total = row.total_bytes();
     let (health_label, health_kind) = repo_health(row);

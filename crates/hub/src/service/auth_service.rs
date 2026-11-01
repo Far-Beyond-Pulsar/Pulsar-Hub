@@ -43,13 +43,12 @@ impl AuthService {
     }
 
     pub fn load_avatar(url: &str) -> Option<Arc<RenderImage>> {
-        let client = reqwest_client::apply_bundled_tls_blocking(
-            reqwest::blocking::Client::builder(),
-        )
-            .timeout(std::time::Duration::from_secs(10))
-            .user_agent("Pulsar-Native/1.0")
-            .build()
-            .ok()?;
+        let client =
+            reqwest_client::apply_bundled_tls_blocking(reqwest::blocking::Client::builder())
+                .timeout(std::time::Duration::from_secs(10))
+                .user_agent("Pulsar-Native/1.0")
+                .build()
+                .ok()?;
         let response = client.get(url).send().ok()?;
         let bytes = response.bytes().ok()?;
         let rgba = image::load_from_memory(&bytes).ok()?.into_rgba8();

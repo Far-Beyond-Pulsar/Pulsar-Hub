@@ -226,20 +226,17 @@ fn render_template_card(
                                 category.clone(),
                             );
                             this.child(
-                                Button::new(SharedString::from(format!(
-                                    "cache-download-{}",
-                                    name
-                                )))
-                                .icon(IconName::Download)
-                                .compact()
-                                .ghost()
-                                .tooltip("Save to local cache")
-                                .on_click(cx.listener(move |this, _, _, cx| {
-                                    this.download_template_to_cache(
-                                        Template::new(&n, &d, i.clone(), &u, &c),
-                                        cx,
-                                    );
-                                })),
+                                Button::new(SharedString::from(format!("cache-download-{}", name)))
+                                    .icon(IconName::Download)
+                                    .compact()
+                                    .ghost()
+                                    .tooltip("Save to local cache")
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        this.download_template_to_cache(
+                                            Template::new(&n, &d, i.clone(), &u, &c),
+                                            cx,
+                                        );
+                                    })),
                             )
                         })
                         .when(cached, |this| {
@@ -266,28 +263,27 @@ fn render_template_card(
                                 .compact()
                                 .ghost()
                                 .tooltip("Check for updates")
-                                .on_click(cx.listener(move |this, _, _, cx| {
-                                    this.check_template_cache_updates(
-                                        Template::new(&n, &d, i.clone(), &u, &c),
-                                        cx,
-                                    );
-                                })),
+                                .on_click(cx.listener(
+                                    move |this, _, _, cx| {
+                                        this.check_template_cache_updates(
+                                            Template::new(&n, &d, i.clone(), &u, &c),
+                                            cx,
+                                        );
+                                    },
+                                )),
                             )
                             .child(
-                                Button::new(SharedString::from(format!(
-                                    "cache-remove-{}",
-                                    name
-                                )))
-                                .icon(IconName::Trash)
-                                .compact()
-                                .ghost()
-                                .tooltip("Remove from local cache")
-                                .on_click(cx.listener(move |this, _, _, cx| {
-                                    this.remove_template_from_cache(
-                                        Template::new(&n2, &d2, i2.clone(), &u2, &c2),
-                                        cx,
-                                    );
-                                })),
+                                Button::new(SharedString::from(format!("cache-remove-{}", name)))
+                                    .icon(IconName::Trash)
+                                    .compact()
+                                    .ghost()
+                                    .tooltip("Remove from local cache")
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        this.remove_template_from_cache(
+                                            Template::new(&n2, &d2, i2.clone(), &u2, &c2),
+                                            cx,
+                                        );
+                                    })),
                             )
                         }),
                 ),
@@ -399,7 +395,11 @@ fn render_template_cache_status(
                 div()
                     .text_xs()
                     .text_color(theme.warning)
-                    .child(format!("cached · {} update{}", count, if count == 1 { "" } else { "s" }))
+                    .child(format!(
+                        "cached · {} update{}",
+                        count,
+                        if count == 1 { "" } else { "s" }
+                    ))
                     .into_any_element(),
                 Button::new(SharedString::from(format!("cache-pull-{}", name)))
                     .compact()

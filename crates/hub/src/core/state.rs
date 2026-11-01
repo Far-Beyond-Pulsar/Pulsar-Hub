@@ -18,6 +18,7 @@ use crate::service::thumbnail_service::ThumbnailService;
 /// Focused sub-state: navigation & UI flags
 pub struct UiState {
     pub view: EntryScreenView,
+    pub sidebar_nav_bounds: Arc<Mutex<HashMap<EntryScreenView, (f32, f32, f32, f32)>>>,
     pub launched: bool,
     pub show_onboarding: bool,
     pub show_dependency_setup: bool,
@@ -45,7 +46,8 @@ pub struct UiState {
 impl UiState {
     pub fn new() -> Self {
         Self {
-            view: EntryScreenView::Recent,
+            view: EntryScreenView::Home,
+            sidebar_nav_bounds: Arc::new(Mutex::new(HashMap::new())),
             launched: false,
             show_onboarding: false,
             show_dependency_setup: false,
@@ -367,6 +369,9 @@ impl AuthState {
 pub struct AppState {
     pub logo: Option<Arc<RenderImage>>,
     pub recent_projects: crate::service::project_service::RecentProjectsList,
+    pub home_slides: Vec<crate::service::home_feed::HomeSlide>,
+    pub home_slide_index: usize,
+    pub home_feed_loading: bool,
     pub recent_projects_path: PathBuf,
     pub templates: Vec<Template>,
 
@@ -416,8 +421,7 @@ pub struct AppState {
     /// Per-project disk usage for the Storage page.
     pub storage: StorageState,
     pub download_manager_view: Entity<crate::screen::views::download_manager::DownloadManagerView>,
-    pub release_details_view:
-        Entity<crate::screen::views::release_details::ReleaseDetailsView>,
+    pub release_details_view: Entity<crate::screen::views::release_details::ReleaseDetailsView>,
     /// Local engine source checkout used for the special `src` engine version.
     pub src_engine_path: Option<PathBuf>,
     /// Config file path that persists `src_engine_path`.
@@ -480,6 +484,9 @@ impl AppState {
         Self {
             logo,
             recent_projects,
+            home_slides: Vec::new(),
+            home_slide_index: 0,
+            home_feed_loading: true,
             recent_projects_path,
             templates,
             ui: UiState::new(),
@@ -528,9 +535,8 @@ impl AppState {
                 loading: false,
                 rows: Vec::new(),
             },
-            release_details_view: cx.new(|cx| {
-                crate::screen::views::release_details::ReleaseDetailsView::new(cx)
-            }),
+            release_details_view: cx
+                .new(|cx| crate::screen::views::release_details::ReleaseDetailsView::new(cx)),
             src_engine_path,
             src_engine_config_path,
         }

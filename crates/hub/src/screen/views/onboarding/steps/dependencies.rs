@@ -2,8 +2,9 @@ use gpui::prelude::*;
 use gpui::*;
 use ui::{
     button::{Button, ButtonVariants},
+    h_flex,
     scroll::ScrollbarAxis,
-    h_flex, v_flex, ActiveTheme, Disableable, Icon, IconName, StyledExt,
+    v_flex, ActiveTheme, Disableable, Icon, IconName, StyledExt,
 };
 
 use crate::screen::EntryScreen;
@@ -35,7 +36,7 @@ pub fn render(screen: &mut EntryScreen, cx: &mut Context<EntryScreen>) -> AnyEle
             h_flex()
                 .items_center()
                 .gap_3()
-                .child(Icon::new(IconName::Package).size_6().text_color(theme.accent))
+                .child(Icon::new(IconName::Package).size_6().text_color(theme.foreground))
                 .child(v_flex().gap_1()
                     .child(div().text_lg().font_weight(FontWeight::SEMIBOLD).text_color(theme.foreground).child("Build tools"))
                     .child(div().text_sm().text_color(theme.muted_foreground).child("These tools are only needed to build the engine from source. You can use installed engine versions without them."))),

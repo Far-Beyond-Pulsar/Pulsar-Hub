@@ -2,14 +2,7 @@ use std::rc::Rc;
 
 use gpui::prelude::*;
 use gpui::*;
-use ui::{
-    button::Button,
-    button::ButtonVariants as _,
-    h_flex,
-    v_flex,
-    ActiveTheme as _,
-    IconName,
-};
+use ui::{button::Button, button::ButtonVariants as _, h_flex, v_flex, ActiveTheme as _, IconName};
 
 use crate::screen::EntryScreen;
 
@@ -33,10 +26,13 @@ pub fn render_modal(
         // Click on the dimmed backdrop closes the modal; clicks inside the
         // card stop propagation before reaching this handler.
         .when_some(on_close.clone(), |this, close| {
-            this.on_mouse_down(MouseButton::Left, cx.listener(move |this, _, window, cx| {
-                close(this, window, cx);
-                cx.notify();
-            }))
+            this.on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |this, _, window, cx| {
+                    close(this, window, cx);
+                    cx.notify();
+                }),
+            )
         })
         .child(
             v_flex()

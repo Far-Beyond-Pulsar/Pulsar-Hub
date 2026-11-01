@@ -23,7 +23,7 @@ pub fn render(screen: &mut EntryScreen, cx: &mut Context<EntryScreen>) -> AnyEle
             h_flex()
                 .items_center()
                 .gap_3()
-                .child(Icon::new(IconName::Group).size_6().text_color(theme.accent))
+                .child(Icon::new(IconName::Group).size_6().text_color(theme.foreground))
                 .child(v_flex().gap_1()
                     .child(div().text_lg().font_weight(FontWeight::SEMIBOLD).text_color(theme.foreground).child("Your account"))
                     .child(div().text_sm().text_color(theme.muted_foreground).child("Sign in to sync preferences and collaborate. This is optional; you can connect an account later."))),

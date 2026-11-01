@@ -81,7 +81,9 @@ impl ReleaseChannel {
     pub fn includes(&self, release: &GitHubRelease) -> bool {
         match self {
             ReleaseChannel::Nightly => true,
-            ReleaseChannel::Stable => version_major(&release.tag_name).map(|m| m >= 1).unwrap_or(false),
+            ReleaseChannel::Stable => version_major(&release.tag_name)
+                .map(|m| m >= 1)
+                .unwrap_or(false),
             ReleaseChannel::Alpha => version_major(&release.tag_name)
                 .map(|m| m >= 0 && m < 1)
                 .unwrap_or(false),
@@ -175,7 +177,9 @@ pub fn installed_satisfies(installed_version: &str, required: &str) -> bool {
     let Some(min) = required_min_version(req) else {
         return false;
     };
-    parse_version(installed_version).map(|v| v >= min).unwrap_or(false)
+    parse_version(installed_version)
+        .map(|v| v >= min)
+        .unwrap_or(false)
 }
 
 /// Whether an installed set contains at least one version satisfying `required`.
@@ -221,20 +225,10 @@ fn release_date_millis(release: &GitHubRelease) -> i64 {
 pub enum VersionInstallState {
     Idle,
     FetchingReleases,
-    Downloading {
-        version: String,
-        progress: f32,
-    },
-    Extracting {
-        version: String,
-    },
-    Complete {
-        version: String,
-    },
-    Error {
-        version: String,
-        message: String,
-    },
+    Downloading { version: String, progress: f32 },
+    Extracting { version: String },
+    Complete { version: String },
+    Error { version: String, message: String },
 }
 
 // ── Scan Installed Versions ─────────────────────────────────────────────────
@@ -247,7 +241,11 @@ pub fn scan_installed_versions() -> Vec<InstalledVersion> {
         if !root.exists() {
             continue;
         }
-        for entry in WalkDir::new(&root).max_depth(2).into_iter().filter_map(|e| e.ok()) {
+        for entry in WalkDir::new(&root)
+            .max_depth(2)
+            .into_iter()
+            .filter_map(|e| e.ok())
+        {
             if !entry.file_type().is_file() {
                 continue;
             }
@@ -282,8 +280,8 @@ pub fn write_metadata(dir: &Path, version: &str) -> std::io::Result<()> {
         install_date: chrono::Utc::now().to_rfc3339(),
         install_path: dir.to_path_buf(),
     };
-    let json =
-        serde_json::to_string_pretty(&metadata).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    let json = serde_json::to_string_pretty(&metadata)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
     std::fs::write(dir.join(".pulsar-install.json"), json)
 }
 
@@ -343,15 +341,10 @@ const GITHUB_API: &str = "https://api.github.com/repos";
 pub const RELEASES_PER_PAGE: u32 = 30;
 
 /// Fetch one page of releases from a given `owner/repo` slug.
-pub fn fetch_repo_releases_blocking(
-    repo: &str,
-    page: u32,
-) -> Result<Vec<GitHubRelease>, String> {
+pub fn fetch_repo_releases_blocking(repo: &str, page: u32) -> Result<Vec<GitHubRelease>, String> {
     use std::time::Duration;
 
-    let client = reqwest_client::apply_bundled_tls_blocking(
-        reqwest::blocking::Client::builder(),
-    )
+    let client = reqwest_client::apply_bundled_tls_blocking(reqwest::blocking::Client::builder())
         .user_agent("Pulsar-Hub/1.0")
         .timeout(Duration::from_secs(30))
         .connect_timeout(Duration::from_secs(10))
@@ -402,21 +395,17 @@ fn repo_tag_for_version(version: &str) -> (&'static str, String) {
 /// engine version. Falls back to a short message when unavailable.
 pub fn release_notes_for_version(version: &str) -> String {
     let (repo, tag) = repo_tag_for_version(version);
-    let url = format!(
-        "{}/{}/releases/tags/{}",
-        GITHUB_API, repo, tag
-    );
+    let url = format!("{}/{}/releases/tags/{}", GITHUB_API, repo, tag);
 
-    let client = match reqwest_client::apply_bundled_tls_blocking(
-        reqwest::blocking::Client::builder(),
-    )
-    .user_agent("Pulsar-Hub/1.0")
-    .timeout(std::time::Duration::from_secs(15))
-    .build()
-    {
-        Ok(c) => c,
-        Err(_) => return format!("Could not load release notes for **{}**.", version),
-    };
+    let client =
+        match reqwest_client::apply_bundled_tls_blocking(reqwest::blocking::Client::builder())
+            .user_agent("Pulsar-Hub/1.0")
+            .timeout(std::time::Duration::from_secs(15))
+            .build()
+        {
+            Ok(c) => c,
+            Err(_) => return format!("Could not load release notes for **{}**.", version),
+        };
 
     let resp = match client.get(&url).send() {
         Ok(r) if r.status().is_success() => r,
@@ -469,14 +458,10 @@ pub fn find_platform_asset(release: &GitHubRelease) -> Option<&GitHubAsset> {
     // Nightly builds use `Pulsar-Native_<platform>_<hash>.zip` naming.
     if let Some(token) = nightly_platform_token(&os, &arch) {
         let needle = format!("pulsar-native_{}_", token);
-        if let Some(a) = release
-            .assets
-            .iter()
-            .find(|a| {
-                let n = a.name.to_lowercase();
-                n.starts_with("pulsar-native_") && n.contains(&needle) && n.ends_with(".zip")
-            })
-        {
+        if let Some(a) = release.assets.iter().find(|a| {
+            let n = a.name.to_lowercase();
+            n.starts_with("pulsar-native_") && n.contains(&needle) && n.ends_with(".zip")
+        }) {
             tracing::info!(
                 "Asset selection: os={os} arch={arch} nightly_token={token} selected={}",
                 a.name
@@ -485,15 +470,16 @@ pub fn find_platform_asset(release: &GitHubRelease) -> Option<&GitHubAsset> {
         }
         tracing::warn!(
             "No nightly asset matched token '{token}' (os={os} arch={arch}); available: {:?}",
-            release.assets.iter().map(|a| a.name.as_str()).collect::<Vec<_>>()
+            release
+                .assets
+                .iter()
+                .map(|a| a.name.as_str())
+                .collect::<Vec<_>>()
         );
     }
     release.assets.iter().find(|a| {
         let n = a.name.to_lowercase();
-        n.contains(&os)
-            && n.contains(asset_arch)
-            && !n.ends_with(".sig")
-            && !n.ends_with(".sha256")
+        n.contains(&os) && n.contains(asset_arch) && !n.ends_with(".sig") && !n.ends_with(".sha256")
     })
 }
 
@@ -519,9 +505,7 @@ pub fn download_and_extract_blocking(
 ) -> Result<(), String> {
     progress_cb(0.0);
 
-    let client = reqwest_client::apply_bundled_tls_blocking(
-        reqwest::blocking::Client::builder(),
-    )
+    let client = reqwest_client::apply_bundled_tls_blocking(reqwest::blocking::Client::builder())
         .user_agent("Pulsar-Hub/1.0")
         .build()
         .map_err(|e| e.to_string())?;
@@ -584,8 +568,7 @@ pub fn download_and_extract_blocking(
                 place_engine_binary_at_root(dest_dir);
             }
         } else if is_tar_gz {
-            extract_tar_gz(archive_path, dest_dir)
-                .map_err(|e| e.to_string())?;
+            extract_tar_gz(archive_path, dest_dir).map_err(|e| e.to_string())?;
             #[cfg(target_os = "macos")]
             prepare_macos_engine_app(dest_dir, version).map_err(|e| e.to_string())?;
         }
@@ -643,21 +626,20 @@ pub fn download_and_extract_with_progress(
     version: &str,
     progress: Arc<Mutex<DownloadProgress>>,
 ) {
-    let client = match reqwest_client::apply_bundled_tls_blocking(
-        reqwest::blocking::Client::builder(),
-    )
-    .user_agent("Pulsar-Hub/1.0")
-    .connect_timeout(std::time::Duration::from_secs(10))
-    .build()
-    {
-        Ok(c) => c,
-        Err(e) => {
-            let mut p = progress.lock();
-            p.error = Some(e.to_string());
-            p.done = true;
-            return;
-        }
-    };
+    let client =
+        match reqwest_client::apply_bundled_tls_blocking(reqwest::blocking::Client::builder())
+            .user_agent("Pulsar-Hub/1.0")
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .build()
+        {
+            Ok(c) => c,
+            Err(e) => {
+                let mut p = progress.lock();
+                p.error = Some(e.to_string());
+                p.done = true;
+                return;
+            }
+        };
 
     let resp = match client.get(url).send() {
         Ok(r) => r,
@@ -820,7 +802,11 @@ fn flatten_archive_root(dest: &Path) {
 /// the binary as `pulsar_engine.exe`, possibly inside subdirectories, so we
 /// locate it and rename it into place.
 fn place_engine_binary_at_root(dest: &Path) {
-    let canonical = if cfg!(windows) { "pulsar.exe" } else { "pulsar" };
+    let canonical = if cfg!(windows) {
+        "pulsar.exe"
+    } else {
+        "pulsar"
+    };
     let root_target = dest.join(canonical);
     if root_target.exists() {
         return;
@@ -886,7 +872,8 @@ fn extract_tar_gz(archive_path: &Path, dest_dir: &Path) -> Result<(), String> {
     let file = std::fs::File::open(archive_path).map_err(|e| e.to_string())?;
     let dec = flate2::read::GzDecoder::new(file);
     let mut ar = tar::Archive::new(dec);
-    ar.unpack(dest_dir).map_err(|e| format!("Extract failed: {}", e))
+    ar.unpack(dest_dir)
+        .map_err(|e| format!("Extract failed: {}", e))
 }
 
 /// Extract a `.zip` archive (e.g. a Nightly build containing the binary and
@@ -912,8 +899,11 @@ fn extract_zip(archive_path: &Path, dest_dir: &Path) -> Result<(), String> {
             if let Some(parent) = out.parent() {
                 std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
             }
-            std::io::copy(&mut entry, &mut std::fs::File::create(&out).map_err(|e| e.to_string())?)
-                .map_err(|e| e.to_string())?;
+            std::io::copy(
+                &mut entry,
+                &mut std::fs::File::create(&out).map_err(|e| e.to_string())?,
+            )
+            .map_err(|e| e.to_string())?;
         }
 
         #[cfg(unix)]
@@ -979,7 +969,11 @@ pub fn open_install_dir(dir: &Path) {
     #[cfg(target_os = "macos")]
     let dir = {
         let payload = dir.join("Contents/Resources/engine");
-        if payload.is_dir() { payload } else { dir.to_path_buf() }
+        if payload.is_dir() {
+            payload
+        } else {
+            dir.to_path_buf()
+        }
     };
     let _ = open::that(dir);
 }
@@ -1032,9 +1026,7 @@ pub fn default_install_path() -> PathBuf {
     {
         let local_app = std::env::var("LOCALAPPDATA")
             .unwrap_or_else(|_| "C:\\Users\\Default\\AppData\\Local".to_string());
-        PathBuf::from(local_app)
-            .join("Programs")
-            .join("Pulsar")
+        PathBuf::from(local_app).join("Programs").join("Pulsar")
     }
     #[cfg(target_os = "macos")]
     {
@@ -1380,7 +1372,10 @@ pub fn compile_engine_src_with_progress(
 
 /// Read cargo's `--message-format=json` stream from stdout and fold the exact
 /// per-crate events into `progress`.
-fn stream_cargo_json(reader: impl std::io::Read + Send + 'static, progress: &Arc<Mutex<BuildProgress>>) {
+fn stream_cargo_json(
+    reader: impl std::io::Read + Send + 'static,
+    progress: &Arc<Mutex<BuildProgress>>,
+) {
     use std::io::{BufRead, BufReader};
     let mut reader = BufReader::new(reader);
     let mut line = String::new();
@@ -1429,7 +1424,11 @@ fn stream_cargo_json(reader: impl std::io::Read + Send + 'static, progress: &Arc
                                     .unwrap_or_else(|| "cargo build failed".to_string()),
                             );
                         }
-                        p.current = if success { "Done".to_string() } else { "Build failed".to_string() };
+                        p.current = if success {
+                            "Done".to_string()
+                        } else {
+                            "Build failed".to_string()
+                        };
                     }
                     "compiler-message" => {
                         // Rendered diagnostics (errors/warnings) as plain text.
@@ -1454,7 +1453,10 @@ fn stream_cargo_json(reader: impl std::io::Read + Send + 'static, progress: &Arc
 }
 
 /// Read human-facing cargo output (stderr) and surface it as activity/noise.
-fn stream_cargo_text(reader: impl std::io::Read + Send + 'static, progress: &Arc<Mutex<BuildProgress>>) {
+fn stream_cargo_text(
+    reader: impl std::io::Read + Send + 'static,
+    progress: &Arc<Mutex<BuildProgress>>,
+) {
     use std::io::{BufRead, BufReader};
     let mut reader = BufReader::new(reader);
     let mut line = String::new();
@@ -1617,8 +1619,12 @@ fn launch_binary(
 ) -> Result<(), String> {
     // The engine does not accept a positional project path. It opens projects
     // via the `pulsar://open_project/<url-encoded-path>` URI scheme.
-    let project_arg: Option<String> = project
-        .map(|p| format!("pulsar://open_project/{}", percent_encode(&p.to_string_lossy())));
+    let project_arg: Option<String> = project.map(|p| {
+        format!(
+            "pulsar://open_project/{}",
+            percent_encode(&p.to_string_lossy())
+        )
+    });
 
     let mut cmd = std::process::Command::new(exe);
     cmd.current_dir(current_dir)
@@ -1634,10 +1640,7 @@ fn launch_binary(
         // DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
         cmd.creation_flags(0x0000_0008 | 0x0000_0200);
     }
-    crate::service::launch_flags::LaunchFlags::apply_env(
-        flags_dir,
-        &mut cmd,
-    );
+    crate::service::launch_flags::LaunchFlags::apply_env(flags_dir, &mut cmd);
     cmd.spawn().map(|_| ()).map_err(|e| e.to_string())
 }
 
@@ -1684,8 +1687,8 @@ fn native_arch() -> String {
     #[cfg(windows)]
     {
         use windows::Win32::System::SystemInformation::{
-            GetNativeSystemInfo, SYSTEM_INFO, PROCESSOR_ARCHITECTURE_AMD64,
-            PROCESSOR_ARCHITECTURE_ARM64, PROCESSOR_ARCHITECTURE_INTEL,
+            GetNativeSystemInfo, PROCESSOR_ARCHITECTURE_AMD64, PROCESSOR_ARCHITECTURE_ARM64,
+            PROCESSOR_ARCHITECTURE_INTEL, SYSTEM_INFO,
         };
         let mut info = SYSTEM_INFO::default();
         unsafe {
@@ -1765,13 +1768,11 @@ mod install_layout_tests {
         };
 
         assert_eq!(
-            find_macos_app_bundle_asset(&release, "aarch64")
-                .map(|asset| asset.name.as_str()),
+            find_macos_app_bundle_asset(&release, "aarch64").map(|asset| asset.name.as_str()),
             Some("pulsar_engine-macos-arm64.app.zip")
         );
         assert_eq!(
-            find_macos_app_bundle_asset(&release, "x86_64")
-                .map(|asset| asset.name.as_str()),
+            find_macos_app_bundle_asset(&release, "x86_64").map(|asset| asset.name.as_str()),
             Some("pulsar_engine-macos-x86_64.app.zip")
         );
     }
@@ -1790,15 +1791,17 @@ mod install_layout_tests {
         prepare_macos_engine_app(&install, "v0.3.2").unwrap();
 
         let app_info = install.join("Contents/Info.plist");
-        let preserved_info = install.join("Contents/Resources/engine/pulsar.app/Contents/Info.plist");
+        let preserved_info =
+            install.join("Contents/Resources/engine/pulsar.app/Contents/Info.plist");
         assert!(app_info.is_file());
-        assert_eq!(std::fs::read_to_string(preserved_info).unwrap(), "original plist");
+        assert_eq!(
+            std::fs::read_to_string(preserved_info).unwrap(),
+            "original plist"
+        );
         assert!(install.join("Contents/MacOS/PulsarLauncher").is_file());
         assert_eq!(
             find_macos_engine_binary(&install.join("Contents/Resources/engine")),
-            Some(install.join(
-                "Contents/Resources/engine/pulsar.app/Contents/MacOS/pulsar"
-            ))
+            Some(install.join("Contents/Resources/engine/pulsar.app/Contents/MacOS/pulsar"))
         );
         let plist = std::fs::read_to_string(app_info).unwrap();
         assert!(plist.contains("Pulsar 0.3.2"));

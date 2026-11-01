@@ -1,11 +1,13 @@
 use gpui::prelude::*;
 use gpui::*;
 use ui::{
-    button::Button, button::ButtonVariants as _, h_flex, v_flex, ActiveTheme as _, Icon, IconName,
+    button::Button, button::ButtonVariants as _, h_flex, scroll::ScrollbarAxis, v_flex,
+    ActiveTheme as _, Icon, IconName, StyledExt,
 };
 
 use crate::core::types::InstallStatus;
 use crate::screen::EntryScreen;
+use wgpui_motion::prelude::MotionExt as _;
 
 pub fn render_dependency_setup(
     screen: &mut EntryScreen,
@@ -22,6 +24,10 @@ pub fn render_dependency_setup(
     let is_error = progress
         .map(|p| matches!(p.status, InstallStatus::Error(_)))
         .unwrap_or(false);
+    let error_message = progress.and_then(|progress| match &progress.status {
+        InstallStatus::Error(message) => Some(message.clone()),
+        _ => None,
+    });
     let status_text = progress
         .map(|p| match &p.status {
             InstallStatus::Idle => "Ready",
@@ -39,33 +45,50 @@ pub fn render_dependency_setup(
         .flex()
         .items_center()
         .justify_center()
-        .bg(theme.background.opacity(0.86))
+        .bg(gpui::black().opacity(0.48))
         .child(
             v_flex()
                 .w_full()
-                .max_w(px(560.))
-                .p_6()
-                .gap_5()
-                .rounded_xl()
+                .max_w(px(500.))
+                .p_5()
+                .gap_4()
+                .rounded_lg()
                 .border_1()
                 .border_color(theme.border)
-                .bg(theme.background)
+                .bg(theme.sidebar.opacity(0.98))
                 .shadow_lg()
+                .motion("dependency-setup-modal-motion")
+                .transition(wgpui_motion::prelude::Transition::token(
+                    wgpui_motion::prelude::MotionToken::SpatialFast,
+                ))
+                .enter(|style| style.opacity(0.).mt(px(8.)))
+                .base(|style| style.opacity(1.).mt(px(0.)))
                 .child(
-                    v_flex()
-                        .gap_2()
+                    h_flex()
+                        .items_start()
+                        .gap_3()
                         .child(
-                            div()
-                                .text_lg()
-                                .font_weight(gpui::FontWeight::SEMIBOLD)
-                                .text_color(theme.foreground)
-                                .child("Dependency Setup"),
+                            Icon::new(IconName::Package)
+                                .size(px(20.))
+                                .text_color(theme.foreground),
                         )
                         .child(
-                            div()
-                                .text_sm()
-                                .text_color(theme.muted_foreground)
-                                .child("Setting up required build tools for Pulsar Engine"),
+                            v_flex()
+                                .flex_1()
+                                .gap_1()
+                                .child(
+                                    div()
+                                        .text_lg()
+                                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                                        .text_color(theme.foreground)
+                                        .child("Dependency Setup"),
+                                )
+                                .child(
+                                    div()
+                                        .text_sm()
+                                        .text_color(theme.muted_foreground)
+                                        .child("Setting up required build tools for Pulsar Engine"),
+                                ),
                         ),
                 )
                 .child(
@@ -91,6 +114,9 @@ pub fn render_dependency_setup(
                 .child(
                     v_flex()
                         .gap_2()
+                        .p_3()
+                        .rounded_md()
+                        .bg(theme.secondary.opacity(0.10))
                         .child(
                             h_flex()
                                 .gap_2()
@@ -106,7 +132,7 @@ pub fn render_dependency_setup(
                                     div()
                                         .text_sm()
                                         .text_color(theme.foreground)
-                                        .child("Checking Rust"),
+                                        .child("Rust toolchain"),
                                 ),
                         )
                         .child(
@@ -127,28 +153,50 @@ pub fn render_dependency_setup(
                                         } else {
                                             theme.muted_foreground
                                         })
-                                        .child("Installing Rust"),
+                                        .child("C/C++ build tools"),
                                 ),
                         ),
                 )
-                .child(
-                    div()
-                        .w_full()
-                        .max_h(px(240.))
-                        .p_3()
-                        .rounded_md()
-                        .bg(gpui::black().opacity(0.3))
-                        .overflow_hidden()
-                        .child(v_flex().gap_1().children(
-                            install_logs.iter().rev().take(30).rev().map(|log| {
+                .when(!install_logs.is_empty(), |this| {
+                    this.child(
+                        div()
+                            .id("dependency-setup-logs")
+                            .w_full()
+                            .max_h(px(140.))
+                            .p_3()
+                            .rounded_md()
+                            .bg(theme.background.opacity(0.55))
+                            .scrollable(ScrollbarAxis::Vertical)
+                            .child(v_flex().gap_1().children(
+                                install_logs.iter().rev().take(30).rev().map(|log| {
+                                    div()
+                                        .text_xs()
+                                        .text_color(theme.muted_foreground)
+                                        .font_family(SharedString::from("monospace"))
+                                        .child(log.clone())
+                                }),
+                            )),
+                    )
+                })
+                .when_some(error_message, |this, message| {
+                    this.child(
+                        v_flex()
+                            .gap_1()
+                            .p_3()
+                            .rounded_md()
+                            .bg(gpui::red().opacity(0.10))
+                            .border_1()
+                            .border_color(gpui::red().opacity(0.35))
+                            .child(
                                 div()
-                                    .text_xs()
-                                    .text_color(theme.muted_foreground)
-                                    .font_family(SharedString::from("monospace"))
-                                    .child(log.clone())
-                            }),
-                        )),
-                )
+                                    .text_sm()
+                                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                                    .text_color(gpui::red())
+                                    .child("Setup failed"),
+                            )
+                            .child(div().text_xs().text_color(theme.foreground).child(message)),
+                    )
+                })
                 .child(
                     h_flex()
                         .justify_between()
@@ -160,7 +208,7 @@ pub fn render_dependency_setup(
                         )
                         .child(
                             Button::new("close-dependency-setup")
-                                .label("Close")
+                                .label(if is_complete { "Done" } else { "Close" })
                                 .ghost()
                                 .on_click(cx.listener(|this, _, _, cx| {
                                     this.state.ui.show_dependency_setup = false;

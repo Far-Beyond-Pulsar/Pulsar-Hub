@@ -13,7 +13,7 @@ pub fn render(screen: &mut EntryScreen, cx: &mut Context<EntryScreen>) -> AnyEle
             h_flex()
                 .gap_3()
                 .items_center()
-                .child(Icon::new(IconName::Download).size_6().text_color(theme.accent))
+                .child(Icon::new(IconName::Download).size_6().text_color(theme.foreground))
                 .child(
                     v_flex()
                         .gap_1()

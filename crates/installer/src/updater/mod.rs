@@ -74,9 +74,9 @@ fn verify_manifest_signature(manifest_bytes: &[u8], sig_bytes: &[u8]) -> Result<
     let verifying_key = manifest_verifying_key()?;
     let signature = Signature::from_slice(sig_bytes)
         .context("update manifest signature has invalid length (expected 64 bytes)")?;
-    verifying_key
-        .verify(manifest_bytes, &signature)
-        .context("update manifest signature verification failed (tampered or signed by unknown key)")
+    verifying_key.verify(manifest_bytes, &signature).context(
+        "update manifest signature verification failed (tampered or signed by unknown key)",
+    )
 }
 
 pub async fn check_and_update() -> Result<bool> {
@@ -97,10 +97,9 @@ pub async fn check_and_update() -> Result<bool> {
         .await
         .context("failed to read update manifest body")?;
 
-    if let Err(e) = verify_manifest_signature(
-        &manifest_bytes,
-        &fetch_manifest_signature(&client).await?,
-    ) {
+    if let Err(e) =
+        verify_manifest_signature(&manifest_bytes, &fetch_manifest_signature(&client).await?)
+    {
         tracing::error!("Rejecting update manifest: {:#}", e);
         return Err(e);
     }
@@ -155,6 +154,9 @@ pub async fn check_and_update() -> Result<bool> {
         .replace(&new_binary_path)
         .context("failed to replace binary")?;
 
-    tracing::info!("Update to v{} applied successfully", manifest.latest_version);
+    tracing::info!(
+        "Update to v{} applied successfully",
+        manifest.latest_version
+    );
     Ok(true)
 }

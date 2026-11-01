@@ -2,11 +2,12 @@ use gpui::prelude::*;
 use gpui::*;
 use ui::{
     button::{Button, ButtonVariants as _},
-    h_flex, scroll::ScrollbarAxis, v_flex, ActiveTheme as _, Icon, IconName,
-    StyledExt as _,
+    h_flex,
+    scroll::ScrollbarAxis,
+    v_flex, ActiveTheme as _, Icon, IconName, StyledExt as _,
 };
 
-use crate::core::types::{DownloadItem, DownloadKind, DownloadStatus, format_bytes};
+use crate::core::types::{format_bytes, DownloadItem, DownloadKind, DownloadStatus};
 
 pub struct DownloadManagerView {
     focus_handle: FocusHandle,
@@ -62,7 +63,10 @@ impl DownloadManagerView {
 
     pub fn clear_completed(&mut self) {
         self.items.retain(|i| {
-            !matches!(i.status, DownloadStatus::Complete | DownloadStatus::Failed(_))
+            !matches!(
+                i.status,
+                DownloadStatus::Complete | DownloadStatus::Failed(_)
+            )
         });
     }
 }
@@ -111,7 +115,7 @@ impl Render for DownloadManagerView {
                             .child(
                                 Icon::new(IconName::Download)
                                     .size(px(14.))
-                                    .text_color(theme.accent),
+                                    .text_color(theme.foreground),
                             )
                             .child(
                                 div()
@@ -181,7 +185,10 @@ impl Render for DownloadManagerView {
     }
 }
 
-fn render_download_item(item: DownloadItem, cx: &mut Context<DownloadManagerView>) -> impl IntoElement {
+fn render_download_item(
+    item: DownloadItem,
+    cx: &mut Context<DownloadManagerView>,
+) -> impl IntoElement {
     let theme = cx.theme();
     let label = item.label();
     let is_downloading = matches!(item.status, DownloadStatus::Downloading { .. });
@@ -212,12 +219,7 @@ fn render_download_item(item: DownloadItem, cx: &mut Context<DownloadManagerView
                             .size(px(14.))
                             .text_color(theme.muted_foreground),
                         )
-                        .child(
-                            div()
-                                .text_sm()
-                                .text_color(theme.foreground)
-                                .child(label),
-                        ),
+                        .child(div().text_sm().text_color(theme.foreground).child(label)),
                 )
                 .child(match &item.status {
                     DownloadStatus::Downloading { speed_bps, .. } => {
@@ -230,45 +232,31 @@ fn render_download_item(item: DownloadItem, cx: &mut Context<DownloadManagerView
                         } else {
                             div()
                                 .text_xs()
-                                .text_color(theme.accent)
+                                .text_color(theme.foreground)
                                 .child("Starting...")
                                 .into_any_element()
                         }
                     }
-                    DownloadStatus::Complete => {
-                        h_flex()
-                            .gap_1()
-                            .items_center()
-                            .child(
-                                Icon::new(IconName::Check)
-                                    .size(px(12.))
-                                    .text_color(theme.success),
-                            )
-                            .child(
-                                div()
-                                    .text_xs()
-                                    .text_color(theme.success)
-                                    .child("Done"),
-                            )
-                            .into_any_element()
-                    }
-                    DownloadStatus::Failed(e) => {
-                        h_flex()
-                            .gap_1()
-                            .items_center()
-                            .child(
-                                Icon::new(IconName::Close)
-                                    .size(px(12.))
-                                    .text_color(theme.danger),
-                            )
-                            .child(
-                                div()
-                                    .text_xs()
-                                    .text_color(theme.danger)
-                                    .child(e.clone()),
-                            )
-                            .into_any_element()
-                    }
+                    DownloadStatus::Complete => h_flex()
+                        .gap_1()
+                        .items_center()
+                        .child(
+                            Icon::new(IconName::Check)
+                                .size(px(12.))
+                                .text_color(theme.success),
+                        )
+                        .child(div().text_xs().text_color(theme.success).child("Done"))
+                        .into_any_element(),
+                    DownloadStatus::Failed(e) => h_flex()
+                        .gap_1()
+                        .items_center()
+                        .child(
+                            Icon::new(IconName::Close)
+                                .size(px(12.))
+                                .text_color(theme.danger),
+                        )
+                        .child(div().text_xs().text_color(theme.danger).child(e.clone()))
+                        .into_any_element(),
                 }),
         )
         .when(is_downloading, |this| {

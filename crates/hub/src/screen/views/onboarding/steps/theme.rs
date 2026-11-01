@@ -14,7 +14,7 @@ pub fn render(screen: &mut EntryScreen, cx: &mut Context<EntryScreen>) -> AnyEle
             h_flex()
                 .items_center()
                 .gap_3()
-                .child(Icon::new(IconName::Palette).size_6().text_color(theme.accent))
+                .child(Icon::new(IconName::Palette).size_6().text_color(theme.foreground))
                 .child(v_flex().gap_1()
                     .child(div().text_lg().font_weight(FontWeight::SEMIBOLD).text_color(theme.foreground).child("Choose a look"))
                     .child(div().text_sm().text_color(theme.muted_foreground).child(format!("Pick a theme for Pulsar Hub. You can change it any time in settings. Current theme: {active_theme}.")))),

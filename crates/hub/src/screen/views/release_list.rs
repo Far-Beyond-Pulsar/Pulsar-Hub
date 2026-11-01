@@ -5,7 +5,9 @@ use ui::list::{List, ListDelegate};
 use ui::IndexPath;
 use ui::{
     button::{Button, ButtonVariants as _},
-    h_flex, v_flex, ActiveTheme as _, Icon, IconName, Selectable, StyledExt as _, text::TextView,
+    h_flex,
+    text::TextView,
+    v_flex, ActiveTheme as _, Icon, IconName, Selectable, StyledExt as _,
 };
 
 use crate::service::installer_service::{self, GitHubRelease};
@@ -60,7 +62,10 @@ impl ReleaseListDelegate {
         self.screen
             .upgrade()
             .map(|s| {
-                s.read(cx).state.versions.installed
+                s.read(cx)
+                    .state
+                    .versions
+                    .installed
                     .iter()
                     .map(|v| v.metadata.version.clone())
                     .collect()
@@ -101,7 +106,11 @@ impl ReleaseListDelegate {
                     h_flex()
                         .items_center()
                         .gap_2()
-                        .child(Icon::new(IconName::Label).size(px(16.)).text_color(theme.accent))
+                        .child(
+                            Icon::new(IconName::Label)
+                                .size(px(16.))
+                                .text_color(theme.foreground),
+                        )
                         .child(
                             h_flex()
                                 .items_center()
@@ -144,7 +153,10 @@ impl ReleaseListDelegate {
                                         let weak = weak.clone();
                                         if let Some(e) = weak.upgrade() {
                                             let _ = e.update(cx, |this, cx| {
-                                                this.install_release_by_tag(install_tag.clone(), cx);
+                                                this.install_release_by_tag(
+                                                    install_tag.clone(),
+                                                    cx,
+                                                );
                                             });
                                         }
                                     })
@@ -163,21 +175,24 @@ impl ReleaseListDelegate {
                             this.child(
                                 ui::popover::Popover::<
                                     crate::screen::views::release_details::ReleaseDetailsView,
-                                >::new(format!("release-details-popover-{}", row))
-                                    .anchor(Corner::TopRight)
-                                    .trigger(
-                                        Button::new(format!("release-details-{}", row))
-                                            .label("Details")
-                                            .compact()
-                                            .ghost()
-                                            .tooltip("Full release notes"),
-                                    )
-                                    .content(move |_, cx| {
-                                        let t = tag.clone();
-                                        let b = body.clone();
-                                        let _ = dv.update(cx, |v, cx| v.set_content(t, b, cx));
-                                        dv.clone()
-                                    }),
+                                >::new(format!(
+                                    "release-details-popover-{}",
+                                    row
+                                ))
+                                .anchor(Corner::TopRight)
+                                .trigger(
+                                    Button::new(format!("release-details-{}", row))
+                                        .label("Details")
+                                        .compact()
+                                        .ghost()
+                                        .tooltip("Full release notes"),
+                                )
+                                .content(move |_, cx| {
+                                    let t = tag.clone();
+                                    let b = body.clone();
+                                    let _ = dv.update(cx, |v, cx| v.set_content(t, b, cx));
+                                    dv.clone()
+                                }),
                             )
                         }),
                 ),
@@ -202,7 +217,12 @@ impl ListDelegate for ReleaseListDelegate {
     type Item = ReleaseItem;
 
     fn items_count(&self, _: usize, cx: &App) -> usize {
-        self.loaded(cx) + if self.loading_more(cx) { PLACEHOLDER_ROWS } else { 0 }
+        self.loaded(cx)
+            + if self.loading_more(cx) {
+                PLACEHOLDER_ROWS
+            } else {
+                0
+            }
     }
 
     fn render_item(
@@ -249,11 +269,7 @@ impl ListDelegate for ReleaseListDelegate {
         }
     }
 
-    fn render_empty(
-        &self,
-        _: &mut Window,
-        cx: &mut Context<List<Self>>,
-    ) -> impl IntoElement {
+    fn render_empty(&self, _: &mut Window, cx: &mut Context<List<Self>>) -> impl IntoElement {
         let fetching = self
             .screen
             .upgrade()
@@ -289,12 +305,7 @@ impl ReleaseListDelegate {
                 .items_center()
                 .gap_2()
                 .child(ui::skeleton::Skeleton::new().h_4().w_40())
-                .child(
-                    ui::skeleton::Skeleton::new()
-                        .secondary(true)
-                        .h_3()
-                        .w_24(),
-                ),
+                .child(ui::skeleton::Skeleton::new().secondary(true).h_3().w_24()),
         );
         row_item = row_item.child(
             v_flex()
@@ -302,12 +313,7 @@ impl ReleaseListDelegate {
                 .mt_2()
                 .gap_1()
                 .child(ui::skeleton::Skeleton::new().secondary(true).h_3().w_full())
-                .child(
-                    ui::skeleton::Skeleton::new()
-                        .secondary(true)
-                        .h_3()
-                        .w_full(),
-                ),
+                .child(ui::skeleton::Skeleton::new().secondary(true).h_3().w_full()),
         );
         row_item
     }
@@ -369,7 +375,8 @@ impl RenderOnce for ReleaseItem {
             .border_1()
             .border_color(theme.border)
             .when(self.selected, |this| {
-                this.bg(theme.accent.opacity(0.08)).border_color(theme.accent)
+                this.bg(theme.accent.opacity(0.08))
+                    .border_color(theme.accent)
             })
             .children(self.children)
     }
@@ -448,7 +455,9 @@ fn extract_first_section_after_container_images(markdown: &str) -> String {
             }
         }
     }
-    let Some(ci) = last_ci else { return String::new(); };
+    let Some(ci) = last_ci else {
+        return String::new();
+    };
 
     let mut start: Option<usize> = None;
     for (i, line) in lines.iter().enumerate().skip(ci + 1) {
@@ -457,7 +466,9 @@ fn extract_first_section_after_container_images(markdown: &str) -> String {
             break;
         }
     }
-    let Some(start) = start else { return String::new(); };
+    let Some(start) = start else {
+        return String::new();
+    };
 
     let mut end = lines.len();
     for j in (start + 1)..lines.len() {

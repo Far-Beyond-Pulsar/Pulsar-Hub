@@ -123,15 +123,10 @@ fn main() {
                 let backup = exe.with_extension("bak");
                 if backup.exists() {
                     match std::fs::remove_file(&backup) {
-                        Ok(()) => tracing::info!(
-                            "Removed pre-update backup {}",
-                            backup.display()
-                        ),
-                        Err(e) => tracing::debug!(
-                            "Could not remove backup {}: {}",
-                            backup.display(),
-                            e
-                        ),
+                        Ok(()) => tracing::info!("Removed pre-update backup {}", backup.display()),
+                        Err(e) => {
+                            tracing::debug!("Could not remove backup {}: {}", backup.display(), e)
+                        }
                     }
                 }
             }

@@ -63,7 +63,7 @@ pub fn render_cloud_intro_modal(
                                         .child(
                                             Icon::new(IconName::Cloud)
                                                 .size(px(20.))
-                                                .text_color(theme.accent),
+                                                .text_color(theme.foreground),
                                         ),
                                 )
                                 .child(
@@ -79,7 +79,9 @@ pub fn render_cloud_intro_modal(
                                             div()
                                                 .text_xs()
                                                 .text_color(theme.secondary_foreground)
-                                                .child("Cloud Collaboration & Remote Infrastructure"),
+                                                .child(
+                                                    "Cloud Collaboration & Remote Infrastructure",
+                                                ),
                                         ),
                                 ),
                         )
@@ -96,31 +98,22 @@ pub fn render_cloud_intro_modal(
                 )
                 // Modal body
                 .child(
-                    v_flex()
-                        .w_full()
-                        .px_6()
-                        .py_5()
-                        .min_h(px(260.))
-                        .child(
-                            v_flex()
-                                .w_full()
-                                .gap_4()
-                                .child(match current_page {
-                                    0 => render_page_overview(cx).into_any_element(),
-                                    1 => render_page_realtime(cx).into_any_element(),
-                                    _ => render_page_git_ci(cx).into_any_element(),
-                                })
-                                .with_animation(
-                                    SharedString::from(format!(
-                                        "cloud-intro-page-fx-{current_page}"
-                                    )),
-                                    Animation::new(Duration::from_millis(220))
-                                        .with_easing(ease_out_quint()),
-                                    move |this, delta| {
-                                        this.opacity(delta).mt(px(8. * (1. - delta)))
-                                    },
-                                ),
-                        ),
+                    v_flex().w_full().px_6().py_5().min_h(px(260.)).child(
+                        v_flex()
+                            .w_full()
+                            .gap_4()
+                            .child(match current_page {
+                                0 => render_page_overview(cx).into_any_element(),
+                                1 => render_page_realtime(cx).into_any_element(),
+                                _ => render_page_git_ci(cx).into_any_element(),
+                            })
+                            .with_animation(
+                                SharedString::from(format!("cloud-intro-page-fx-{current_page}")),
+                                Animation::new(Duration::from_millis(220))
+                                    .with_easing(ease_out_quint()),
+                                move |this, delta| this.opacity(delta).mt(px(8. * (1. - delta))),
+                            ),
+                    ),
                 )
                 // Footer
                 .child(
@@ -135,33 +128,30 @@ pub fn render_cloud_intro_modal(
                         .border_color(theme.border)
                         .child(
                             // Page Indicators
-                            h_flex()
-                                .gap_1p5()
-                                .items_center()
-                                .children((0..3).map(|i| {
-                                    let is_active = i == current_page;
-                                    div()
-                                        .id(SharedString::from(format!("cloud-intro-dot-{i}")))
-                                        .w(if is_active { px(20.) } else { px(8.) })
-                                        .h(px(8.))
-                                        .rounded_full()
-                                        .bg(if is_active {
-                                            theme.accent
+                            h_flex().gap_1p5().items_center().children((0..3).map(|i| {
+                                let is_active = i == current_page;
+                                div()
+                                    .id(SharedString::from(format!("cloud-intro-dot-{i}")))
+                                    .w(if is_active { px(20.) } else { px(8.) })
+                                    .h(px(8.))
+                                    .rounded_full()
+                                    .bg(if is_active {
+                                        theme.foreground
+                                    } else {
+                                        theme.secondary_foreground.opacity(0.30)
+                                    })
+                                    .cursor_pointer()
+                                    .hover(|this| {
+                                        this.bg(if is_active {
+                                            theme.foreground
                                         } else {
-                                            theme.secondary_foreground.opacity(0.30)
+                                            theme.secondary_foreground.opacity(0.60)
                                         })
-                                        .cursor_pointer()
-                                        .hover(|this| {
-                                            this.bg(if is_active {
-                                                theme.accent
-                                            } else {
-                                                theme.secondary_foreground.opacity(0.60)
-                                            })
-                                        })
-                                        .on_click(cx.listener(move |this, _, _, cx| {
-                                            this.set_cloud_intro_page(i, cx);
-                                        }))
-                                })),
+                                    })
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        this.set_cloud_intro_page(i, cx);
+                                    }))
+                            })),
                         )
                         .child(
                             h_flex()
@@ -214,7 +204,7 @@ fn render_page_overview(cx: &Context<EntryScreen>) -> impl IntoElement {
             div()
                 .text_xs()
                 .font_weight(FontWeight::BOLD)
-                .text_color(theme.accent)
+                .text_color(theme.foreground)
                 .child("WELCOME TO PULSAR STUDIO"),
         )
         .child(
@@ -238,7 +228,7 @@ fn render_page_overview(cx: &Context<EntryScreen>) -> impl IntoElement {
                         .child(
                             Icon::new(IconName::Heart)
                                 .size(px(16.))
-                                .text_color(theme.accent),
+                                .text_color(theme.foreground),
                         )
                         .child(
                             div()
@@ -266,7 +256,7 @@ fn render_page_realtime(cx: &Context<EntryScreen>) -> impl IntoElement {
             div()
                 .text_xs()
                 .font_weight(FontWeight::BOLD)
-                .text_color(theme.accent)
+                .text_color(theme.foreground)
                 .child("REAL-TIME COLLABORATION"),
         )
         .child(
@@ -299,7 +289,7 @@ fn render_page_realtime(cx: &Context<EntryScreen>) -> impl IntoElement {
                                 .child(
                                     Icon::new(IconName::Group)
                                         .size(px(16.))
-                                        .text_color(theme.accent),
+                                        .text_color(theme.foreground),
                                 ),
                         )
                         .child(
@@ -340,7 +330,7 @@ fn render_page_realtime(cx: &Context<EntryScreen>) -> impl IntoElement {
                                 .child(
                                     Icon::new(IconName::Globe)
                                         .size(px(16.))
-                                        .text_color(theme.accent),
+                                        .text_color(theme.foreground),
                                 ),
                         )
                         .child(
@@ -372,7 +362,7 @@ fn render_page_git_ci(cx: &Context<EntryScreen>) -> impl IntoElement {
             div()
                 .text_xs()
                 .font_weight(FontWeight::BOLD)
-                .text_color(theme.accent)
+                .text_color(theme.foreground)
                 .child("GIT INTEGRATION & CI AUTOMATION"),
         )
         .child(
@@ -405,7 +395,7 @@ fn render_page_git_ci(cx: &Context<EntryScreen>) -> impl IntoElement {
                                 .child(
                                     Icon::new(IconName::GitBranch)
                                         .size(px(16.))
-                                        .text_color(theme.accent),
+                                        .text_color(theme.foreground),
                                 ),
                         )
                         .child(
@@ -446,7 +436,7 @@ fn render_page_git_ci(cx: &Context<EntryScreen>) -> impl IntoElement {
                                 .child(
                                     Icon::new(IconName::Cpu)
                                         .size(px(16.))
-                                        .text_color(theme.accent),
+                                        .text_color(theme.foreground),
                                 ),
                         )
                         .child(

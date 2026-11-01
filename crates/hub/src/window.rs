@@ -75,16 +75,20 @@ impl Render for EntryWindow {
             .track_focus(&self.focus_handle)
             .size_full()
             .on_action(cx.listener(|this, _: &NewProjectModal, _, cx| {
-                this.screen.update(cx, |screen, cx| screen.open_new_project_modal(cx));
+                this.screen
+                    .update(cx, |screen, cx| screen.open_new_project_modal(cx));
             }))
             .on_action(cx.listener(|this, _: &OpenFolderDialog, _, cx| {
-                this.screen.update(cx, |screen, cx| screen.open_folder_dialog(cx));
+                this.screen
+                    .update(cx, |screen, cx| screen.open_folder_dialog(cx));
             }))
             .on_action(cx.listener(|this, _: &CloneGitModal, _, cx| {
-                this.screen.update(cx, |screen, cx| screen.open_clone_git_modal(cx));
+                this.screen
+                    .update(cx, |screen, cx| screen.open_clone_git_modal(cx));
             }))
             .on_action(cx.listener(|this, _: &CheckGitUpdates, _, cx| {
-                this.screen.update(cx, |screen, cx| screen.start_git_fetch_all(cx));
+                this.screen
+                    .update(cx, |screen, cx| screen.start_git_fetch_all(cx));
             }))
             .on_action(|_: &OpenAppSettings, _, cx| {
                 crate::windows::open_settings_window(None, cx);
