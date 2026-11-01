@@ -439,13 +439,23 @@ pub fn release_notes_for_version(version: &str) -> String {
 
 pub fn find_platform_asset(release: &GitHubRelease) -> Option<&GitHubAsset> {
     let (os, arch, ext) = platform_info();
+    let asset_arch = if os == "macos" && arch == "aarch64" {
+        "arm64"
+    } else {
+        arch.as_str()
+    };
+    #[cfg(target_os = "macos")]
+    if let Some(app_bundle) = find_macos_app_bundle_asset(release, asset_arch) {
+        return Some(app_bundle);
+    }
+
     let candidates = [
-        format!("pulsar_engine-{}-{}.{}", os, arch, ext),
-        format!("pulsar_engine_{}_{}.{}", os, arch, ext),
-        format!("pulsar-{}-{}.{}", os, arch, ext),
-        format!("pulsar_{}_{}.{}", os, arch, ext),
-        format!("{}-{}.{}", os, arch, ext),
-        format!("{}_{}.{}", os, arch, ext),
+        format!("pulsar_engine-{}-{}.{}", os, asset_arch, ext),
+        format!("pulsar_engine_{}_{}.{}", os, asset_arch, ext),
+        format!("pulsar-{}-{}.{}", os, asset_arch, ext),
+        format!("pulsar_{}_{}.{}", os, asset_arch, ext),
+        format!("{}-{}.{}", os, asset_arch, ext),
+        format!("{}_{}.{}", os, asset_arch, ext),
     ];
     for pat in &candidates {
         if let Some(a) = release
@@ -480,7 +490,10 @@ pub fn find_platform_asset(release: &GitHubRelease) -> Option<&GitHubAsset> {
     }
     release.assets.iter().find(|a| {
         let n = a.name.to_lowercase();
-        n.contains(&os) && n.contains(&arch)
+        n.contains(&os)
+            && n.contains(asset_arch)
+            && !n.ends_with(".sig")
+            && !n.ends_with(".sha256")
     })
 }
 
@@ -515,9 +528,10 @@ pub fn download_and_extract_blocking(
 
     std::fs::create_dir_all(dest_dir).map_err(|e| e.to_string())?;
 
-    let (_, _, ext) = platform_info();
-    let is_zip = url.to_lowercase().ends_with(".zip");
-    let archive_path = if is_zip || ext != "exe" {
+    let url_path = url.split('?').next().unwrap_or(url).to_ascii_lowercase();
+    let is_zip = url_path.ends_with(".zip");
+    let is_tar_gz = url_path.ends_with(".tar.gz");
+    let archive_path = if is_zip || is_tar_gz {
         let name = url
             .rsplit('/')
             .next()
@@ -562,18 +576,38 @@ pub fn download_and_extract_blocking(
         }
         if is_zip {
             extract_zip(archive_path, dest_dir).map_err(|e| e.to_string())?;
-            flatten_archive_root(dest_dir);
-            place_engine_binary_at_root(dest_dir);
-        } else {
+            #[cfg(target_os = "macos")]
+            prepare_macos_engine_app(dest_dir, version).map_err(|e| e.to_string())?;
+            #[cfg(not(target_os = "macos"))]
+            {
+                flatten_archive_root(dest_dir);
+                place_engine_binary_at_root(dest_dir);
+            }
+        } else if is_tar_gz {
             extract_tar_gz(archive_path, dest_dir)
                 .map_err(|e| e.to_string())?;
+            #[cfg(target_os = "macos")]
+            prepare_macos_engine_app(dest_dir, version).map_err(|e| e.to_string())?;
         }
         let _ = std::fs::remove_file(archive_path);
         write_metadata(dest_dir, version).map_err(|e| e.to_string())?;
     } else {
-        let exe_path = dest_dir.join("pulsar.exe");
-        crate::service::download::stream_to_file(&client, url, &exe_path, &options)?;
-        write_metadata(dest_dir, version).map_err(|e| e.to_string())?;
+        #[cfg(target_os = "macos")]
+        {
+            let binary_path = dest_dir.join("pulsar");
+            crate::service::download::stream_to_file(&client, url, &binary_path, &options)?;
+            if let Some(digest) = expected_digest {
+                verify_archive_digest(&binary_path, digest)?;
+            }
+            prepare_macos_engine_app(dest_dir, version).map_err(|e| e.to_string())?;
+            write_metadata(dest_dir, version).map_err(|e| e.to_string())?;
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let exe_path = dest_dir.join("pulsar.exe");
+            crate::service::download::stream_to_file(&client, url, &exe_path, &options)?;
+            write_metadata(dest_dir, version).map_err(|e| e.to_string())?;
+        }
     }
 
     progress_cb(100.0);
@@ -658,7 +692,9 @@ pub fn download_and_extract_with_progress(
     // Nightly assets are `.zip` archives — even on Windows, where `ext` is
     // "exe" — so decide on the URL's extension before falling back to the
     // raw-exe / tar.gz paths.
-    let is_zip = url.to_lowercase().ends_with(".zip");
+    let url_path = url.split('?').next().unwrap_or(url).to_ascii_lowercase();
+    let is_zip = url_path.ends_with(".zip");
+    let is_tar_gz = url_path.ends_with(".tar.gz");
     let write_result = if is_zip {
         let archive_name = url
             .rsplit('/')
@@ -679,13 +715,21 @@ pub fn download_and_extract_with_progress(
                 p.done = true;
                 return;
             }
-            flatten_archive_root(dest_dir);
-            place_engine_binary_at_root(dest_dir);
+            #[cfg(not(target_os = "macos"))]
+            {
+                flatten_archive_root(dest_dir);
+                place_engine_binary_at_root(dest_dir);
+            }
             let _ = std::fs::remove_file(&archive_path);
         }
         r
-    } else if ext == "exe" {
-        download_file_with_progress(resp, dest_dir.join("pulsar.exe"), &progress)
+    } else if ext == "exe" || (cfg!(target_os = "macos") && !is_tar_gz) {
+        let binary_name = if cfg!(target_os = "macos") {
+            "pulsar"
+        } else {
+            "pulsar.exe"
+        };
+        download_file_with_progress(resp, dest_dir.join(binary_name), &progress)
     } else {
         let archive_name = url
             .rsplit('/')
@@ -713,6 +757,13 @@ pub fn download_and_extract_with_progress(
 
     match write_result {
         Ok(()) => {
+            #[cfg(target_os = "macos")]
+            if let Err(e) = prepare_macos_engine_app(dest_dir, version) {
+                let mut p = progress.lock();
+                p.error = Some(e.to_string());
+                p.done = true;
+                return;
+            }
             let _ = write_metadata(dest_dir, version);
             let mut p = progress.lock();
             p.bytes_downloaded = p.total_bytes;
@@ -925,6 +976,11 @@ pub fn remove_version(dir: &Path) -> Result<(), String> {
 }
 
 pub fn open_install_dir(dir: &Path) {
+    #[cfg(target_os = "macos")]
+    let dir = {
+        let payload = dir.join("Contents/Resources/engine");
+        if payload.is_dir() { payload } else { dir.to_path_buf() }
+    };
     let _ = open::that(dir);
 }
 
@@ -947,10 +1003,16 @@ pub fn platform_search_roots() -> Vec<PathBuf> {
     }
     #[cfg(target_os = "macos")]
     {
-        vec![
+        let mut roots = vec![
+            macos_applications_directory(),
+            PathBuf::from("/Applications"),
+            home.join("Applications"),
             PathBuf::from("/Applications/Pulsar"),
             home.join("Applications").join("Pulsar"),
-        ]
+        ];
+        let mut seen = std::collections::HashSet::new();
+        roots.retain(|root| seen.insert(root.clone()));
+        roots
     }
     #[cfg(target_os = "linux")]
     {
@@ -976,11 +1038,203 @@ pub fn default_install_path() -> PathBuf {
     }
     #[cfg(target_os = "macos")]
     {
-        PathBuf::from("/Applications/Pulsar")
+        macos_applications_directory()
     }
     #[cfg(target_os = "linux")]
     {
         home.join(".local").join("share").join("pulsar")
+    }
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn find_macos_app_bundle_asset<'a>(
+    release: &'a GitHubRelease,
+    arch: &str,
+) -> Option<&'a GitHubAsset> {
+    let arch = if arch == "aarch64" { "arm64" } else { arch };
+    release.assets.iter().find(|asset| {
+        let name = asset.name.to_ascii_lowercase();
+        name.contains(&format!("macos-{arch}")) && name.ends_with(".app.zip")
+    })
+}
+
+/// Wrap the untouched engine payload in a small, uniquely named app bundle.
+/// Keeping the upstream app inside Resources preserves its signature and its
+/// original executable-relative resources while making each version visible
+/// to Spotlight as a separate application.
+#[cfg(any(target_os = "macos", test))]
+fn prepare_macos_engine_app(dest: &Path, version: &str) -> std::io::Result<()> {
+    let wrapper_info = dest.join("Contents/Info.plist");
+    let engine_payload = dest.join("Contents/Resources/engine");
+    if wrapper_info.is_file() && engine_payload.is_dir() {
+        return Ok(());
+    }
+
+    let parent = dest.parent().unwrap_or_else(|| Path::new("."));
+    let stage = parent.join(format!(
+        ".pulsar-engine-stage-{}-{}-{}",
+        std::process::id(),
+        version_identifier(version),
+        chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
+    ));
+    std::fs::create_dir(&stage)?;
+    let payload = stage.join("payload");
+    std::fs::create_dir(&payload)?;
+
+    for entry in std::fs::read_dir(dest)? {
+        let entry = entry?;
+        std::fs::rename(entry.path(), payload.join(entry.file_name()))?;
+    }
+
+    // Some releases zip the app's Contents directory directly at archive
+    // root. Re-nest it as an app without editing the signed bundle contents.
+    if payload.join("Contents/Info.plist").is_file() {
+        let original_app = stage.join("Engine.app");
+        std::fs::rename(&payload, &original_app)?;
+        std::fs::create_dir(&payload)?;
+        std::fs::rename(original_app, payload.join("Engine.app"))?;
+    }
+
+    let has_app_bundle = WalkDir::new(&payload)
+        .max_depth(8)
+        .into_iter()
+        .filter_map(Result::ok)
+        .any(|entry| {
+            entry.file_name() == "Info.plist"
+                && entry
+                    .path()
+                    .parent()
+                    .and_then(Path::file_name)
+                    .is_some_and(|name| name == "Contents")
+        });
+    let has_root_binary = ["pulsar", "pulsar_engine"]
+        .iter()
+        .any(|name| payload.join(name).is_file());
+    if !has_app_bundle && !has_root_binary {
+        for entry in std::fs::read_dir(&payload)? {
+            let entry = entry?;
+            std::fs::rename(entry.path(), dest.join(entry.file_name()))?;
+        }
+        std::fs::remove_dir_all(stage)?;
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "The downloaded macOS release contains neither an app bundle nor a Pulsar executable",
+        ));
+    }
+
+    #[cfg(unix)]
+    if payload.join("pulsar").is_file() {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(
+            payload.join("pulsar"),
+            std::fs::Permissions::from_mode(0o755),
+        )?;
+    }
+
+    let contents = dest.join("Contents");
+    std::fs::create_dir_all(contents.join("MacOS"))?;
+    std::fs::create_dir_all(contents.join("Resources"))?;
+    std::fs::rename(&payload, &engine_payload)?;
+
+    let identifier = version_identifier(version);
+    let launcher = contents.join("MacOS/PulsarLauncher");
+    std::fs::write(
+        &launcher,
+        "#!/bin/sh\n\
+         APP_ROOT=\"$(CDPATH= cd -- \"$(dirname -- \"$0\")/../..\" && pwd)\"\n\
+         ENGINE_DIR=\"$APP_ROOT/Contents/Resources/engine\"\n\
+         for ENGINE_APP in \"$ENGINE_DIR\"/*.app; do\n\
+           [ -d \"$ENGINE_APP\" ] || continue\n\
+           exec /usr/bin/open -a \"$ENGINE_APP\" --args \"$@\"\n\
+         done\n\
+         if [ -x \"$ENGINE_DIR/pulsar\" ]; then cd \"$ENGINE_DIR\"; exec \"$ENGINE_DIR/pulsar\" \"$@\"; fi\n\
+         if [ -x \"$ENGINE_DIR/pulsar_engine\" ]; then cd \"$ENGINE_DIR\"; exec \"$ENGINE_DIR/pulsar_engine\" \"$@\"; fi\n\
+         echo 'No Pulsar engine executable found in this app.' >&2\n\
+         exit 1\n",
+    )?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&launcher, std::fs::Permissions::from_mode(0o755))?;
+    }
+
+    let bundle_id = identifier
+        .chars()
+        .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { '_' })
+        .collect::<String>();
+    let plist = format!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n<plist version=\"1.0\"><dict>\n<key>CFBundleExecutable</key><string>PulsarLauncher</string>\n<key>CFBundleIdentifier</key><string>com.far-beyond-pulsar.engine.v{bundle_id}</string>\n<key>CFBundleName</key><string>Pulsar {identifier}</string>\n<key>CFBundleDisplayName</key><string>Pulsar {identifier}</string>\n<key>CFBundlePackageType</key><string>APPL</string>\n</dict></plist>\n"
+    );
+    std::fs::write(&wrapper_info, plist)?;
+    std::fs::remove_dir_all(stage)?;
+    Ok(())
+}
+
+/// The directory containing the running Hub app, so installed engine apps
+/// live beside it and are indexed by Spotlight. Development builds fall back
+/// to the user's Applications directory rather than writing into a DMG mount.
+#[cfg(any(target_os = "macos", test))]
+fn macos_applications_directory() -> PathBuf {
+    let hub_app_parent = std::env::current_exe().ok().and_then(|exe| {
+        exe.ancestors()
+            .find(|path| {
+                path.file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| name.to_ascii_lowercase().ends_with(".app"))
+            })
+            .and_then(Path::parent)
+            .filter(|parent| {
+                parent
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| name.eq_ignore_ascii_case("Applications"))
+            })
+            .map(Path::to_path_buf)
+    });
+    if let Some(parent) = hub_app_parent {
+        return parent;
+    }
+
+    std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_default()
+        .join("Applications")
+}
+
+/// Install location for a release. On macOS the engine itself is a versioned
+/// app bundle next to Pulsar Hub; other platforms retain their version folders.
+pub fn version_install_path(version: &str) -> PathBuf {
+    #[cfg(target_os = "macos")]
+    {
+        default_install_path().join(format!("Pulsar {}.app", version_identifier(version)))
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        default_install_path().join(version.trim_start_matches('v'))
+    }
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn version_identifier(version: &str) -> String {
+    let identifier = version
+        .trim()
+        .trim_start_matches(|ch| ch == 'v' || ch == 'V');
+    let sanitized: String = identifier
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || matches!(ch, '.' | '-' | '_') {
+                ch
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    let sanitized = sanitized.trim_matches('-');
+    if sanitized.is_empty() {
+        "unknown".to_string()
+    } else {
+        sanitized.to_string()
     }
 }
 
@@ -1001,12 +1255,12 @@ pub fn launch_engine_binary_for_project(
     current_dir: &Path,
     project: &Path,
 ) -> Result<(), String> {
-    launch_binary(binary, current_dir, Some(project))
+    launch_binary(binary, current_dir, Some(project), current_dir)
 }
 
 /// Launch an engine binary (from a local source build) standalone.
 pub fn launch_engine_binary(binary: &Path, current_dir: &Path) -> Result<(), String> {
-    launch_binary(binary, current_dir, None)
+    launch_binary(binary, current_dir, None, current_dir)
 }
 
 /// Live progress of a `cargo build` running in the background, surfaced to the
@@ -1282,37 +1536,85 @@ fn launch_engine_inner(install_dir: &Path, project: Option<&Path>) -> Result<(),
     // pass (bundle launches via `open` can't take CLI args).
     #[cfg(target_os = "macos")]
     if project.is_none() {
-        let bundle = install_dir.join("pulsar.app");
-        if bundle.exists() {
+        let bundle = if install_dir.join("Contents/Info.plist").is_file() {
+            install_dir.to_path_buf()
+        } else {
+            install_dir.join("pulsar.app")
+        };
+        if bundle.join("Contents/Info.plist").is_file() {
             return open::that(&bundle).map_err(|e| e.to_string());
         }
     }
 
+    #[cfg(target_os = "macos")]
+    let engine_dir = {
+        let bundled_payload = install_dir.join("Contents/Resources/engine");
+        if bundled_payload.is_dir() {
+            bundled_payload
+        } else {
+            install_dir.to_path_buf()
+        }
+    };
+    #[cfg(not(target_os = "macos"))]
+    let engine_dir = install_dir.to_path_buf();
+
     // Resolve the engine binary, tolerating the alternate `pulsar_engine.*`
     // name that Nightly archives ship and older installs may still use.
-    let candidate_names: &[&str] = if cfg!(windows) {
-        &["pulsar.exe", "pulsar_engine.exe"]
-    } else if cfg!(target_os = "macos") {
-        &[
-            "Contents/MacOS/pulsar",
-            "pulsar",
-            "pulsar_engine",
-        ]
-    } else {
-        &["pulsar", "pulsar_engine"]
+    #[cfg(target_os = "macos")]
+    let exe = find_macos_engine_binary(&engine_dir);
+    #[cfg(not(target_os = "macos"))]
+    let exe = {
+        let candidate_names: &[&str] = if cfg!(windows) {
+            &["pulsar.exe", "pulsar_engine.exe"]
+        } else {
+            &["pulsar", "pulsar_engine"]
+        };
+        candidate_names
+            .iter()
+            .map(|name| engine_dir.join(name))
+            .find(|path| path.is_file())
     };
-    let Some(exe) = candidate_names
-        .iter()
-        .map(|n| install_dir.join(n))
-        .find(|p| p.exists())
-    else {
+    let Some(exe) = exe else {
         return Err(format!("Binary not found in {}", install_dir.display()));
     };
 
-    launch_binary(&exe, install_dir, project)
+    launch_binary(&exe, &engine_dir, project, install_dir)
 }
 
-fn launch_binary(exe: &Path, current_dir: &Path, project: Option<&Path>) -> Result<(), String> {
+#[cfg(any(target_os = "macos", test))]
+fn find_macos_engine_binary(engine_dir: &Path) -> Option<PathBuf> {
+    let direct_candidates = [
+        engine_dir.join("pulsar.app/Contents/MacOS/pulsar"),
+        engine_dir.join("Contents/MacOS/pulsar"),
+        engine_dir.join("pulsar"),
+        engine_dir.join("pulsar_engine"),
+    ];
+    if let Some(binary) = direct_candidates.iter().find(|path| path.is_file()) {
+        return Some(binary.clone());
+    }
+
+    WalkDir::new(engine_dir)
+        .max_depth(6)
+        .into_iter()
+        .filter_map(Result::ok)
+        .find(|entry| {
+            entry.file_type().is_file()
+                && matches!(entry.file_name().to_str(), Some("pulsar" | "pulsar_engine"))
+                && entry
+                    .path()
+                    .parent()
+                    .and_then(Path::file_name)
+                    .is_some_and(|name| name == "MacOS")
+        })
+        .map(|entry| entry.into_path())
+}
+
+fn launch_binary(
+    exe: &Path,
+    current_dir: &Path,
+    project: Option<&Path>,
+    flags_dir: &Path,
+) -> Result<(), String> {
     // The engine does not accept a positional project path. It opens projects
     // via the `pulsar://open_project/<url-encoded-path>` URI scheme.
     let project_arg: Option<String> = project
@@ -1333,7 +1635,7 @@ fn launch_binary(exe: &Path, current_dir: &Path, project: Option<&Path>) -> Resu
         cmd.creation_flags(0x0000_0008 | 0x0000_0200);
     }
     crate::service::launch_flags::LaunchFlags::apply_env(
-        exe.parent().unwrap_or_else(|| Path::new("")),
+        flags_dir,
         &mut cmd,
     );
     cmd.spawn().map(|_| ()).map_err(|e| e.to_string())
@@ -1418,4 +1720,88 @@ fn dir_size(path: &Path) -> u64 {
 
 fn canonical_or_same(path: &Path) -> PathBuf {
     std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
+}
+
+#[cfg(test)]
+mod install_layout_tests {
+    use super::*;
+
+    #[test]
+    fn version_identifier_is_safe_for_application_names() {
+        assert_eq!(version_identifier("v0.3.2"), "0.3.2");
+        assert_eq!(version_identifier("nightly-a1b2c3"), "nightly-a1b2c3");
+        assert_eq!(version_identifier("v0.3/2"), "0.3-2");
+        assert_eq!(version_identifier("v"), "unknown");
+    }
+
+    #[test]
+    fn macos_bundle_asset_is_selected_by_architecture() {
+        let release = GitHubRelease {
+            tag_name: "v0.2.42".to_string(),
+            name: String::new(),
+            body: String::new(),
+            assets: vec![
+                GitHubAsset {
+                    name: "pulsar_engine-macos-arm64".to_string(),
+                    browser_download_url: "https://example.invalid/raw".to_string(),
+                    size: 1,
+                    digest: None,
+                },
+                GitHubAsset {
+                    name: "pulsar_engine-macos-arm64.app.zip".to_string(),
+                    browser_download_url: "https://example.invalid/app".to_string(),
+                    size: 2,
+                    digest: None,
+                },
+                GitHubAsset {
+                    name: "pulsar_engine-macos-x86_64.app.zip".to_string(),
+                    browser_download_url: "https://example.invalid/intel".to_string(),
+                    size: 3,
+                    digest: None,
+                },
+            ],
+            prerelease: false,
+            published_at: String::new(),
+        };
+
+        assert_eq!(
+            find_macos_app_bundle_asset(&release, "aarch64")
+                .map(|asset| asset.name.as_str()),
+            Some("pulsar_engine-macos-arm64.app.zip")
+        );
+        assert_eq!(
+            find_macos_app_bundle_asset(&release, "x86_64")
+                .map(|asset| asset.name.as_str()),
+            Some("pulsar_engine-macos-x86_64.app.zip")
+        );
+    }
+
+    #[test]
+    fn macos_spotlight_wrapper_keeps_upstream_bundle_untouched() {
+        let temp = tempfile::tempdir().unwrap();
+        let install = temp.path().join("Pulsar 0.3.2.app");
+        let engine_app = install.join("pulsar.app");
+        let engine_contents = engine_app.join("Contents");
+        let engine_binary = engine_contents.join("MacOS/pulsar");
+        std::fs::create_dir_all(engine_binary.parent().unwrap()).unwrap();
+        std::fs::write(engine_contents.join("Info.plist"), "original plist").unwrap();
+        std::fs::write(&engine_binary, "engine binary").unwrap();
+
+        prepare_macos_engine_app(&install, "v0.3.2").unwrap();
+
+        let app_info = install.join("Contents/Info.plist");
+        let preserved_info = install.join("Contents/Resources/engine/pulsar.app/Contents/Info.plist");
+        assert!(app_info.is_file());
+        assert_eq!(std::fs::read_to_string(preserved_info).unwrap(), "original plist");
+        assert!(install.join("Contents/MacOS/PulsarLauncher").is_file());
+        assert_eq!(
+            find_macos_engine_binary(&install.join("Contents/Resources/engine")),
+            Some(install.join(
+                "Contents/Resources/engine/pulsar.app/Contents/MacOS/pulsar"
+            ))
+        );
+        let plist = std::fs::read_to_string(app_info).unwrap();
+        assert!(plist.contains("Pulsar 0.3.2"));
+        assert!(plist.contains("com.far-beyond-pulsar.engine.v0_3_2"));
+    }
 }

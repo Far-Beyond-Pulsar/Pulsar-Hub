@@ -2455,8 +2455,7 @@ impl EntryScreen {
             return;
         };
         let url = asset.browser_download_url.clone();
-        let dest = crate::service::installer_service::default_install_path()
-            .join(tag.trim_start_matches('v'));
+        let dest = crate::service::installer_service::version_install_path(&tag);
         let dl_id = format!("engine-{}", tag);
 
         let dm_view = self.state.download_manager_view.clone();
@@ -2562,8 +2561,7 @@ impl EntryScreen {
             if let Some(asset) = crate::service::installer_service::find_platform_asset(&release) {
                 let url = asset.browser_download_url.clone();
                 let digest = asset.digest.clone();
-                let dest = crate::service::installer_service::default_install_path()
-                    .join(tag.trim_start_matches('v'));
+                let dest = crate::service::installer_service::version_install_path(&tag);
 
                 self.state.versions.install_state =
                     crate::service::installer_service::VersionInstallState::Downloading {
