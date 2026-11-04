@@ -1091,6 +1091,104 @@ impl EntryScreen {
         cx.notify();
     }
 
+    pub(crate) fn move_project(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        cx.spawn(async move |entity, cx| {
+            if let Some(folder) = rfd::AsyncFileDialog::new().pick_folder().await {
+                let parent = folder.path().to_path_buf();
+                let move_path = path.clone();
+                let result = cx
+                    .background_executor()
+                    .spawn(async move {
+                        crate::service::installer_service::move_directory(&move_path, &parent)
+                    })
+                    .await;
+                let _ = cx.update(|cx| {
+                    let _ = entity.update(cx, |this, cx| {
+                        match result {
+                            Ok(destination) => {
+                                let old_path = path.to_string_lossy().to_string();
+                                if let Some(project) = this
+                                    .state
+                                    .recent_projects
+                                    .projects
+                                    .iter_mut()
+                                    .find(|project| project.path == old_path)
+                                {
+                                    project.path = destination.to_string_lossy().to_string();
+                                    if let Some(name) = destination
+                                        .file_name()
+                                        .and_then(|name| name.to_str())
+                                    {
+                                        project.name = name.to_string();
+                                    }
+                                }
+                                this.state.recent_projects.save(&this.state.recent_projects_path);
+                                this.state.project_thumbnails.remove(&old_path);
+                                this.state.git_fetch_statuses.lock().remove(&old_path);
+                            }
+                            Err(error) => tracing::error!("Failed to move project: {error}"),
+                        }
+                        cx.notify();
+                    });
+                });
+            }
+        })
+        .detach();
+    }
+
+    pub(crate) fn move_engine_install(&mut self, path: PathBuf, version: String, cx: &mut Context<Self>) {
+        cx.spawn(async move |entity, cx| {
+            if let Some(folder) = rfd::AsyncFileDialog::new().pick_folder().await {
+                let parent = folder.path().to_path_buf();
+                let is_src = version.eq_ignore_ascii_case("src");
+                let result: Result<PathBuf, String> = cx
+                    .background_executor()
+                    .spawn(async move {
+                        let destination = crate::service::installer_service::move_directory(&path, &parent)?;
+                        if is_src {
+                            Ok(destination)
+                        } else {
+                            let metadata_path = destination.join(".pulsar-install.json");
+                            let content = std::fs::read_to_string(&metadata_path)
+                                .map_err(|error| error.to_string())?;
+                            let mut metadata: serde_json::Value = serde_json::from_str(&content)
+                                .map_err(|error| error.to_string())?;
+                            metadata["install_path"] = serde_json::to_value(&destination)
+                                .map_err(|error| error.to_string())?;
+                            std::fs::write(
+                                metadata_path,
+                                serde_json::to_vec_pretty(&metadata).map_err(|error| error.to_string())?,
+                            )
+                            .map_err(|error| error.to_string())?;
+                            Ok(destination)
+                        }
+                    })
+                    .await;
+                let _ = cx.update(|cx| {
+                    let _ = entity.update(cx, |this, cx| {
+                        match result {
+                            Ok(destination) => {
+                                if is_src {
+                                    this.state.src_engine_path = Some(destination.clone());
+                                    if let Err(error) = std::fs::write(
+                                        &this.state.src_engine_config_path,
+                                        destination.to_string_lossy().as_bytes(),
+                                    ) {
+                                        tracing::error!("Failed to update src engine path: {error}");
+                                    }
+                                }
+                                this.state.versions.installed = this.installed_versions();
+                            }
+                            Err(error) => tracing::error!("Failed to move engine install: {error}"),
+                        }
+                        cx.notify();
+                    });
+                });
+            }
+        })
+        .detach();
+    }
+
     pub(crate) fn open_git_manager(&mut self, path: PathBuf, cx: &mut Context<Self>) {
         cx.emit(GitManagerRequested { path });
     }

@@ -285,6 +285,77 @@ pub fn write_metadata(dir: &Path, version: &str) -> std::io::Result<()> {
     std::fs::write(dir.join(".pulsar-install.json"), json)
 }
 
+/// Move a managed directory beneath a selected parent directory, preserving its
+/// name. Falls back to a recursive copy when a rename crosses volumes.
+pub fn move_directory(source: &Path, destination_parent: &Path) -> Result<PathBuf, String> {
+    if !source.is_dir() {
+        return Err(format!("Source directory does not exist: {}", source.display()));
+    }
+    if !destination_parent.is_dir() {
+        return Err(format!("Destination folder does not exist: {}", destination_parent.display()));
+    }
+    let name = source
+        .file_name()
+        .ok_or_else(|| "Cannot move a filesystem root".to_string())?;
+    let destination = destination_parent.join(name);
+    if source == destination || source.starts_with(&destination) || destination.starts_with(source) {
+        return Err("Choose a folder outside the item being moved".to_string());
+    }
+    if destination.exists() {
+        return Err(format!("Destination already exists: {}", destination.display()));
+    }
+
+    match std::fs::rename(source, &destination) {
+        Ok(()) => Ok(destination),
+        Err(rename_error) => {
+            if let Err(copy_error) = copy_directory_tree(source, &destination) {
+                let _ = std::fs::remove_dir_all(&destination);
+                return Err(format!("Could not move directory: {rename_error}; copy failed: {copy_error}"));
+            }
+            if let Err(remove_error) = std::fs::remove_dir_all(source) {
+                return Err(format!("Copied to {}, but could not remove the original: {remove_error}", destination.display()));
+            }
+            Ok(destination)
+        }
+    }
+}
+
+fn copy_directory_tree(source: &Path, destination: &Path) -> std::io::Result<()> {
+    std::fs::create_dir(destination)?;
+    for entry in WalkDir::new(source).min_depth(1).follow_links(false) {
+        let entry = entry.map_err(std::io::Error::other)?;
+        let relative = entry.path().strip_prefix(source).map_err(std::io::Error::other)?;
+        let target = destination.join(relative);
+        let file_type = entry.file_type();
+        if file_type.is_dir() {
+            std::fs::create_dir_all(&target)?;
+        } else if file_type.is_symlink() {
+            let link = std::fs::read_link(entry.path())?;
+            create_symlink(&link, &target, entry.path().is_dir())?;
+        } else if file_type.is_file() {
+            if let Some(parent) = target.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            std::fs::copy(entry.path(), target)?;
+        }
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn create_symlink(target: &Path, link: &Path, _is_dir: bool) -> std::io::Result<()> {
+    std::os::unix::fs::symlink(target, link)
+}
+
+#[cfg(windows)]
+fn create_symlink(target: &Path, link: &Path, is_dir: bool) -> std::io::Result<()> {
+    if is_dir {
+        std::os::windows::fs::symlink_dir(target, link)
+    } else {
+        std::os::windows::fs::symlink_file(target, link)
+    }
+}
+
 fn try_load_from_dir(dir: &Path) -> Option<InstalledVersion> {
     if !dir.exists() {
         return None;

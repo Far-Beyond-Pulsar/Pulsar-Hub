@@ -7,6 +7,7 @@ use ui::{
     spinner::Spinner,
     v_flex, ActiveTheme as _, Icon, IconName, StyledExt as _,
 };
+use ui::menu::{context_menu::ContextMenuExt as _, PopupMenu};
 
 use crate::core::types::format_bytes;
 use crate::service::installer_service;
@@ -125,6 +126,10 @@ fn render_installed_grid(
                     let size = format_bytes(ver.disk_size_bytes);
                     let path = ver.metadata.install_path.clone();
                     let path_clone = path.clone();
+                    let is_src = version.eq_ignore_ascii_case("src");
+                    let menu_weak = cx.entity().downgrade();
+                    let menu_path = path.clone();
+                    let menu_version = version.clone();
 
                     v_flex()
                         .id(format!("version-card-{}", idx))
@@ -289,6 +294,15 @@ fn render_installed_grid(
                                         }))
                                 }),
                         )
+                        .context_menu(move |mut menu: PopupMenu, _window: &mut Window, _cx: &mut Context<PopupMenu>| {
+                            let (weak, path, version) =
+                                (menu_weak.clone(), menu_path.clone(), menu_version.clone());
+                            menu.menu_handler_with_icon("Move…", IconName::Folder, move |_, cx| {
+                                let _ = weak.update(cx, |this, cx| {
+                                    this.move_engine_install(path.clone(), version.clone(), cx);
+                                });
+                            })
+                        })
                                 .into_any_element()
                     })),
                 ),

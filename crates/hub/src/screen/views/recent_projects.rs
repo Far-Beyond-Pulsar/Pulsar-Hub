@@ -216,6 +216,10 @@ fn render_project_card(
             });
         });
         menu = menu.separator();
+        let (w, p) = (weak.clone(), m_path.clone());
+        menu = menu.menu_handler_with_icon("Move…", IconName::Folder, move |_, cx| {
+            let _ = w.update(cx, |this, cx| this.move_project(PathBuf::from(&p), cx));
+        });
         let p = m_path.clone();
         menu = menu.menu_handler_with_icon(
             "Reveal in File Explorer",
