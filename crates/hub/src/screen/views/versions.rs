@@ -1,17 +1,19 @@
 use gpui::prelude::*;
 use gpui::*;
+use ui::menu::{PopupMenu, context_menu::ContextMenuExt as _};
 use ui::{
+    ActiveTheme as _, Icon, IconName, StyledExt as _,
     button::{Button, ButtonVariants as _},
     h_flex,
     scroll::ScrollbarAxis,
     spinner::Spinner,
-    v_flex, ActiveTheme as _, Icon, IconName, StyledExt as _,
+    v_flex,
 };
-use ui::menu::{context_menu::ContextMenuExt as _, PopupMenu};
 
+use crate::EntryScreen;
 use crate::core::types::format_bytes;
 use crate::service::installer_service;
-use crate::EntryScreen;
+use crate::service::launch_flags::{KNOWN_FLAGS, LaunchFlags};
 
 pub fn render_versions(
     screen: &mut EntryScreen,
@@ -125,7 +127,6 @@ fn render_installed_grid(
                     let date = ver.metadata.install_date.clone();
                     let size = format_bytes(ver.disk_size_bytes);
                     let path = ver.metadata.install_path.clone();
-                    let path_clone = path.clone();
                     let is_src = version.eq_ignore_ascii_case("src");
                     let menu_weak = cx.entity().downgrade();
                     let menu_path = path.clone();
@@ -200,36 +201,7 @@ fn render_installed_grid(
                                     h_flex()
                                         .gap_1()
                                         .child({
-                                            let p = path_clone.clone();
-                                            let src = version.eq_ignore_ascii_case("src");
-                                            Button::new(format!("launch-{}", idx))
-                                                .label("Launch")
-                                                .icon(IconName::Play)
-                                                .compact()
-                                                .ghost()
-                                                .on_click(cx.listener(move |this, _, _, cx| {
-                                                    if src {
-                                                        this.launch_src_standalone(p.clone(), cx);
-                                                    } else {
-                                                        let p = p.clone();
-                                                        cx.spawn(async move |_, _| {
-                                                            if let Err(e) =
-                                                                installer_service::launch_engine(
-                                                                    &p,
-                                                                )
-                                                            {
-                                                                tracing::error!(
-                                                                    "Launch failed: {}",
-                                                                    e
-                                                                );
-                                                            }
-                                                        })
-                                                        .detach();
-                                                    }
-                                                }))
-                                        })
-                                        .child({
-                                            let p = path_clone.clone();
+                                            let p = path.clone();
                                             Button::new(format!("folder-{}", idx))
                                                 .icon(IconName::FolderOpen)
                                                 .compact()
@@ -250,37 +222,6 @@ fn render_installed_grid(
                                                     this.remove_version(&v, cx);
                                                 }))
                                         })
-                                        .child({
-                                            // Source checkouts keep their flag
-                                            // file beside the compiled binary in
-                                            // `<checkout>/target/release`, the
-                                            // same place `launch_binary` reads it.
-                                            let dir = if version.eq_ignore_ascii_case("src") {
-                                                installer_service::src_flags_dir(&path_clone)
-                                            } else {
-                                                path_clone.clone()
-                                            };
-                                            ui::popover::Popover::<
-                                                crate::screen::views::launch_flags_menu::LaunchFlagsMenuView,
-                                            >::new(format!("flags-popover-{}", idx))
-                                            .anchor(Corner::TopRight)
-                                            .trigger(
-                                                Button::new(format!("flags-{}", idx))
-                                                    .icon(IconName::Ellipsis)
-                                                    .compact()
-                                                    .ghost()
-                                                    .tooltip("Launch flags"),
-                                            )
-                                            .content(move |_, cx| {
-                                                cx.new(|cx| {
-                                                    crate::screen::views::launch_flags_menu::LaunchFlagsMenuView::new(
-                                                        dir.clone(),
-                                                        cx,
-                                                    )
-                                                })
-                                            })
-                                            .into_any_element()
-                                        })
                                 )
                                 .child({
                                     let v = version.clone();
@@ -294,9 +235,61 @@ fn render_installed_grid(
                                         }))
                                 }),
                         )
-                        .context_menu(move |mut menu: PopupMenu, _window: &mut Window, _cx: &mut Context<PopupMenu>| {
+                        .context_menu(move |mut menu: PopupMenu, window: &mut Window, cx: &mut Context<PopupMenu>| {
                             let (weak, path, version) =
                                 (menu_weak.clone(), menu_path.clone(), menu_version.clone());
+                            let launch_weak = weak.clone();
+                            let launch_path = path.clone();
+                            let launch_src = version.eq_ignore_ascii_case("src");
+                            menu = menu.menu_handler_with_icon("Launch", IconName::Play, move |_, cx| {
+                                let _ = launch_weak.update(cx, |this, cx| {
+                                    if launch_src {
+                                        this.launch_src_standalone(launch_path.clone(), cx);
+                                    } else {
+                                        let path = launch_path.clone();
+                                        cx.spawn(async move |_, _| {
+                                            if let Err(error) = installer_service::launch_engine(&path) {
+                                                tracing::error!("Launch failed: {}", error);
+                                            }
+                                        })
+                                        .detach();
+                                    }
+                                });
+                            });
+
+                            // Source checkouts store flags beside the release binary.
+                            let flags_dir = if version.eq_ignore_ascii_case("src") {
+                                installer_service::src_flags_dir(&path)
+                            } else {
+                                path.clone()
+                            };
+                            menu = menu.submenu("Launch Flags", window, cx, move |mut submenu, _, _| {
+                                let flags = LaunchFlags::load(&flags_dir);
+                                for flag in KNOWN_FLAGS {
+                                    let checked = flags.checked(flag);
+                                    let env = flag.env;
+                                    let label = flag.label;
+                                    let install_dir = flags_dir.clone();
+                                    let toggle = move |_window: &mut Window, _cx: &mut App| {
+                                        let mut flags = LaunchFlags::load(&install_dir);
+                                        flags.set(env, !checked);
+                                        if let Err(error) = flags.save(&install_dir) {
+                                            tracing::error!(
+                                                "Failed to save launch flags for {}: {}",
+                                                install_dir.display(),
+                                                error
+                                            );
+                                        }
+                                    };
+                                    submenu = if checked {
+                                        submenu.menu_handler_with_icon(label, IconName::Check, toggle)
+                                    } else {
+                                        submenu.menu_handler(label, toggle)
+                                    };
+                                }
+                                submenu
+                            });
+
                             menu.menu_handler_with_icon("Move…", IconName::Folder, move |_, cx| {
                                 let _ = weak.update(cx, |this, cx| {
                                     this.move_engine_install(path.clone(), version.clone(), cx);
