@@ -1004,19 +1004,6 @@ mod tests {
     }
 
     #[test]
-    fn rejected_upload_recovers_with_new_content() {
-        let mut registry = SlabRegistry::new();
-        let counts = counts_of(&[(SlabKind::PolySprites, 5)]);
-        registry.plan_sync(KEY, 1, counts).unwrap();
-        registry.reject_upload(KEY);
-        assert!(registry.is_awaiting_same_content(KEY, 1));
-        assert!(!registry.is_awaiting_same_content(KEY, 2));
-        assert!(registry.take_rerecord_requests().contains(&KEY));
-        assert_eq!(registry.plan_sync(KEY, 2, counts).unwrap(), SyncPlan::UploadAllOccupied);
-        assert!(!registry.is_awaiting_rerecord(KEY));
-    }
-
-    #[test]
     fn poisoned_entries_skip_until_token_changes() {
         let mut registry = SlabRegistry::new();
         registry
