@@ -147,15 +147,17 @@ ttf-parser = { opt-level = 3 }
 [workspace.metadata.typos]
 files.extend-exclude = ["**/fixtures/*"]
 
-###################################
-# Patch: redirect external git deps
-# to Pulsar-Native's vendored copies
-# so Cargo resolves a single copy of
-# each crate in-tree.
-###################################
+# Keep every WGPUI dependency on the same locally patched source. The patch is
+# based on Pulsar-Native's pinned submodule so its UI APIs remain compatible.
 
 [patch."https://github.com/Far-Beyond-Pulsar/WGPUI"]
-gpui-ce = { git = "https://github.com/Far-Beyond-Pulsar/Pulsar-Native", rev = "0f4ee7961addc0084ebec427542c26773c7ea0ac" }
+gpui-ce = { path = "vendor/gpui-ce" }
+
+# Native crates resolve GPUI from their vendored WGPUI submodule, whose source
+# is identified as Pulsar-Native. Patch that source too so every crate shares
+# the same GPUI types and the slab upload bounds fix below is used everywhere.
+[patch."https://github.com/Far-Beyond-Pulsar/Pulsar-Native"]
+gpui-ce = { path = "vendor/gpui-ce" }
 
 [patch."https://github.com/Far-Beyond-Pulsar/WGPUI-Component"]
 ui = { git = "https://github.com/Far-Beyond-Pulsar/Pulsar-Native", rev = "0f4ee7961addc0084ebec427542c26773c7ea0ac" }

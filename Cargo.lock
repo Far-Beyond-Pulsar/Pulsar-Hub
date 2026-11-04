@@ -3077,7 +3077,6 @@ dependencies = [
 [[package]]
 name = "gpui-ce"
 version = "1.0.0"
-source = "git+https://github.com/Far-Beyond-Pulsar/Pulsar-Native?rev=0f4ee7961addc0084ebec427542c26773c7ea0ac#0f4ee7961addc0084ebec427542c26773c7ea0ac"
 dependencies = [
  "anyhow",
  "arboard",
