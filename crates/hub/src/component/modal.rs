@@ -45,11 +45,11 @@ pub fn render_modal(
                 .border_color(theme.border)
                 .bg(theme.background)
                 .shadow_lg()
+                .on_mouse_down(MouseButton::Left, |_, _, cx| {
+                    cx.stop_propagation();
+                })
                 .when_some(on_close, |this, close| {
-                    this.on_mouse_down(MouseButton::Left, |_, _, cx| {
-                        cx.stop_propagation();
-                    })
-                    .child(
+                    this.child(
                         h_flex()
                             .w_full()
                             .items_center()

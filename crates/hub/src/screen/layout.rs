@@ -203,7 +203,7 @@ pub fn render_layout(
                                 .border_color(theme.border)
                                 .bg(theme.popover.opacity(0.94))
                                 .shadow_xl()
-                                .on_mouse_down(MouseButton::Left, |_, _, _| {})
+                                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                                 .motion("install-engine-modal-motion")
                                 .transition(Transition::token(MotionToken::SpatialFast))
                                 .enter(|style| style.opacity(0.).mt(px(10.)))

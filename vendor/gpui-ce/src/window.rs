@@ -4094,7 +4094,30 @@ impl Window {
         }
     }
 
+    /// Whether a recorded paint range still describes the rendered frame.
+    ///
+    /// Callers that replay a stored range without a rebuild path (deferred
+    /// draws, layer composites) hit this: a range recorded against a frame
+    /// that is no longer `rendered_frame` slices out of bounds and panics.
+    /// Logs the offending array so the stale producer can be found.
+    fn paint_range_is_replayable(&self, range: &Range<PaintIndex>) -> bool {
+        let empty = PrepaintStateIndex::default()..PrepaintStateIndex::default();
+        match self.invalid_reuse_range(&empty, range) {
+            None => true,
+            Some((name, a, b)) => {
+                log::warn!(
+                    "skipping stale paint range replay: {name} ({a} vs {b}); \
+                     range no longer matches the rendered frame"
+                );
+                false
+            }
+        }
+    }
+
     pub(crate) fn reuse_paint(&mut self, range: Range<PaintIndex>) {
+        if !self.paint_range_is_replayable(&range) {
+            return;
+        }
         self.reuse_paint_except_scene(&range);
         self.next_frame.scene.replay(
             range.start.scene_index..range.end.scene_index,
@@ -4107,6 +4130,9 @@ impl Window {
     /// The fallback for a reuse that expected a retained layer and did not find
     /// one.
     pub(crate) fn replay_scene_range(&mut self, range: &Range<PaintIndex>) {
+        if !self.paint_range_is_replayable(range) {
+            return;
+        }
         self.next_frame.scene.replay(
             range.start.scene_index..range.end.scene_index,
             &self.rendered_frame.scene,
@@ -4122,6 +4148,9 @@ impl Window {
     /// per-primitive cost the whole retained model exists to remove. The other
     /// arrays still travel by range until #97.
     pub(crate) fn reuse_paint_except_scene(&mut self, range: &Range<PaintIndex>) {
+        if !self.paint_range_is_replayable(range) {
+            return;
+        }
         self.next_frame.cursor_styles.extend(
             self.rendered_frame.cursor_styles
                 [range.start.cursor_styles_index..range.end.cursor_styles_index]
