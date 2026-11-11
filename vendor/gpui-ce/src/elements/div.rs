@@ -2477,11 +2477,24 @@ fn prepaint_reconciled_child(
                 .clone();
             crate::render_stats::count("instance: reused");
             let _t = crate::render_stats::scope("instance: reuse");
+            let prepaint_start = window.prepaint_index();
             window.reuse_prepaint(range.clone());
             // `on_frame` effects must keep firing every frame regardless of
             // reconciliation, for exactly the reason phase 3 introduced them
             // — see `Element::on_frame`'s doc comment.
             window.replay_frame_effects(&range, cx);
+            // A range is an offset into the previous frame's arrays. The
+            // replay above re-registered this instance's state in THIS
+            // frame's arrays, so restamp it or the range ages one frame per
+            // reuse and next frame replays someone else's entries.
+            let prepaint_end = window.prepaint_index();
+            if let Some(instance) = window
+                .layers
+                .get_mut(&layer_key)
+                .and_then(|layer| layer.instances.get_mut(&key))
+            {
+                instance.prepaint_range = prepaint_start..prepaint_end;
+            }
             return ChildReconciliation::Reused {
                 layer: layer_key,
                 key,
@@ -2570,8 +2583,18 @@ fn paint_reconciled_child(
             else {
                 return;
             };
+            let paint_start = window.paint_index();
             window.reuse_paint_except_scene(&paint_range);
             window.replay_instance_items(&items);
+            // Restamp: see the matching note in `prepaint_reconciled_child`.
+            let paint_end = window.paint_index();
+            if let Some(instance) = window
+                .layers
+                .get_mut(&layer)
+                .and_then(|layer| layer.instances.get_mut(&key))
+            {
+                instance.paint_range = paint_start..paint_end;
+            }
         }
         ChildReconciliation::Rebuilt {
             layer,

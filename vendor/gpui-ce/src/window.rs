@@ -4715,6 +4715,19 @@ impl Window {
                 .is_none()
     }
 
+    /// Point a layer's paint range at what this frame just replayed for it.
+    ///
+    /// A `PaintIndex` range is an offset into the *previous* frame's arrays, so
+    /// any frame that replays a layer's range without recording it must stamp
+    /// the range it produced; otherwise the range ages by one frame per skipped
+    /// restamp and eventually indexes past the end of `rendered_frame`.
+    fn restamp_layer_paint_range(&mut self, key: LayerKey, start: PaintIndex) {
+        let end = self.paint_index();
+        if let Some(layer) = self.layers.get_mut(&key) {
+            layer.paint_range = start..end;
+        }
+    }
+
     /// Paint into the retained layer named by `global_id`, or composite last
     /// frame's primitives for it and skip painting entirely.
     ///
@@ -4828,8 +4841,10 @@ impl Window {
                 if let Some(layer) = self.layers.get_mut(&key) {
                     layer.deferred_dirty = false;
                 }
-                // Occluded frames emit nothing new; the previous range still
-                // describes the last visible extent.
+                // Occluded frames emit nothing new, but the replay above
+                // re-registered the layer's listeners in THIS frame's arrays.
+                // Restamp, or the range keeps indexing an older frame.
+                self.restamp_layer_paint_range(key, composite_start);
             } else if self.layers[&key].texture_retained {
                 // The #96 skip condition: the content lives in a persistent
                 // texture, so the whole composite is one surface draw. The
@@ -4858,16 +4873,30 @@ impl Window {
 
         // Deferred dirty: if the layer has existing content and is occluded,
         // skip the re-render and keep old content until it becomes visible.
-        if self.layers.get(&key).is_some_and(|layer| layer.has_content())
-            && self.is_layer_occluded(key)
+        //
+        // The stored range must still describe `rendered_frame`: a layer not
+        // visited for a frame (a modal closed and reopened) holds a range from
+        // an older frame, and replaying it slices out of bounds or, worse,
+        // re-registers somebody else's mouse listeners. Stale means re-record.
+        if self.layers.get(&key).is_some_and(|layer| {
+            layer.has_content()
+                && self
+                    .invalid_reuse_range(
+                        &(PrepaintStateIndex::default()..PrepaintStateIndex::default()),
+                        &layer.paint_range,
+                    )
+                    .is_none()
+        }) && self.is_layer_occluded(key)
         {
             crate::render_stats::count("occlusion: layers culled");
             crate::render_stats::count("occlusion: layers deferred-dirty");
             if let Some(layer) = self.layers.get_mut(&key) {
                 layer.deferred_dirty = true;
             }
+            let composite_start = self.paint_index();
             let range = self.layers[&key].paint_range.clone();
             self.reuse_paint_except_scene(&range);
+            self.restamp_layer_paint_range(key, composite_start);
             return None;
         }
 
@@ -5335,6 +5364,7 @@ impl Window {
                 if let Some(layer) = self.layers.get_mut(&key) {
                     layer.deferred_dirty = false;
                 }
+                self.restamp_layer_paint_range(key, composite_start);
                 return true;
             }
             crate::render_stats::count("layer: composited (texture)");
@@ -5402,8 +5432,9 @@ impl Window {
             if let Some(layer) = self.layers.get_mut(&key) {
                 layer.deferred_dirty = false;
             }
-            // Occluded frames emit nothing new; the previous range still
-            // describes the last visible extent.
+            // Occluded frames emit nothing new, but the replay re-registered
+            // the layer's listeners in this frame's arrays: restamp.
+            self.restamp_layer_paint_range(key, composite_start);
             return true;
         }
 
