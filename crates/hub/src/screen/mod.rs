@@ -1757,9 +1757,18 @@ impl EntryScreen {
         if self.state.plugin_install_phase.is_some() {
             return;
         }
+        let Some(layout) = self.plugin_layout() else {
+            self.state.plugin_install_phase = Some(PluginInstallPhase::Error(
+                "Install an engine version first: plugins are installed per engine version."
+                    .to_string(),
+            ));
+            cx.notify();
+            return;
+        };
         self.state.plugin_install_phase = Some(PluginInstallPhase::FetchingMetadata);
         cx.notify();
-        let plugins_path = self.state.plugins_path.clone();
+        let plugins_path = layout.plugins_dir();
+        let registry_plugin = plugin.clone();
         let pname = plugin.name.clone();
         let purl = plugin.repo_url.clone();
         cx.spawn(async move |entity, cx| {
@@ -1798,37 +1807,39 @@ impl EntryScreen {
                 let lib_name = format!("{}_{}.{}", repo_tag, tag, ext);
                 let pp = plugins_path.clone();
                 let bu = binary_url.clone();
+                let layout_bg = layout.clone();
+                let plugin_bg = registry_plugin.clone();
+                let tag_bg = tag.clone();
                 let result = cx
                     .background_executor()
-                    .spawn(async move { PluginService::download_binary(&bu, &pp, &lib_name) })
+                    .spawn(async move {
+                        let path = PluginService::download_binary(&bu, &pp, &lib_name)?;
+                        PluginService::register_installed(
+                            &layout_bg,
+                            &plugin_bg,
+                            &tag_bg,
+                            &path,
+                            &PluginInstallMethod::BinaryDownload,
+                        )
+                    })
                     .await;
                 match result {
-                    Ok(lib_path) => {
-                        let installed = InstalledPlugin {
-                            name: pname,
-                            repo_url: purl,
-                            version: tag,
-                            installed_at: chrono::Local::now()
-                                .format("%Y-%m-%d %H:%M:%S")
-                                .to_string(),
-                            install_method: PluginInstallMethod::BinaryDownload,
-                            library_path: lib_path,
-                        };
+                    Ok(installed) => {
                         let _ = cx.update(|cx| {
                             entity.update(cx, |this, cx| {
                                 this.state.plugin_install_phase =
-                                    Some(PluginInstallPhase::Complete(installed.clone()));
-                                this.state.installed_plugins.push(installed);
-                                this.save_installed_plugins();
+                                    Some(PluginInstallPhase::Complete(installed));
+                                this.reload_installed_plugins();
                                 cx.notify();
                             })
                         });
                     }
-                    _ => {
+                    Err(_) => {
                         let _ = cx.update(|cx| {
                             entity.update(cx, |this, cx| {
-                                this.state.plugin_install_phase =
-                                    Some(PluginInstallPhase::Error("Download failed".to_string()));
+                                this.state.plugin_install_phase = Some(PluginInstallPhase::Error(
+                                    "Download or recording of the plugin failed".to_string(),
+                                ));
                                 cx.notify();
                             })
                         });
@@ -1838,35 +1849,34 @@ impl EntryScreen {
                 let tag_for_installed = tag.clone();
                 let pp = plugins_path.clone();
                 let purl2 = purl.clone();
+                let layout_bg = layout.clone();
+                let plugin_bg = registry_plugin.clone();
                 let result = cx
                     .background_executor()
                     .spawn(async move {
-                        PluginService::build_from_source(&purl2, Some(&tag), &pp, &tag)
+                        let (path, _logs) =
+                            PluginService::build_from_source(&purl2, Some(&tag), &pp, &tag)?;
+                        PluginService::register_installed(
+                            &layout_bg,
+                            &plugin_bg,
+                            &tag_for_installed,
+                            &path,
+                            &PluginInstallMethod::BuiltFromSource,
+                        )
                     })
                     .await;
                 match result {
-                    Ok((lib_path, _logs)) => {
-                        let installed = InstalledPlugin {
-                            name: pname,
-                            repo_url: purl,
-                            version: tag_for_installed,
-                            installed_at: chrono::Local::now()
-                                .format("%Y-%m-%d %H:%M:%S")
-                                .to_string(),
-                            install_method: PluginInstallMethod::BuiltFromSource,
-                            library_path: lib_path,
-                        };
+                    Ok(installed) => {
                         let _ = cx.update(|cx| {
                             entity.update(cx, |this, cx| {
                                 this.state.plugin_install_phase =
-                                    Some(PluginInstallPhase::Complete(installed.clone()));
-                                this.state.installed_plugins.push(installed);
-                                this.save_installed_plugins();
+                                    Some(PluginInstallPhase::Complete(installed));
+                                this.reload_installed_plugins();
                                 cx.notify();
                             })
                         });
                     }
-                    _ => {
+                    Err(_) => {
                         let _ = cx.update(|cx| {
                             entity.update(cx, |this, cx| {
                                 this.state.plugin_install_phase =
@@ -1886,14 +1896,39 @@ impl EntryScreen {
     }
 
     pub(crate) fn remove_plugin(&mut self, index: usize, cx: &mut Context<Self>) {
-        if index < self.state.installed_plugins.len() {
-            let lib_path = std::path::Path::new(&self.state.installed_plugins[index].library_path)
-                .to_path_buf();
-            let _ = std::fs::remove_file(&lib_path);
-            self.state.installed_plugins.remove(index);
-            self.save_installed_plugins();
-            cx.notify();
+        let (Some(layout), Some(plugin)) =
+            (self.plugin_layout(), self.state.installed_plugins.get(index))
+        else {
+            return;
+        };
+        if let Err(error) = layout.unregister_plugin(&plugin.repo_url) {
+            tracing::error!("Could not remove plugin {}: {error}", plugin.name);
         }
+        self.reload_installed_plugins();
+        cx.notify();
+    }
+
+    /// The engine install plugins go into and are listed from.
+    pub(crate) fn plugin_layout(&self) -> Option<pulsar_install_layout::InstallLayout> {
+        self.state
+            .plugin_target
+            .as_deref()
+            .map(pulsar_install_layout::InstallLayout::new)
+    }
+
+    /// Point plugin management at another engine install.
+    pub(crate) fn set_plugin_target(&mut self, install_root: PathBuf, cx: &mut Context<Self>) {
+        self.state.plugin_target = Some(install_root);
+        self.reload_installed_plugins();
+        cx.notify();
+    }
+
+    /// Re-read the target install's plugin lock.
+    pub(crate) fn reload_installed_plugins(&mut self) {
+        self.state.installed_plugins = self
+            .plugin_layout()
+            .map(|layout| crate::service::plugin_service::installed_plugins_of(&layout))
+            .unwrap_or_default();
     }
 
     pub(crate) fn start_dependency_setup(&mut self, cx: &mut Context<Self>) {
@@ -2060,12 +2095,6 @@ impl EntryScreen {
     fn save_cloud_servers(&self) {
         if let Ok(json) = serde_json::to_string(&self.state.cloud_servers) {
             let _ = std::fs::write(&self.state.cloud_servers_path, json);
-        }
-    }
-
-    fn save_installed_plugins(&self) {
-        if let Ok(json) = serde_json::to_string(&self.state.installed_plugins) {
-            let _ = std::fs::write(self.state.plugins_path.join("plugins.json"), json);
         }
     }
 

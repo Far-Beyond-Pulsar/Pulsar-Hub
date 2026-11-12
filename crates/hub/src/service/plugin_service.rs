@@ -3,7 +3,7 @@ use std::path::Path;
 use crate::core::types::*;
 use crate::service::git_service::GitService;
 
-fn registry_local_path(registries_root: &Path, url: &str) -> std::path::PathBuf {
+pub(crate) fn registry_local_path(registries_root: &Path, url: &str) -> std::path::PathBuf {
     let slug = url
         .trim_end_matches('/')
         .trim_end_matches(".git")
@@ -27,6 +27,28 @@ fn native_plugin_ext() -> &'static str {
 }
 
 pub struct PluginService;
+
+/// The Hub's view of what an install's plugin lock lists.
+pub fn installed_plugins_of(layout: &pulsar_install_layout::InstallLayout) -> Vec<InstalledPlugin> {
+    let dir = layout.plugins_dir();
+    layout
+        .load_plugin_lock()
+        .plugins
+        .into_iter()
+        .map(|record| InstalledPlugin {
+            name: record.name,
+            repo_url: record.repo_url,
+            version: record.version,
+            installed_at: record.installed_at,
+            install_method: if record.method == "source" {
+                PluginInstallMethod::BuiltFromSource
+            } else {
+                PluginInstallMethod::BinaryDownload
+            },
+            library_path: dir.join(&record.file).to_string_lossy().into_owned(),
+        })
+        .collect()
+}
 
 impl PluginService {
     /// Clone or pull each plugin registry via git, then return the list of plugins found.
@@ -211,6 +233,48 @@ impl PluginService {
             .and_then(|a| a.get("browser_download_url").and_then(|v| v.as_str()))
             .map(String::from);
         Ok(Some((tag, binary_url)))
+    }
+
+    /// Record a library already in the install's plugin directory: hash it
+    /// into the integrity manifest the engine requires and list it in the
+    /// lock. Without this the engine refuses to load the library.
+    pub fn register_installed(
+        layout: &pulsar_install_layout::InstallLayout,
+        plugin: &RegistryPlugin,
+        version: &str,
+        library_path: &str,
+        method: &PluginInstallMethod,
+    ) -> Result<InstalledPlugin, String> {
+        let file = Path::new(library_path)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or_else(|| format!("Not a library path: {library_path}"))?
+            .to_string();
+        let installed_at = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        layout
+            .register_plugin(pulsar_install_layout::PluginRecord {
+                name: plugin.name.clone(),
+                repo_url: plugin.repo_url.clone(),
+                version: version.to_string(),
+                file,
+                sha256: String::new(),
+                registry_url: plugin.registry_url.clone(),
+                installed_at: installed_at.clone(),
+                method: match method {
+                    PluginInstallMethod::BinaryDownload => "binary",
+                    PluginInstallMethod::BuiltFromSource => "source",
+                }
+                .to_string(),
+            })
+            .map_err(|e| format!("Could not record the plugin: {e}"))?;
+        Ok(InstalledPlugin {
+            name: plugin.name.clone(),
+            repo_url: plugin.repo_url.clone(),
+            version: version.to_string(),
+            installed_at,
+            install_method: method.clone(),
+            library_path: library_path.to_string(),
+        })
     }
 
     pub fn download_binary(

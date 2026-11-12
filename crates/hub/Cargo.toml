@@ -22,6 +22,7 @@ ui_git_manager.workspace = true
 ui_friends.workspace = true
 ui_settings.workspace = true
 pulsar_studio_client.workspace = true
+pulsar_install_layout.workspace = true
 
 # Serialization
 serde.workspace = true

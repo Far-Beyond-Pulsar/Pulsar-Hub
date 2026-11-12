@@ -409,7 +409,9 @@ pub struct AppState {
     pub registry_refresh_in_progress: bool,
     pub installed_plugins: Vec<InstalledPlugin>,
     pub plugin_install_phase: Option<PluginInstallPhase>,
-    pub plugins_path: PathBuf,
+    /// The engine install plugins are installed into and listed from (plugins
+    /// belong to one install; see `pulsar_install_layout`).
+    pub plugin_target: Option<PathBuf>,
     pub registries_path: PathBuf,
 
     pub dependency_status: Option<DependencyStatus>,
@@ -453,7 +455,6 @@ impl AppState {
         let appdata = directories::ProjectDirs::from("com", "Pulsar", "Pulsar_Engine")
             .map(|d| d.data_dir().to_path_buf())
             .unwrap_or_else(|| PathBuf::from("."));
-        let plugins_path = appdata.join("plugins");
         let registries_path = appdata.join("registries");
         let src_engine_config_path = appdata.join("src_engine.txt");
         let src_engine_path: Option<PathBuf> = std::fs::read_to_string(&src_engine_config_path)
@@ -461,11 +462,21 @@ impl AppState {
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
             .map(PathBuf::from);
-        let installed_plugins: Vec<InstalledPlugin> =
-            std::fs::read_to_string(plugins_path.join("plugins.json"))
-                .ok()
-                .and_then(|s| serde_json::from_str(&s).ok())
-                .unwrap_or_default();
+        let installed_versions = crate::service::installer_service::installed_versions_with_src(
+            src_engine_path.as_deref(),
+        );
+        // Newest install first: the default home of new plugins.
+        let plugin_target = installed_versions
+            .first()
+            .map(|version| version.metadata.install_path.clone());
+        let installed_plugins = plugin_target
+            .as_deref()
+            .map(|root| {
+                crate::service::plugin_service::installed_plugins_of(
+                    &pulsar_install_layout::InstallLayout::new(root),
+                )
+            })
+            .unwrap_or_default();
         let plugin_registries: Vec<PluginRegistry> =
             std::fs::read_to_string(appdata.join("plugin_registries.json"))
                 .ok()
@@ -518,7 +529,7 @@ impl AppState {
             registry_refresh_in_progress: false,
             installed_plugins,
             plugin_install_phase: None,
-            plugins_path,
+            plugin_target,
             registries_path,
             dependency_status: None,
             install_progress: None,
@@ -529,9 +540,7 @@ impl AppState {
             template_thumbnail_inflight: 0,
             template_thumbnail_queue: VecDeque::new(),
             versions: crate::core::types::VersionState {
-                installed: crate::service::installer_service::installed_versions_with_src(
-                    src_engine_path.as_deref(),
-                ),
+                installed: installed_versions,
                 ..Default::default()
             },
             download_manager_view: cx
