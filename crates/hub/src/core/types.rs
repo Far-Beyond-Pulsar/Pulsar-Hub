@@ -485,3 +485,18 @@ pub struct VersionRemoveRequested {
 pub struct VersionInstallRequested {
     pub version: String,
 }
+
+/// The tabs of an engine version's detail page.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VersionTab {
+    Plugins,
+    Themes,
+}
+
+/// The engine install whose plugins and themes are being managed.
+#[derive(Clone, Debug)]
+pub struct VersionDetail {
+    pub path: std::path::PathBuf,
+    pub version: String,
+    pub tab: VersionTab,
+}

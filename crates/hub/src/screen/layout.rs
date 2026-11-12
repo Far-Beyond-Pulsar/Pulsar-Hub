@@ -148,8 +148,15 @@ pub fn render_layout(
                                 crate::screen::views::render_storage(screen, cx).into_any_element()
                             }
                             EntryScreenView::Versions => {
-                                crate::screen::views::render_versions(screen, window, cx)
+                                if screen.state.version_detail.is_some() {
+                                    crate::screen::views::version_detail::render_version_detail(
+                                        screen, cx,
+                                    )
                                     .into_any_element()
+                                } else {
+                                    crate::screen::views::render_versions(screen, window, cx)
+                                        .into_any_element()
+                                }
                             }
                             EntryScreenView::CloudProjects => {
                                 crate::screen::views::render_cloud_projects(screen, window, cx)

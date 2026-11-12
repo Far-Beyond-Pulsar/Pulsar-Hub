@@ -408,6 +408,15 @@ pub struct AppState {
     pub registry_plugins: Vec<RegistryPlugin>,
     pub registry_refresh_in_progress: bool,
     pub installed_plugins: Vec<InstalledPlugin>,
+    /// The engine version whose detail page is open (plugins per version,
+    /// themes shared by all).
+    pub version_detail: Option<crate::core::types::VersionDetail>,
+    pub theme_registries: Vec<PluginRegistry>,
+    pub registry_themes: Vec<crate::service::theme_service::RegistryTheme>,
+    pub theme_refresh_in_progress: bool,
+    pub installed_themes: Vec<pulsar_install_layout::ThemeRecord>,
+    /// The last theme install or removal's failure, if it failed.
+    pub theme_error: Option<String>,
     pub plugin_install_phase: Option<PluginInstallPhase>,
     /// The engine install plugins are installed into and listed from (plugins
     /// belong to one install; see `pulsar_install_layout`).
@@ -528,6 +537,14 @@ impl AppState {
             registry_plugins: Vec::new(),
             registry_refresh_in_progress: false,
             installed_plugins,
+            version_detail: None,
+            theme_registries: crate::service::theme_service::ThemeService::default_registries(),
+            registry_themes: Vec::new(),
+            theme_refresh_in_progress: false,
+            installed_themes: crate::service::theme_service::ThemeService::installed(
+                &pulsar_install_layout::ThemeLayout::shared(),
+            ),
+            theme_error: None,
             plugin_install_phase: None,
             plugin_target,
             registries_path,

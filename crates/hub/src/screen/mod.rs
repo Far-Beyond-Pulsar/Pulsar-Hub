@@ -1908,6 +1908,105 @@ impl EntryScreen {
         cx.notify();
     }
 
+    // ── Version detail: plugins per version, themes shared ──────────────
+
+    /// Open the plugin and theme page of an installed engine version.
+    pub(crate) fn open_version_detail(
+        &mut self,
+        path: PathBuf,
+        version: String,
+        cx: &mut Context<Self>,
+    ) {
+        // A source checkout is built by the developer and loads the plugins its
+        // workspace links; the Hub installs plugins into release installs only.
+        if !version.eq_ignore_ascii_case("src") {
+            self.state.plugin_target = Some(path.clone());
+            self.reload_installed_plugins();
+        }
+        self.state.plugin_install_phase = None;
+        self.state.theme_error = None;
+        self.state.version_detail = Some(crate::core::types::VersionDetail {
+            path,
+            version,
+            tab: crate::core::types::VersionTab::Plugins,
+        });
+        if self.state.registry_plugins.is_empty() {
+            self.refresh_plugin_registry(cx);
+        }
+        if self.state.registry_themes.is_empty() {
+            self.refresh_theme_registry(cx);
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn close_version_detail(&mut self, cx: &mut Context<Self>) {
+        self.state.version_detail = None;
+        self.state.plugin_install_phase = None;
+        cx.notify();
+    }
+
+    pub(crate) fn set_version_tab(
+        &mut self,
+        tab: crate::core::types::VersionTab,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(detail) = self.state.version_detail.as_mut() {
+            detail.tab = tab;
+            cx.notify();
+        }
+    }
+
+    pub(crate) fn refresh_theme_registry(&mut self, cx: &mut Context<Self>) {
+        if self.state.theme_refresh_in_progress {
+            return;
+        }
+        self.state.theme_refresh_in_progress = true;
+        cx.notify();
+        let registries = self.state.theme_registries.clone();
+        let root = self.state.registries_path.clone();
+        cx.spawn(async move |entity, cx| {
+            let themes = cx
+                .background_executor()
+                .spawn(async move {
+                    crate::service::theme_service::ThemeService::refresh(&registries, &root)
+                })
+                .await;
+            let _ = cx.update(|cx| {
+                entity.update(cx, |this, cx| {
+                    this.state.registry_themes = themes;
+                    this.state.theme_refresh_in_progress = false;
+                    cx.notify();
+                })
+            });
+        })
+        .detach();
+    }
+
+    pub(crate) fn install_registry_theme(&mut self, file: &str, cx: &mut Context<Self>) {
+        use crate::service::theme_service::ThemeService;
+        let Some(theme) = self
+            .state
+            .registry_themes
+            .iter()
+            .find(|theme| theme.file == file)
+            .cloned()
+        else {
+            return;
+        };
+        let layout = pulsar_install_layout::ThemeLayout::shared();
+        self.state.theme_error = ThemeService::install(&layout, &theme).err();
+        self.state.installed_themes = ThemeService::installed(&layout);
+        cx.notify();
+    }
+
+    pub(crate) fn remove_installed_theme(&mut self, file: &str, cx: &mut Context<Self>) {
+        use crate::service::theme_service::ThemeService;
+        let layout = pulsar_install_layout::ThemeLayout::shared();
+        self.state.theme_error = ThemeService::remove(&layout, file).err();
+        self.state.installed_themes = ThemeService::installed(&layout);
+        cx.notify();
+    }
+
     /// The engine install plugins go into and are listed from.
     pub(crate) fn plugin_layout(&self) -> Option<pulsar_install_layout::InstallLayout> {
         self.state

@@ -357,7 +357,7 @@ fn render_theme_card(
                 ),
         )
 }
-fn render_plugin_content(
+pub(crate) fn render_plugin_content(
     screen: &mut EntryScreen,
     cx: &mut Context<EntryScreen>,
 ) -> impl IntoElement {

@@ -224,6 +224,23 @@ fn render_installed_grid(
                                         })
                                 )
                                 .child({
+                                    let (manage_path, manage_version) =
+                                        (path.clone(), version.clone());
+                                    Button::new(format!("manage-{}", idx))
+                                        .label("Plugins & themes")
+                                        .icon(IconName::Package)
+                                        .compact()
+                                        .ghost()
+                                        .tooltip("Manage this version's plugins and the shared themes")
+                                        .on_click(cx.listener(move |this, _, _, cx| {
+                                            this.open_version_detail(
+                                                manage_path.clone(),
+                                                manage_version.clone(),
+                                                cx,
+                                            );
+                                        }))
+                                })
+                                .child({
                                     let v = version.clone();
                                     Button::new(format!("info-{}", idx))
                                         .icon(IconName::Settings)

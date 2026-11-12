@@ -18,6 +18,7 @@ pub mod src_build_overlay;
 pub mod storage;
 pub mod templates;
 pub mod upstream_prompt;
+pub mod version_detail;
 pub mod versions;
 
 pub use clone_git::render_clone_git_modal;
