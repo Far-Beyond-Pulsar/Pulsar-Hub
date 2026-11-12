@@ -17,11 +17,11 @@ pub struct RecentProjectsList {
 
 impl RecentProjectsList {
     pub fn load(path: &Path) -> Self {
-        ui_common::file_utils::read_json(path).unwrap_or_default()
+        crate::util::json_file::read_json(path).unwrap_or_default()
     }
 
     pub fn save(&self, path: &Path) {
-        let _ = ui_common::file_utils::write_json(path, self);
+        let _ = crate::util::json_file::write_json(path, self);
     }
 
     pub fn add_or_update(&mut self, project: RecentProject) {

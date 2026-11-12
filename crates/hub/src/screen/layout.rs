@@ -99,7 +99,7 @@ pub fn render_layout(
                                     .content(move |_, _| dm_view.clone())
                                 })
                                 .child(
-                                    ui::popover::Popover::<ui_common::ThemePicker>::new(
+                                    ui::popover::Popover::<ui_shell::ThemePicker>::new(
                                         "titlebar-theme-popover",
                                     )
                                     .anchor(Corner::TopRight)

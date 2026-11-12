@@ -346,7 +346,7 @@ pub struct AuthState {
     pub message: Option<String>,
     pub device_code: Option<String>,
     pub device_verification_url: Option<String>,
-    pub profile_dropdown: gpui::Entity<ui_common::ProfileDropdown>,
+    pub profile_dropdown: gpui::Entity<ui_shell::ProfileDropdown>,
     pub onboarding_avatar: Option<Arc<RenderImage>>,
     pub onboarding_avatar_url: Option<String>,
 }
@@ -358,7 +358,12 @@ impl AuthState {
             message: None,
             device_code: None,
             device_verification_url: None,
-            profile_dropdown: cx.new(ui_common::ProfileDropdown::new),
+            profile_dropdown: cx.new(|cx| {
+                ui_shell::ProfileDropdown::with_menu_items(
+                    ui_shell::editor_tools::account_menu_entries,
+                    cx,
+                )
+            }),
             onboarding_avatar: None,
             onboarding_avatar_url: None,
         }
@@ -395,7 +400,7 @@ pub struct AppState {
     pub add_server_error: Option<String>,
 
     pub auth: AuthState,
-    pub theme_picker: gpui::Entity<ui_common::ThemePicker>,
+    pub theme_picker: gpui::Entity<ui_shell::ThemePicker>,
     pub friends_screen: gpui::Entity<ui_friends::FriendsScreen>,
     pub pending_invite: Option<PendingInvite>,
 
@@ -505,7 +510,7 @@ impl AppState {
             add_server_logging_in: false,
             add_server_error: None,
             auth: AuthState::new(cx),
-            theme_picker: cx.new(|cx| ui_common::ThemePicker::new(window, cx)),
+            theme_picker: cx.new(|cx| ui_shell::ThemePicker::new(window, cx)),
             friends_screen: cx.new(|cx| ui_friends::FriendsScreen::new_without_invite(window, cx)),
             pending_invite: None,
             plugin_registries,

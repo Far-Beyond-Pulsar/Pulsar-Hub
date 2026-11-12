@@ -20,7 +20,7 @@ use crate::service::plugin_service::PluginService;
 use crate::service::project_service::ProjectService;
 use crate::service::template_cache_service::TemplateCacheService;
 use crate::service::thumbnail_service::ThumbnailService;
-use ui_common::ProfileDropdownEvent;
+use ui_shell::ProfileDropdownEvent;
 
 fn git_fetch_status(
     result: Result<ui_git_manager::AutoFetchOutcome, git2::Error>,
@@ -126,9 +126,8 @@ impl EntryScreen {
             crate::screen::views::channel_menu::ChannelMenuView::new(self_entity.downgrade(), cx)
         }));
 
-        // The profile dropdown no longer carries a "Git settings" entry (the
-        // engine moved it behind the editor shell's registry), so the Hub needs
-        // its own entry point for `ui_git_manager::open_git_settings_modal`.
+        // Git settings is an account-menu entry the git tool registers itself
+        // (`ui_git_manager`); the dropdown lists it through `ui_shell`.
 
 
         let status = DependencyService::check();

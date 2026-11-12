@@ -16,16 +16,12 @@ pulsar_auth.workspace = true
 engine_state.workspace = true
 engine_fs = { workspace = true, features = ["remote"] }
 window_manager.workspace = true
-friends_engine.workspace = true
-ui_common.workspace = true
+ui_shell.workspace = true
 ui_auth.workspace = true
 ui_git_manager.workspace = true
 ui_friends.workspace = true
 ui_settings.workspace = true
-ui_types_common.workspace = true
-pulsar-multiplayer-core.workspace = true
-# TODO(phase 2): MultiuserClient lives in the editor crate `ui_multiplayer`; extract the relay client into a light crate and drop this.
-ui_multiplayer.workspace = true
+pulsar_studio_client.workspace = true
 
 # Serialization
 serde.workspace = true
