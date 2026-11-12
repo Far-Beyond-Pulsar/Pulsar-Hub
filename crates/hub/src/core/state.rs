@@ -22,7 +22,6 @@ pub struct UiState {
     pub launched: bool,
     pub show_onboarding: bool,
     pub show_dependency_setup: bool,
-    pub onboarding_step: OnboardingStep,
     pub show_git_upstream_prompt: Option<(PathBuf, String)>,
     pub auth_device_modal_shown: bool,
     pub show_add_server: bool,
@@ -41,6 +40,8 @@ pub struct UiState {
     pub cloud_intro_page: usize,
     pub show_new_project_modal: bool,
     pub show_clone_git_modal: bool,
+    /// The engine-then-plugins setup shown after onboarding.
+    pub setup_flow: Option<crate::core::types::SetupFlow>,
 }
 
 impl UiState {
@@ -51,7 +52,6 @@ impl UiState {
             launched: false,
             show_onboarding: false,
             show_dependency_setup: false,
-            onboarding_step: OnboardingStep::default(),
             show_git_upstream_prompt: None,
             auth_device_modal_shown: false,
             show_add_server: false,
@@ -66,6 +66,7 @@ impl UiState {
             cloud_intro_page: 0,
             show_new_project_modal: false,
             show_clone_git_modal: false,
+            setup_flow: None,
         }
     }
 }

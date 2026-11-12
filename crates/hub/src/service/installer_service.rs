@@ -497,6 +497,11 @@ pub fn release_notes_for_version(version: &str) -> String {
     }
 }
 
+/// The release asset for this platform, if it has one.
+///
+/// Pure and silent: the release list asks it for every row on every frame, so
+/// it must not log. A release with no asset for this platform (a relay or
+/// studio release, say) is simply not installable.
 pub fn find_platform_asset(release: &GitHubRelease) -> Option<&GitHubAsset> {
     let (os, arch, ext) = platform_info();
     let asset_arch = if os == "macos" && arch == "aarch64" {
@@ -533,20 +538,8 @@ pub fn find_platform_asset(release: &GitHubRelease) -> Option<&GitHubAsset> {
             let n = a.name.to_lowercase();
             n.starts_with("pulsar-native_") && n.contains(&needle) && n.ends_with(".zip")
         }) {
-            tracing::info!(
-                "Asset selection: os={os} arch={arch} nightly_token={token} selected={}",
-                a.name
-            );
             return Some(a);
         }
-        tracing::warn!(
-            "No nightly asset matched token '{token}' (os={os} arch={arch}); available: {:?}",
-            release
-                .assets
-                .iter()
-                .map(|a| a.name.as_str())
-                .collect::<Vec<_>>()
-        );
     }
     release.assets.iter().find(|a| {
         let n = a.name.to_lowercase();

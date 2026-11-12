@@ -175,9 +175,6 @@ impl EntryScreen {
         this.state.git_auto_fetch_task = Some(Self::start_git_auto_fetch_task(cx));
         this.load_thumbnails(cx);
         this.load_home_feed(cx);
-        if this.state.ui.show_onboarding {
-            this.refresh_plugin_registry(cx);
-        }
         this
     }
 
@@ -2080,57 +2077,61 @@ impl EntryScreen {
         .detach();
     }
 
-    pub(crate) fn show_onboarding_flow(&mut self, cx: &mut Context<Self>) {
-        self.show_onboarding_step(OnboardingStep::Welcome, cx);
-    }
-
     pub(crate) fn dismiss_onboarding(&mut self, cx: &mut Context<Self>) {
         self.state.ui.show_onboarding = false;
+        // Onboarding is over: offer an engine, then its plugins. Only the
+        // session that ran onboarding gets this.
+        self.begin_setup_flow(cx);
         cx.notify();
     }
 
-    pub(crate) fn show_onboarding_step(&mut self, step: OnboardingStep, cx: &mut Context<Self>) {
-        self.state.ui.show_onboarding = true;
-        self.navigate_to_onboarding_step(step, cx);
-    }
+    // ── Setup after onboarding ───────────────────────────────────────────
 
-    pub(crate) fn navigate_to_onboarding_step(
-        &mut self,
-        step: OnboardingStep,
-        cx: &mut Context<Self>,
-    ) {
-        self.state.ui.onboarding_step = step;
-        if step == OnboardingStep::Plugins
-            && self.state.registry_plugins.is_empty()
-            && !self.state.registry_refresh_in_progress
-        {
-            self.refresh_plugin_registry(cx);
-        }
-        if step == OnboardingStep::Engine
-            && self.state.versions.available_releases.is_empty()
-            && !self.state.versions.fetching
-        {
+    pub(crate) fn begin_setup_flow(&mut self, cx: &mut Context<Self>) {
+        self.state.ui.setup_flow = Some(crate::core::types::SetupFlow {
+            page: crate::core::types::SetupPage::Engine,
+        });
+        if self.state.versions.available_releases.is_empty() && !self.state.versions.fetching {
             self.refresh_versions(cx);
         }
+    }
+
+    pub(crate) fn close_setup_flow(&mut self, cx: &mut Context<Self>) {
+        self.state.ui.setup_flow = None;
+        self.state.plugin_install_phase = None;
         cx.notify();
     }
 
-    pub(crate) fn previous_onboarding_step(&mut self, cx: &mut Context<Self>) {
-        if let Some(step) = self.state.ui.onboarding_step.previous() {
-            self.navigate_to_onboarding_step(step, cx);
-        }
+    /// The newest installed engine: where the setup puts plugins.
+    pub(crate) fn newest_install_path(&self) -> Option<PathBuf> {
+        self.state
+            .versions
+            .installed
+            .first()
+            .map(|version| version.metadata.install_path.clone())
     }
 
-    pub(crate) fn next_onboarding_step(&mut self, cx: &mut Context<Self>) {
-        if let Some(step) = self.state.ui.onboarding_step.next() {
-            self.navigate_to_onboarding_step(step, cx);
-        } else {
-            self.dismiss_onboarding(cx);
+    /// Go to the plugin page for the newest install.
+    pub(crate) fn setup_continue_to_plugins(&mut self, cx: &mut Context<Self>) {
+        let Some(path) = self.newest_install_path() else {
+            return;
+        };
+        self.set_plugin_target(path, cx);
+        self.state.plugin_install_phase = None;
+        if let Some(flow) = self.state.ui.setup_flow.as_mut() {
+            flow.page = crate::core::types::SetupPage::Plugins;
         }
+        if self.state.registry_plugins.is_empty() && !self.state.registry_refresh_in_progress {
+            self.refresh_plugin_registry(cx);
+        }
+        cx.notify();
     }
 
-    pub(crate) fn skip_onboarding_step(&mut self, cx: &mut Context<Self>) {
-        self.next_onboarding_step(cx);
+    pub(crate) fn setup_back_to_engine(&mut self, cx: &mut Context<Self>) {
+        if let Some(flow) = self.state.ui.setup_flow.as_mut() {
+            flow.page = crate::core::types::SetupPage::Engine;
+            cx.notify();
+        }
     }
 
     pub(crate) fn finish_onboarding(&mut self, cx: &mut Context<Self>) {
@@ -2761,6 +2762,11 @@ impl EntryScreen {
                                 version: tag.clone(),
                             };
                         this.state.versions.installed = this.installed_versions();
+                        if this.state.ui.setup_flow.as_ref().is_some_and(|flow| {
+                            flow.page == crate::core::types::SetupPage::Engine
+                        }) {
+                            this.setup_continue_to_plugins(cx);
+                        }
                     }
                     cx.notify();
                 });

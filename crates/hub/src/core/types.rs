@@ -315,17 +315,6 @@ pub enum PluginInstallPhase {
 
 // ── Onboarding ────────────────────────────────────────────────────────────
 
-#[derive(Clone, Copy, PartialEq, Eq, Default)]
-pub enum OnboardingStep {
-    #[default]
-    Welcome,
-    Engine,
-    Dependencies,
-    Account,
-    Theme,
-    Plugins,
-}
-
 // ── Pending Invite ────────────────────────────────────────────────────────
 
 #[derive(Clone, Debug)]
@@ -499,4 +488,20 @@ pub struct VersionDetail {
     pub path: std::path::PathBuf,
     pub version: String,
     pub tab: VersionTab,
+}
+
+/// The pages of the setup that follows first-run onboarding.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SetupPage {
+    /// Choose an engine version to install.
+    Engine,
+    /// Choose plugins for the engine just installed.
+    Plugins,
+}
+
+/// Setup after onboarding: install an engine, then its plugins. It exists only
+/// in the session that ran onboarding.
+#[derive(Clone, Debug)]
+pub struct SetupFlow {
+    pub page: SetupPage,
 }

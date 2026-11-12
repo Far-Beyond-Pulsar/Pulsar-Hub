@@ -10,29 +10,19 @@ use ui::{
     scroll::ScrollbarAxis,
     v_flex, ActiveTheme, Disableable, Icon, IconName, Sizable, StyledExt,
 };
-mod flow;
 mod steps;
-use flow::ONBOARDING_STEPS;
+
+/// First-run setup, one page: a word of welcome, an optional account, a look.
+/// Engines and plugins are not part of it: when it ends, the setup modal
+/// (`setup_modal`) offers an engine and then its plugins.
 pub fn render_onboarding(
     screen: &mut EntryScreen,
     _window: &mut Window,
     cx: &mut Context<EntryScreen>,
 ) -> impl IntoElement {
     let theme = cx.theme().clone();
-    let step = screen.state.ui.onboarding_step;
-    let step_number = ONBOARDING_STEPS
-        .iter()
-        .position(|definition| definition.step == step)
-        .map(|index| index + 1)
-        .unwrap_or(1);
-    let content = match step {
-        OnboardingStep::Welcome => steps::welcome::render(cx),
-        OnboardingStep::Engine => steps::engine::render(screen, cx),
-        OnboardingStep::Dependencies => steps::dependencies::render(screen, cx),
-        OnboardingStep::Account => steps::account::render(screen, cx),
-        OnboardingStep::Theme => steps::theme::render(screen, cx),
-        OnboardingStep::Plugins => steps::plugins::render(screen, cx),
-    };
+    let account = steps::account::render(screen, cx);
+    let look = steps::theme::render(screen, cx);
     div()
         .absolute()
         .size_full()
@@ -63,21 +53,12 @@ pub fn render_onboarding(
                         .child("Pulsar Hub Setup"),
                 )
                 .child(
-                    div()
-                        .mr_3()
-                        .text_xs()
-                        .text_color(theme.muted_foreground)
-                        .child(format!("Step {step_number} of {}", ONBOARDING_STEPS.len())),
-                )
-                .child(
                     Button::new("close-onboarding")
                         .compact()
                         .ghost()
-                        .icon(IconName::X)
-                        .tooltip("Close setup")
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.finish_onboarding(cx);
-                        })),
+                        .icon(IconName::Close)
+                        .tooltip("Skip setup")
+                        .on_click(cx.listener(|this, _, _, cx| this.finish_onboarding(cx))),
                 ),
         )
         .child(
@@ -95,8 +76,37 @@ pub fn render_onboarding(
                         .max_w(px(1000.))
                         .h_full()
                         .gap_5()
-                        .child(render_stepper(step, cx))
-                        .child(div().flex_1().min_h_0().w_full().child(content)),
+                        .child(
+                            v_flex()
+                                .gap_1()
+                                .child(
+                                    div()
+                                        .text_2xl()
+                                        .font_weight(FontWeight::BOLD)
+                                        .text_color(theme.foreground)
+                                        .child("Welcome to Pulsar Hub"),
+                                )
+                                .child(
+                                    div()
+                                        .text_sm()
+                                        .text_color(theme.muted_foreground)
+                                        .child(
+                                            "Both choices below are optional and can be changed \
+                                             later. Next you can install an engine version and \
+                                             its plugins.",
+                                        ),
+                                ),
+                        )
+                        .child(
+                            h_flex()
+                                .flex_1()
+                                .min_h_0()
+                                .w_full()
+                                .gap_6()
+                                .items_start()
+                                .child(div().w(px(380.)).flex_shrink_0().h_full().child(account))
+                                .child(div().flex_1().min_w_0().h_full().child(look)),
+                        ),
                 ),
         )
         .child(
@@ -111,104 +121,14 @@ pub fn render_onboarding(
                     h_flex()
                         .w_full()
                         .max_w(px(1000.))
-                        .gap_3()
-                        .justify_between()
+                        .justify_end()
                         .child(
-                            Button::new("onboarding-back")
-                                .label("Back")
-                                .ghost()
-                                .disabled(step.previous().is_none())
-                                .on_click(
-                                    cx.listener(|this, _, _, cx| this.previous_onboarding_step(cx)),
-                                ),
-                        )
-                        .child(
-                            h_flex()
-                                .gap_2()
-                                .child(
-                                    Button::new("skip-onboarding-step")
-                                        .label("Skip this step")
-                                        .ghost()
-                                        .on_click(cx.listener(|this, _, _, cx| {
-                                            this.skip_onboarding_step(cx)
-                                        })),
-                                )
-                                .child(
-                                    Button::new("onboarding-next")
-                                        .label(if step.next().is_none() {
-                                            "Finish"
-                                        } else {
-                                            "Continue"
-                                        })
-                                        .primary()
-                                        .on_click(cx.listener(|this, _, _, cx| {
-                                            this.next_onboarding_step(cx)
-                                        })),
-                                ),
+                            Button::new("onboarding-finish")
+                                .label("Get started")
+                                .primary()
+                                .on_click(cx.listener(|this, _, _, cx| this.finish_onboarding(cx))),
                         ),
                 ),
-        )
-}
-fn render_stepper(active: OnboardingStep, cx: &mut Context<EntryScreen>) -> impl IntoElement {
-    let theme = cx.theme();
-    h_flex()
-        .w_full()
-        .gap_2()
-        .children(
-            ONBOARDING_STEPS
-                .iter()
-                .enumerate()
-                .map(|(index, definition)| {
-                    let step = definition.step;
-                    let selected = step == active;
-                    h_flex()
-                        .id(SharedString::from(format!("onboarding-step-{index}")))
-                        .flex_1()
-                        .items_center()
-                        .gap_2()
-                        .px_3()
-                        .py_3()
-                        .rounded_md()
-                        .border_1()
-                        .border_color(if selected {
-                            theme.accent.opacity(0.45)
-                        } else {
-                            theme.border.opacity(0.5)
-                        })
-                        .cursor_pointer()
-                        .bg(if selected {
-                            theme.accent.opacity(0.12)
-                        } else {
-                            theme.secondary.opacity(0.2)
-                        })
-                        .on_mouse_down(
-                            MouseButton::Left,
-                            cx.listener(move |this, _, _, cx| {
-                                this.navigate_to_onboarding_step(step, cx);
-                            }),
-                        )
-                        .child(
-                            div()
-                                .text_sm()
-                                .font_weight(FontWeight::SEMIBOLD)
-                                .text_color(if selected {
-                                    theme.foreground
-                                } else {
-                                    theme.muted_foreground
-                                })
-                                .child(format!("{}", index + 1)),
-                        )
-                        .child(
-                            div()
-                                .text_sm()
-                                .text_color(if selected {
-                                    theme.foreground
-                                } else {
-                                    theme.muted_foreground
-                                })
-                                .child(definition.title),
-                        )
-                }),
         )
 }
 fn render_theme_content(
@@ -744,7 +664,7 @@ fn render_plugin_phase(
                             Button::new("dismiss-phase")
                                 .ghost()
                                 .compact()
-                                .icon(IconName::X)
+                                .icon(IconName::Close)
                                 .on_click(cx.listener(|screen, _, _, cx| {
                                     screen.state.plugin_install_phase = None;
                                     cx.notify();

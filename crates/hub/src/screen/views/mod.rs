@@ -13,6 +13,7 @@ pub mod recent_projects;
 pub mod release_details;
 pub mod release_list;
 pub mod release_notes_modal;
+pub mod setup_modal;
 pub mod sidebar;
 pub mod src_build_overlay;
 pub mod storage;

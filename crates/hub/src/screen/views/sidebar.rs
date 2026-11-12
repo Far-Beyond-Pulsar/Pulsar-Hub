@@ -7,7 +7,7 @@ use ui::{
 use wgpui_motion::prelude::*;
 
 use crate::core::events::{FabSearchRequested, SettingsRequested};
-use crate::core::types::{EntryScreenView, OnboardingStep};
+use crate::core::types::EntryScreenView;
 use crate::screen::EntryScreen;
 
 pub fn render_sidebar(screen: &mut EntryScreen, cx: &mut Context<EntryScreen>) -> impl IntoElement {
@@ -444,7 +444,9 @@ pub fn render_sidebar(screen: &mut EntryScreen, cx: &mut Context<EntryScreen>) -
                         )
                         .child(div().text_sm().text_color(muted_fg).child("Dependencies"))
                         .on_click(cx.listener(|this, _, _, cx| {
-                            this.show_onboarding_step(OnboardingStep::Dependencies, cx);
+                            this.check_dependencies_async(cx);
+                            this.state.ui.show_dependency_setup = true;
+                            cx.notify();
                         })),
                 )
                 .child(

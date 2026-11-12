@@ -260,6 +260,11 @@ pub fn render_layout(
                 )
             },
         )
+        .when(screen.state.ui.setup_flow.is_some(), |this| {
+            this.child(crate::screen::views::setup_modal::render_setup_modal(
+                screen, cx,
+            ))
+        })
         .when(screen.state.ui.show_dependency_setup, |this| {
             this.child(crate::screen::views::render_dependency_setup(
                 screen, window, cx,
