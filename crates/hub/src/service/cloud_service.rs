@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use crate::core::types::*;
-use engine_backend::subsystems::networking::MultiuserClient;
+use ui_multiplayer::net::multiuser::MultiuserClient;
 
 fn normalize_url(raw: &str) -> String {
     let raw = raw.trim().trim_end_matches('/');

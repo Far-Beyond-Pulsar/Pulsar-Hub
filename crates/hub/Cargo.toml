@@ -24,7 +24,8 @@ ui_friends.workspace = true
 ui_settings.workspace = true
 ui_types_common.workspace = true
 pulsar-multiplayer-core.workspace = true
-engine_backend = { workspace = true, default-features = false, features = ["networking"] }
+# TODO(phase 2): MultiuserClient lives in the editor crate `ui_multiplayer`; extract the relay client into a light crate and drop this.
+ui_multiplayer.workspace = true
 
 # Serialization
 serde.workspace = true

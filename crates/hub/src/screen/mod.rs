@@ -126,16 +126,10 @@ impl EntryScreen {
             crate::screen::views::channel_menu::ChannelMenuView::new(self_entity.downgrade(), cx)
         }));
 
-        cx.subscribe_in(
-            &state.auth.profile_dropdown,
-            window,
-            |_this, _, event: &ui_common::ProfileDropdownEvent, window, cx| {
-                if matches!(event, ui_common::ProfileDropdownEvent::GitSettingsRequested) {
-                    ui_git_manager::open_git_settings_modal(window, cx);
-                }
-            },
-        )
-        .detach();
+        // The profile dropdown no longer carries a "Git settings" entry (the
+        // engine moved it behind the editor shell's registry), so the Hub needs
+        // its own entry point for `ui_git_manager::open_git_settings_modal`.
+
 
         let status = DependencyService::check();
         state.dependency_status = Some(status);
