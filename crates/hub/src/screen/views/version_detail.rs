@@ -7,12 +7,12 @@ use ui::{
     ActiveTheme as _, Disableable as _, Icon, IconName, StyledExt as _,
     button::{Button, ButtonVariants as _},
     h_flex,
-    scroll::ScrollbarAxis,
     tab::{Tab, TabBar},
     v_flex,
 };
 
 use crate::EntryScreen;
+use crate::component::registry_list::{RegistryKind, render_registry_panel};
 use crate::core::types::VersionTab;
 use crate::service::installer_service;
 
@@ -178,41 +178,11 @@ fn plugins_tab(
              was compiled against.",
             cx,
         ))
-        .child(
-            div()
-                .flex_1()
-                .min_h_0()
-                .overflow_hidden()
-                .border_1()
-                .border_color(cx.theme().border)
-                .rounded_lg()
-                .child(crate::screen::views::onboarding::render_plugin_content(
-                    screen, cx,
-                )),
-        )
+        .child(render_registry_panel(screen, RegistryKind::Plugins, cx))
         .into_any_element()
 }
 
 fn themes_tab(screen: &mut EntryScreen, cx: &mut Context<EntryScreen>) -> impl IntoElement {
-    let theme = cx.theme().clone();
-    let refreshing = screen.state.theme_refresh_in_progress;
-    let installed: std::collections::HashSet<String> = screen
-        .state
-        .installed_themes
-        .iter()
-        .map(|record| record.file.clone())
-        .collect();
-    let registry = screen.state.registry_themes.clone();
-    // Themes the Hub installed whose registry no longer lists them.
-    let orphaned: Vec<_> = screen
-        .state
-        .installed_themes
-        .iter()
-        .filter(|record| !registry.iter().any(|theme| theme.file == record.file))
-        .cloned()
-        .collect();
-    let error = screen.state.theme_error.clone();
-
     v_flex()
         .flex_1()
         .min_h_0()
@@ -222,181 +192,5 @@ fn themes_tab(screen: &mut EntryScreen, cx: &mut Context<EntryScreen>) -> impl I
              engine's theme picker right away.",
             cx,
         ))
-        .when_some(error, |this, error| {
-            this.child(
-                div()
-                    .px_3()
-                    .py_2()
-                    .rounded_md()
-                    .bg(theme.danger.opacity(0.12))
-                    .text_sm()
-                    .text_color(theme.danger)
-                    .child(error),
-            )
-        })
-        .child(
-            h_flex()
-                .items_center()
-                .justify_between()
-                .child(
-                    div()
-                        .text_sm()
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .text_color(theme.foreground)
-                        .child("Theme registry"),
-                )
-                .child(
-                    Button::new("refresh-theme-registry")
-                        .icon(IconName::Refresh)
-                        .compact()
-                        .ghost()
-                        .disabled(refreshing)
-                        .tooltip(if refreshing { "Refreshing..." } else { "Refresh theme registry" })
-                        .on_click(cx.listener(|this, _, _, cx| this.refresh_theme_registry(cx))),
-                ),
-        )
-        .child(
-            v_flex()
-                .id("registry-theme-scroll")
-                .flex_1()
-                .min_h_0()
-                .gap_2()
-                .scrollable(ScrollbarAxis::Vertical)
-                .when(refreshing && registry.is_empty(), |this| {
-                    this.child(
-                        div()
-                            .py_8()
-                            .text_sm()
-                            .text_color(theme.muted_foreground)
-                            .text_center()
-                            .child("Fetching theme registry..."),
-                    )
-                })
-                .when(!refreshing && registry.is_empty() && orphaned.is_empty(), |this| {
-                    this.child(
-                        div()
-                            .py_8()
-                            .text_sm()
-                            .text_color(theme.muted_foreground)
-                            .text_center()
-                            .child("No themes found. Refresh to try the registry again."),
-                    )
-                })
-                .children(registry.iter().map(|entry| {
-                    let is_installed = installed.contains(&entry.file);
-                    theme_row(
-                        &entry.file,
-                        &entry.name,
-                        &entry.author,
-                        entry.variants.len(),
-                        is_installed,
-                        cx,
-                    )
-                }))
-                .when(!orphaned.is_empty(), |this| {
-                    this.child(
-                        div()
-                            .mt_2()
-                            .text_xs()
-                            .text_color(theme.muted_foreground)
-                            .child("Installed, no longer in a registry"),
-                    )
-                    .children(orphaned.iter().map(|record| {
-                        theme_row(&record.file, &record.name, "", 0, true, cx)
-                    }))
-                }),
-        )
-}
-
-fn theme_row(
-    file: &str,
-    name: &str,
-    author: &str,
-    variants: usize,
-    installed: bool,
-    cx: &mut Context<EntryScreen>,
-) -> impl IntoElement {
-    let theme = cx.theme().clone();
-    let (install_file, remove_file) = (file.to_string(), file.to_string());
-    let detail = match (author.is_empty(), variants) {
-        (true, 0) => String::new(),
-        (true, n) => format!("{n} variants"),
-        (false, 0) => format!("by {author}"),
-        (false, n) => format!("by {author} · {n} variants"),
-    };
-    h_flex()
-        .id(SharedString::from(format!("theme-row-{file}")))
-        .w_full()
-        .p_3()
-        .gap_3()
-        .items_center()
-        .rounded_lg()
-        .bg(theme.secondary.opacity(0.12))
-        .border_1()
-        .border_color(if installed {
-            theme.success_foreground.opacity(0.3)
-        } else {
-            theme.border
-        })
-        .child(
-            Icon::new(IconName::Palette)
-                .size_5()
-                .text_color(theme.muted_foreground),
-        )
-        .child(
-            v_flex()
-                .flex_1()
-                .min_w_0()
-                .child(
-                    div()
-                        .text_sm()
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .text_color(theme.foreground)
-                        .truncate()
-                        .child(name.to_string()),
-                )
-                .when(!detail.is_empty(), |this| {
-                    this.child(
-                        div()
-                            .text_xs()
-                            .text_color(theme.muted_foreground)
-                            .child(detail),
-                    )
-                }),
-        )
-        .child(if installed {
-            h_flex()
-                .gap_1()
-                .items_center()
-                .child(
-                    div()
-                        .px_2()
-                        .py(px(2.))
-                        .rounded_full()
-                        .bg(theme.success_foreground.opacity(0.15))
-                        .text_xs()
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .text_color(theme.success_foreground)
-                        .child("Installed"),
-                )
-                .child(
-                    Button::new(SharedString::from(format!("remove-theme-{file}")))
-                        .icon(IconName::Trash)
-                        .compact()
-                        .ghost()
-                        .tooltip("Remove theme")
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            this.remove_installed_theme(&remove_file, cx)
-                        })),
-                )
-                .into_any_element()
-        } else {
-            Button::new(SharedString::from(format!("install-theme-{file}")))
-                .primary()
-                .label("Install")
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    this.install_registry_theme(&install_file, cx)
-                }))
-                .into_any_element()
-        })
+        .child(render_registry_panel(screen, RegistryKind::Themes, cx))
 }

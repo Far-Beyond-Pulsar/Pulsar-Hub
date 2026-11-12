@@ -106,6 +106,14 @@ pub struct EntryScreen {
     pub(crate) release_list: Option<
         gpui::Entity<ui::list::List<crate::screen::views::release_list::ReleaseListDelegate>>,
     >,
+    /// The plugin registry's list and the theme registry's: one component,
+    /// virtualized, searchable (`component::registry_list`).
+    pub(crate) plugin_list: gpui::Entity<
+        ui::list::List<crate::component::registry_list::RegistryListDelegate>,
+    >,
+    pub(crate) theme_list: gpui::Entity<
+        ui::list::List<crate::component::registry_list::RegistryListDelegate>,
+    >,
     /// Channel-selection dropdown content (multi-select checkboxes).
     pub(crate) channel_menu:
         Option<gpui::Entity<crate::screen::views::channel_menu::ChannelMenuView>>,
@@ -122,6 +130,24 @@ impl EntryScreen {
                 crate::screen::views::release_list::ReleaseListDelegate::new(release_delegate_weak);
             ui::list::List::new(delegate, window, cx).no_query()
         });
+        let registry_list = |kind, window: &mut Window, cx: &mut Context<Self>| {
+            let screen = self_entity.downgrade();
+            cx.new(|cx| {
+                let delegate =
+                    crate::component::registry_list::RegistryListDelegate::new(screen, kind);
+                ui::list::List::new(delegate, window, cx)
+            })
+        };
+        let plugin_list = registry_list(
+            crate::component::registry_list::RegistryKind::Plugins,
+            window,
+            cx,
+        );
+        let theme_list = registry_list(
+            crate::component::registry_list::RegistryKind::Themes,
+            window,
+            cx,
+        );
         let channel_menu = Some(cx.new(|cx| {
             crate::screen::views::channel_menu::ChannelMenuView::new(self_entity.downgrade(), cx)
         }));
@@ -168,6 +194,8 @@ impl EntryScreen {
             state,
             inputs,
             release_list: Some(release_list),
+            plugin_list,
+            theme_list,
             channel_menu,
         };
         this.state.git_auto_fetch_task = Some(Self::start_git_auto_fetch_task(cx));

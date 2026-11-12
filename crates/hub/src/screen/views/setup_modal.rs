@@ -13,6 +13,7 @@ use ui::{
 use wgpui_motion::prelude::{MotionExt as _, MotionToken, Transition};
 
 use crate::EntryScreen;
+use crate::component::registry_list::{RegistryKind, render_registry_panel};
 use crate::core::types::SetupPage;
 
 pub fn render_setup_modal(
@@ -59,13 +60,7 @@ pub fn render_setup_modal(
         SetupPage::Plugins => div()
             .flex_1()
             .min_h_0()
-            .overflow_hidden()
-            .border_1()
-            .border_color(theme.border)
-            .rounded_lg()
-            .child(crate::screen::views::onboarding::render_plugin_content(
-                screen, cx,
-            ))
+            .child(render_registry_panel(screen, RegistryKind::Plugins, cx))
             .into_any_element(),
     };
 

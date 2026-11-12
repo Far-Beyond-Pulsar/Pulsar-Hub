@@ -3,6 +3,7 @@ pub mod gh_device_modal;
 pub mod modal;
 pub mod plugin_card;
 pub mod progress_bar;
+pub mod registry_list;
 pub mod status_item;
 
 pub use card_grid::*;

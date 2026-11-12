@@ -82,7 +82,6 @@ pub struct InputEntities {
     pub add_server_password: Entity<ui::input::InputState>,
     pub create_project_name: Entity<ui::input::InputState>,
     pub create_project_description: Entity<ui::input::InputState>,
-    pub plugin_search: Entity<ui::input::InputState>,
     pub project_search: Entity<ui::input::InputState>,
 }
 
@@ -112,9 +111,6 @@ impl InputEntities {
                 .new(|cx| ui::input::InputState::new(window, cx).placeholder("My Awesome Game")),
             create_project_description: cx.new(|cx| {
                 ui::input::InputState::new(window, cx).placeholder("Optional project description")
-            }),
-            plugin_search: cx.new(|cx| {
-                ui::input::InputState::new(window, cx).placeholder("Search plugins\u{2026}")
             }),
             project_search: cx.new(|cx| {
                 ui::input::InputState::new(window, cx).placeholder("Search projects\u{2026}")
@@ -269,20 +265,6 @@ impl InputEntities {
             },
         )
         .detach();
-        let s10 = screen.clone();
-        cx.subscribe(
-            &self.plugin_search,
-            move |_: Entity<ui::input::InputState>, ev: &InputEvent, cx: &mut App| {
-                if let InputEvent::Change = ev {
-                    let _ = s10.update(cx, |this, cx| {
-                        this.state.input.plugin_search_query =
-                            this.inputs().plugin_search.read(cx).text().to_string();
-                        cx.notify();
-                    });
-                }
-            },
-        )
-        .detach();
         let s11 = screen.clone();
         cx.subscribe(
             &self.project_search,
@@ -312,7 +294,6 @@ pub struct InputValues {
     pub add_server_password_text: String,
     pub create_project_name_text: String,
     pub create_project_description_text: String,
-    pub plugin_search_query: String,
     pub project_search_query: String,
 }
 
@@ -329,7 +310,6 @@ impl InputValues {
             add_server_password_text: String::new(),
             create_project_name_text: String::new(),
             create_project_description_text: String::new(),
-            plugin_search_query: String::new(),
             project_search_query: String::new(),
         }
     }
