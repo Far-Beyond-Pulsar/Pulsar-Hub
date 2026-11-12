@@ -130,8 +130,6 @@ impl EntryScreen {
         // (`ui_git_manager`); the dropdown lists it through `ui_shell`.
 
 
-        let status = DependencyService::check();
-        state.dependency_status = Some(status);
 
         for proj in &state.recent_projects.projects {
             state.project_thumbnail_queue.push_back(proj.path.clone());
@@ -196,9 +194,35 @@ impl EntryScreen {
         .detach();
     }
 
+    /// Check Rust and the build tools in the background: the check runs
+    /// `rustc` and links a test program, which the UI thread must not wait for.
     pub(crate) fn check_dependencies_async(&mut self, cx: &mut Context<Self>) {
-        // TODO: async spawn
-        self.state.dependency_status = Some(DependencyService::check());
+        if self.state.dependency_checking {
+            return;
+        }
+        self.state.dependency_checking = true;
+        cx.notify();
+        cx.spawn(async move |entity, cx| {
+            let status = cx
+                .background_executor()
+                .spawn(async { DependencyService::check() })
+                .await;
+            let _ = cx.update(|cx| {
+                entity.update(cx, |this, cx| {
+                    this.state.dependency_status = Some(status);
+                    this.state.dependency_checking = false;
+                    cx.notify();
+                })
+            });
+        })
+        .detach();
+    }
+
+    /// Open the build tools dialog and check.
+    pub(crate) fn open_dependency_dialog(&mut self, cx: &mut Context<Self>) {
+        self.state.ui.show_dependency_setup = true;
+        self.state.install_progress = None;
+        self.check_dependencies_async(cx);
         cx.notify();
     }
 
@@ -2027,52 +2051,54 @@ impl EntryScreen {
             .unwrap_or_default();
     }
 
+    /// Install or repair Rust (never removes an existing install), then check again.
     pub(crate) fn start_dependency_setup(&mut self, cx: &mut Context<Self>) {
-        self.state.ui.show_dependency_setup = true;
+        if self.state.install_progress.as_ref().is_some_and(|p| {
+            matches!(p.status, InstallStatus::Downloading | InstallStatus::Installing)
+        }) {
+            return;
+        }
         let progress = Arc::new(std::sync::Mutex::new(InstallProgress {
             logs: Vec::new(),
             progress: 0.0,
-            status: InstallStatus::Idle,
-        }));
-        self.state.install_progress = Some(InstallProgress {
-            logs: Vec::new(),
-            progress: 0.0,
             status: InstallStatus::Downloading,
-        });
+        }));
+        self.state.install_progress = Some(progress.lock().unwrap().clone());
         cx.notify();
-        let p = progress.clone();
-        cx.spawn(async move |entity, cx| {
-            let pp = p.clone();
-            let result = cx
-                .background_executor()
-                .spawn(async move { DependencyService::install_rust(pp) })
-                .await;
-            match result {
-                Ok(()) => {
-                    let mut prog = p.lock().unwrap();
-                    prog.status = InstallStatus::Complete;
-                    prog.progress = 1.0;
-                    let prog2 = prog.clone();
-                    let status = DependencyService::check();
-                    let _ = cx.update(|cx| {
-                        entity.update(cx, |this, cx| {
-                            this.state.install_progress = Some(prog2);
-                            this.state.dependency_status = Some(status);
-                            cx.notify();
-                        })
-                    });
-                }
-                _ => {
-                    let prog = p.lock().unwrap();
-                    let prog2 = prog.clone();
-                    let _ = cx.update(|cx| {
-                        entity.update(cx, |this, cx| {
-                            this.state.install_progress = Some(prog2);
-                            cx.notify();
-                        })
-                    });
-                }
+        let finished = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let (worker_progress, worker_finished) = (progress.clone(), finished.clone());
+        let work = cx.background_executor().spawn(async move {
+            let result = DependencyService::install_rust(worker_progress.clone());
+            if let Err(message) = &result {
+                let mut p = worker_progress.lock().unwrap();
+                p.logs.push(message.clone());
+                p.status = InstallStatus::Error(message.clone());
             }
+            worker_finished.store(true, std::sync::atomic::Ordering::SeqCst);
+        });
+        cx.spawn(async move |entity, cx| {
+            // Mirror the worker's progress into the dialog while it runs.
+            while !finished.load(std::sync::atomic::Ordering::SeqCst) {
+                cx.background_executor()
+                    .timer(std::time::Duration::from_millis(150))
+                    .await;
+                let snapshot = progress.lock().unwrap().clone();
+                let _ = cx.update(|cx| {
+                    entity.update(cx, |this, cx| {
+                        this.state.install_progress = Some(snapshot);
+                        cx.notify();
+                    })
+                });
+            }
+            work.await;
+            let snapshot = progress.lock().unwrap().clone();
+            let _ = cx.update(|cx| {
+                entity.update(cx, |this, cx| {
+                    this.state.install_progress = Some(snapshot);
+                    this.state.dependency_checking = false;
+                    this.check_dependencies_async(cx);
+                })
+            });
         })
         .detach();
     }

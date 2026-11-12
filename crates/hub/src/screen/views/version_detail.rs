@@ -43,8 +43,13 @@ pub fn render_version_detail(
     let launch_path = detail.path.clone();
     let launch_version = detail.version.clone();
 
+    // `flex_1` + `min_h_0`, not `size_full`: this sits under the title bar, and
+    // 100% of the parent's height would run a title bar's height past the
+    // window, cutting the bottom of every scroll area below.
     v_flex()
-        .size_full()
+        .flex_1()
+        .min_h_0()
+        .w_full()
         .px_8()
         .pt_6()
         .pb_4()

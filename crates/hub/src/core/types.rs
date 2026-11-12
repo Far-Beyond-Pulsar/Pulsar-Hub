@@ -244,11 +244,31 @@ impl Default for CloudServer {
 
 // ── Dependency Status ─────────────────────────────────────────────────────
 
-#[derive(Clone, Debug)]
+/// What the Hub found when it checked for Rust and the C/C++ build tools.
+#[derive(Clone, Debug, Default)]
 pub struct DependencyStatus {
+    /// `rustc` ran.
     pub rust_installed: bool,
+    /// A test program built and linked (or, with no working rustc to ask,
+    /// the platform's toolchain was found).
     pub build_tools_installed: bool,
+    /// What the toolchain is, for display ("Visual Studio Build Tools 2022 (MSVC 14.44)").
     pub compiler_info: Option<String>,
+    pub rust_version: Option<String>,
+    /// The toolchain rustup says is active ("stable-aarch64-pc-windows-msvc").
+    pub toolchain: Option<String>,
+    pub host_triple: Option<String>,
+    pub rustup_installed: bool,
+    /// rustup is there but no default toolchain works: repair, not reinstall.
+    pub needs_default_toolchain: bool,
+    /// One line on the Rust install, whether it is fine or not.
+    pub rust_note: Option<String>,
+    /// Why the test program did not link.
+    pub build_tools_problem: Option<String>,
+    /// What to install, for this platform, when the build tools are missing.
+    pub build_tools_hint: Option<String>,
+    /// The test program built and linked with the Rust that was found.
+    pub link_verified: bool,
 }
 
 #[derive(Clone, Debug)]

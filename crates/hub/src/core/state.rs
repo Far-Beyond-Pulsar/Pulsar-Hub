@@ -425,6 +425,8 @@ pub struct AppState {
     pub registries_path: PathBuf,
 
     pub dependency_status: Option<DependencyStatus>,
+    /// A dependency check is running (it builds a test program).
+    pub dependency_checking: bool,
     pub install_progress: Option<InstallProgress>,
 
     pub project_thumbnails: HashMap<String, Option<Arc<RenderImage>>>,
@@ -550,6 +552,7 @@ impl AppState {
             plugin_target,
             registries_path,
             dependency_status: None,
+            dependency_checking: false,
             install_progress: None,
             project_thumbnails: HashMap::new(),
             project_thumbnail_inflight: 0,

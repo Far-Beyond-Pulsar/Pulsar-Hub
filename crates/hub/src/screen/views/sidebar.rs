@@ -444,9 +444,7 @@ pub fn render_sidebar(screen: &mut EntryScreen, cx: &mut Context<EntryScreen>) -
                         )
                         .child(div().text_sm().text_color(muted_fg).child("Dependencies"))
                         .on_click(cx.listener(|this, _, _, cx| {
-                            this.check_dependencies_async(cx);
-                            this.state.ui.show_dependency_setup = true;
-                            cx.notify();
+                            this.open_dependency_dialog(cx);
                         })),
                 )
                 .child(

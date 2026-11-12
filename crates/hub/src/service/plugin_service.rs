@@ -28,6 +28,49 @@ fn native_plugin_ext() -> &'static str {
 
 pub struct PluginService;
 
+/// The release asset to install on this platform. Plugin releases publish one
+/// library per platform, named `<crate>-<os>-<arch>.<ext>` (`...-windows-arm64.dll`),
+/// beside a `.sha256` file and a `-package.zip`. Choosing the first `.dll` (as
+/// this once did) installs another architecture's library. A release whose
+/// libraries carry no platform in their names is taken as it is, if it has
+/// exactly one.
+pub(crate) fn pick_plugin_asset(
+    assets: &[(String, String)],
+    os: &str,
+    arch: &str,
+    ext: &str,
+) -> Option<String> {
+    let os = match os {
+        "macos" => "macos",
+        "windows" => "windows",
+        _ => "linux",
+    };
+    let arch = match arch {
+        "aarch64" | "arm64" => "arm64",
+        "x86_64" | "amd64" => "x86_64",
+        other => other,
+    };
+    let suffix = format!("-{os}-{arch}.{ext}");
+    let libraries: Vec<&(String, String)> = assets
+        .iter()
+        .filter(|(name, _)| name.ends_with(&format!(".{ext}")))
+        .collect();
+    if let Some((_, url)) = libraries
+        .iter()
+        .find(|(name, _)| name.to_lowercase().ends_with(&suffix))
+    {
+        return Some(url.clone());
+    }
+    let names_a_platform = libraries.iter().any(|(name, _)| {
+        let name = name.to_lowercase();
+        ["-windows-", "-linux-", "-macos-"].iter().any(|p| name.contains(p))
+    });
+    match libraries.as_slice() {
+        [(_, url)] if !names_a_platform => Some(url.clone()),
+        _ => None,
+    }
+}
+
 /// The Hub's view of what an install's plugin lock lists.
 pub fn installed_plugins_of(layout: &pulsar_install_layout::InstallLayout) -> Vec<InstalledPlugin> {
     let dir = layout.plugins_dir();
@@ -218,20 +261,27 @@ impl PluginService {
             .and_then(|v| v.as_str())
             .unwrap_or("unknown")
             .to_string();
-        let ext = native_plugin_ext();
-        let binary_url = latest
+        let assets: Vec<(String, String)> = latest
             .get("assets")
             .and_then(|a| a.as_array())
-            .and_then(|assets| {
-                assets.iter().find(|a| {
-                    a.get("name")
-                        .and_then(|n| n.as_str())
-                        .map(|n| n.ends_with(ext))
-                        .unwrap_or(false)
-                })
+            .map(|assets| {
+                assets
+                    .iter()
+                    .filter_map(|a| {
+                        Some((
+                            a.get("name")?.as_str()?.to_string(),
+                            a.get("browser_download_url")?.as_str()?.to_string(),
+                        ))
+                    })
+                    .collect()
             })
-            .and_then(|a| a.get("browser_download_url").and_then(|v| v.as_str()))
-            .map(String::from);
+            .unwrap_or_default();
+        let binary_url = pick_plugin_asset(
+            &assets,
+            std::env::consts::OS,
+            std::env::consts::ARCH,
+            native_plugin_ext(),
+        );
         Ok(Some((tag, binary_url)))
     }
 
@@ -298,6 +348,7 @@ impl PluginService {
             resume: true,
         };
         crate::service::download::stream_to_file(&client, url, &dest, &options)?;
+        verify_published_sha256(&client, url, &dest)?;
         Ok(dest.to_string_lossy().to_string())
     }
 
@@ -368,5 +419,94 @@ impl PluginService {
         let _ = std::fs::remove_dir_all(&tmp);
         logs.push(format!("Installed to {}", dest.display()));
         Ok((dest.to_string_lossy().to_string(), logs))
+    }
+}
+
+/// Check a downloaded library against the `<url>.sha256` the release publishes,
+/// deleting it on a mismatch. A release with no checksum file is accepted:
+/// the engine's own integrity manifest still pins the file afterwards.
+fn verify_published_sha256(
+    client: &reqwest::blocking::Client,
+    url: &str,
+    file: &Path,
+) -> Result<(), String> {
+    let Ok(response) = client.get(format!("{url}.sha256")).send() else {
+        return Ok(());
+    };
+    if !response.status().is_success() {
+        return Ok(());
+    }
+    let Some(expected) = response
+        .text()
+        .ok()
+        .and_then(|text| text.split_whitespace().next().map(str::to_lowercase))
+        .filter(|hash| hash.len() == 64 && hash.bytes().all(|b| b.is_ascii_hexdigit()))
+    else {
+        return Ok(());
+    };
+    let actual = pulsar_install_layout::hash_file(file).map_err(|e| e.to_string())?;
+    if actual != expected {
+        let _ = std::fs::remove_file(file);
+        return Err(format!(
+            "The downloaded plugin does not match its published SHA-256 (expected {expected}, \
+             got {actual}); it was deleted."
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod asset_tests {
+    use super::pick_plugin_asset;
+
+    fn assets(names: &[&str]) -> Vec<(String, String)> {
+        names
+            .iter()
+            .map(|n| (n.to_string(), format!("https://example.test/{n}")))
+            .collect()
+    }
+
+    #[test]
+    fn the_library_for_this_os_and_architecture_is_chosen() {
+        let release = assets(&[
+            "p-linux-x86_64.so",
+            "p-linux-x86_64.so.sha256",
+            "p-windows-x86_64-package.zip",
+            "p-windows-x86_64.dll",
+            "p-windows-arm64.dll",
+            "p-windows-arm64.dll.sha256",
+            "p.h",
+        ]);
+        assert_eq!(
+            pick_plugin_asset(&release, "windows", "aarch64", "dll").as_deref(),
+            Some("https://example.test/p-windows-arm64.dll")
+        );
+        assert_eq!(
+            pick_plugin_asset(&release, "windows", "x86_64", "dll").as_deref(),
+            Some("https://example.test/p-windows-x86_64.dll")
+        );
+        assert_eq!(
+            pick_plugin_asset(&release, "linux", "x86_64", "so").as_deref(),
+            Some("https://example.test/p-linux-x86_64.so")
+        );
+    }
+
+    #[test]
+    fn another_architectures_library_is_never_taken() {
+        let release = assets(&["p-windows-x86_64.dll", "p-linux-x86_64.so"]);
+        assert_eq!(pick_plugin_asset(&release, "windows", "aarch64", "dll"), None);
+        assert_eq!(pick_plugin_asset(&release, "macos", "aarch64", "dylib"), None);
+    }
+
+    #[test]
+    fn an_unlabelled_single_library_is_taken_as_it_is() {
+        assert_eq!(
+            pick_plugin_asset(&assets(&["my_plugin.dll"]), "windows", "aarch64", "dll").as_deref(),
+            Some("https://example.test/my_plugin.dll")
+        );
+        assert_eq!(
+            pick_plugin_asset(&assets(&["a.dll", "b.dll"]), "windows", "x86_64", "dll"),
+            None
+        );
     }
 }

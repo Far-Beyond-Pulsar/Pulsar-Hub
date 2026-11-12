@@ -31,7 +31,9 @@ fn render_installed_grid(
     let installed = screen.state.versions.installed.clone();
 
     v_flex()
-        .size_full()
+        .flex_1()
+        .min_h_0()
+        .w_full()
         .px_8()
         .pt_6()
         .pb_6()
