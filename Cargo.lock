@@ -5720,7 +5720,7 @@ dependencies = [
 
 [[package]]
 name = "pulsar-installer"
-version = "0.5.1"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "bsdiff",
