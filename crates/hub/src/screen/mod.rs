@@ -209,8 +209,17 @@ impl EntryScreen {
                 .await;
             let _ = cx.update(|cx| {
                 entity.update(cx, |this, cx| {
+                    let all_ready = status.rust_installed && status.build_tools_installed;
                     this.state.dependency_status = Some(status);
                     this.state.dependency_checking = false;
+                    // Everything is there, found or just installed: celebrate once
+                    // per time the dialog is open.
+                    if all_ready
+                        && this.state.ui.show_dependency_setup
+                        && !this.state.confetti_played
+                    {
+                        this.play_confetti(cx);
+                    }
                     cx.notify();
                 })
             });
@@ -222,8 +231,39 @@ impl EntryScreen {
     pub(crate) fn open_dependency_dialog(&mut self, cx: &mut Context<Self>) {
         self.state.ui.show_dependency_setup = true;
         self.state.install_progress = None;
+        self.state.confetti_played = false;
+        self.state.confetti_started = None;
         self.check_dependencies_async(cx);
         cx.notify();
+    }
+
+    /// Play the confetti: redraw every frame for its duration.
+    pub(crate) fn play_confetti(&mut self, cx: &mut Context<Self>) {
+        self.state.confetti_played = true;
+        self.state.confetti_started = Some(std::time::Instant::now());
+        cx.notify();
+        cx.spawn(async move |entity, cx| {
+            let duration = std::time::Duration::from_secs_f32(
+                crate::screen::views::confetti::DURATION_SECS,
+            );
+            let started = std::time::Instant::now();
+            while started.elapsed() < duration {
+                cx.background_executor()
+                    .timer(std::time::Duration::from_millis(16))
+                    .await;
+                let alive = cx.update(|cx| entity.update(cx, |_, cx| cx.notify()).is_ok());
+                if !alive {
+                    return;
+                }
+            }
+            let _ = cx.update(|cx| {
+                entity.update(cx, |this, cx| {
+                    this.state.confetti_started = None;
+                    cx.notify();
+                })
+            });
+        })
+        .detach();
     }
 
     fn start_git_auto_fetch_task(cx: &mut Context<Self>) -> Task<()> {

@@ -57,6 +57,18 @@ impl DependencyService {
 
         // ── Rust ──
         let mut rust_problem: Option<String> = None;
+        if let Some(rustup) = &rustup {
+            status.rust_details.push(("rustup".into(), path_and_version(rustup, "--version")));
+        }
+        if let Some(rustc) = &rustc {
+            status.rust_details.push(("rustc".into(), rustc.display().to_string()));
+        }
+        if let Some(cargo) = find_tool("cargo") {
+            status.rust_details.push(("cargo".into(), path_and_version(&cargo, "--version")));
+        }
+        if let Some(home) = cargo_bin_dir().and_then(|bin| bin.parent().map(Path::to_path_buf)) {
+            status.rust_details.push(("CARGO_HOME".into(), home.display().to_string()));
+        }
         if let Some(rustc) = &rustc {
             match run(rustc, &["-vV"], &scratch, Duration::from_secs(30)) {
                 Some(out) if out.ok => {
@@ -64,6 +76,16 @@ impl DependencyService {
                         status.rust_installed = true;
                         status.rust_version = Some(info.release.clone());
                         status.host_triple = info.host.clone();
+                        status.rust_details.insert(
+                            0,
+                            ("Version".into(), format!("rustc {}", info.release)),
+                        );
+                        if let Some(host) = &info.host {
+                            status.rust_details.insert(1, ("Host".into(), host.clone()));
+                        }
+                        if let Some(toolchain) = &status.toolchain {
+                            status.rust_details.insert(2, ("Toolchain".into(), toolchain.clone()));
+                        }
                         status.rust_note = Some(format!(
                             "rustc {}{}{}",
                             info.release,
@@ -106,11 +128,41 @@ impl DependencyService {
             });
         }
 
+        if let Some(rustup) = &rustup {
+            let listed = run(rustup, &["toolchain", "list"], &scratch, Duration::from_secs(20))
+                .filter(|out| out.ok)
+                .map(|out| {
+                    out.stdout
+                        .lines()
+                        .map(str::trim)
+                        .filter(|line| !line.is_empty())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                })
+                .filter(|list| !list.is_empty());
+            if let Some(list) = listed {
+                status.rust_details.push(("Installed toolchains".into(), list));
+            }
+        }
+
         // ── Build tools ──
         let host = status.host_triple.clone();
-        let label = platform_toolchain_label(host.as_deref());
+        let (label, platform_details) = platform_toolchain(host.as_deref());
+        status.tools_details = platform_details;
         match (&rustc, status.rust_installed) {
-            (Some(rustc), true) => match link_test(rustc) {
+            (Some(rustc), true) => match {
+                let started = Instant::now();
+                let result = link_test(rustc);
+                status.tools_details.push((
+                    "Test program".into(),
+                    format!(
+                        "{} in {:.1} s",
+                        if result.is_ok() { "built and linked" } else { "failed to build" },
+                        started.elapsed().as_secs_f32()
+                    ),
+                ));
+                result
+            } {
                 Ok(()) => {
                     status.build_tools_installed = true;
                     status.link_verified = true;
@@ -425,32 +477,72 @@ fn link_test(rustc: &Path) -> Result<(), String> {
 
 // ── Build tools ───────────────────────────────────────────────────────────
 
-/// What toolchain this machine appears to have, for display. Not the test of
-/// whether it works: that is [`link_test`].
-fn platform_toolchain_label(host: Option<&str>) -> Option<String> {
+/// What toolchain this machine appears to have, for display, with the facts
+/// behind it. Not the test of whether it works: that is [`link_test`].
+fn platform_toolchain(host: Option<&str>) -> (Option<String>, Vec<(String, String)>) {
+    let mut details = Vec::new();
     if cfg!(windows) {
         if host.is_some_and(|host| host.ends_with("-gnu")) {
-            return which_version("gcc", &["--version"]).map(|v| format!("MinGW-w64 {v}"));
+            let version = which_version("gcc", &["--version"]);
+            if let Some(gcc) = find_tool("gcc") {
+                details.push(("gcc".into(), gcc.display().to_string()));
+            }
+            return (version.map(|v| format!("MinGW-w64 {v}")), details);
         }
-        return visual_studio(host).map(|vs| match vs.msvc {
-            Some(msvc) => format!("{} (MSVC {msvc})", vs.name),
-            None => vs.name,
-        });
+        return match visual_studio(host) {
+            Some(vs) => {
+                details.push(("Installed at".into(), vs.path.clone()));
+                if let Some(msvc) = &vs.msvc {
+                    details.push(("MSVC tools".into(), msvc.clone()));
+                }
+                (
+                    Some(match &vs.msvc {
+                        Some(msvc) => format!("{} (MSVC {msvc})", vs.name),
+                        None => vs.name.clone(),
+                    }),
+                    details,
+                )
+            }
+            None => (None, details),
+        };
     }
     if cfg!(target_os = "macos") {
-        let out = run(
+        let found = run(
             Path::new("/usr/bin/xcode-select"),
             &["-p"],
             &std::env::temp_dir(),
             Duration::from_secs(10),
-        )?;
-        return (out.ok && !out.stdout.trim().is_empty())
-            .then(|| format!("Xcode command line tools ({})", out.stdout.trim()));
+        )
+        .filter(|out| out.ok && !out.stdout.trim().is_empty());
+        return match found {
+            Some(out) => {
+                details.push(("Developer directory".into(), out.stdout.trim().to_string()));
+                (Some("Xcode command line tools".to_string()), details)
+            }
+            None => (None, details),
+        };
     }
     // Linux and others: rustc links through `cc` by default.
-    ["cc", "gcc", "clang"]
-        .iter()
-        .find_map(|tool| which_version(tool, &["--version"]).map(|v| format!("{tool} {v}")))
+    for tool in ["cc", "gcc", "clang"] {
+        if let Some(version) = which_version(tool, &["--version"]) {
+            if let Some(path) = find_tool(tool) {
+                details.push((tool.to_string(), path.display().to_string()));
+            }
+            return (Some(format!("{tool} {version}")), details);
+        }
+    }
+    (None, details)
+}
+
+/// `path` and the first line of `path <flag>`.
+fn path_and_version(path: &Path, flag: &str) -> String {
+    match run(path, &[flag], &std::env::temp_dir(), Duration::from_secs(15))
+        .filter(|out| out.ok)
+        .map(|out| first_line(&out.stdout))
+    {
+        Some(version) => format!("{version}  ({})", path.display()),
+        None => path.display().to_string(),
+    }
 }
 
 fn which_version(tool: &str, args: &[&str]) -> Option<String> {
@@ -461,6 +553,7 @@ fn which_version(tool: &str, args: &[&str]) -> Option<String> {
 
 struct VisualStudio {
     name: String,
+    path: String,
     msvc: Option<String>,
 }
 
@@ -502,7 +595,7 @@ fn visual_studio(host: Option<&str>) -> Option<VisualStudio> {
                 .map(|entry| entry.file_name().to_string_lossy().into_owned())
                 .max()
         });
-    Some(VisualStudio { name, msvc })
+    Some(VisualStudio { name, path, msvc })
 }
 
 #[cfg(not(windows))]

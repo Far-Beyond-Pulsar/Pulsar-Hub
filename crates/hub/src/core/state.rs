@@ -427,6 +427,10 @@ pub struct AppState {
     pub dependency_status: Option<DependencyStatus>,
     /// A dependency check is running (it builds a test program).
     pub dependency_checking: bool,
+    /// When the build tools dialog's confetti started, while it is playing.
+    pub confetti_started: Option<std::time::Instant>,
+    /// Confetti already played since the dialog opened.
+    pub confetti_played: bool,
     pub install_progress: Option<InstallProgress>,
 
     pub project_thumbnails: HashMap<String, Option<Arc<RenderImage>>>,
@@ -553,6 +557,8 @@ impl AppState {
             registries_path,
             dependency_status: None,
             dependency_checking: false,
+            confetti_started: None,
+            confetti_played: false,
             install_progress: None,
             project_thumbnails: HashMap::new(),
             project_thumbnail_inflight: 0,

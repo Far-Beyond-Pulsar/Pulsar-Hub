@@ -1,4 +1,5 @@
 pub mod channel_menu;
+pub mod confetti;
 pub mod clone_git;
 pub mod cloud_intro_modal;
 pub mod cloud_projects;

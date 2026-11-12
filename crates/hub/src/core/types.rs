@@ -269,6 +269,10 @@ pub struct DependencyStatus {
     pub build_tools_hint: Option<String>,
     /// The test program built and linked with the Rust that was found.
     pub link_verified: bool,
+    /// What was found, label and value, for the Rust row (paths, versions, toolchains).
+    pub rust_details: Vec<(String, String)>,
+    /// The same for the build tools row (install path, compiler version, how long the test took).
+    pub tools_details: Vec<(String, String)>,
 }
 
 #[derive(Clone, Debug)]

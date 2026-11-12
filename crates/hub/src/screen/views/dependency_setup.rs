@@ -20,7 +20,7 @@ use crate::screen::EntryScreen;
 
 pub fn render_dependency_setup(
     screen: &mut EntryScreen,
-    _window: &mut Window,
+    window: &mut Window,
     cx: &mut Context<EntryScreen>,
 ) -> impl IntoElement {
     let theme = cx.theme().clone();
@@ -57,6 +57,7 @@ pub fn render_dependency_setup(
         },
         status.as_ref().and_then(|s| s.rust_note.clone()),
         None,
+        status.as_ref().map(|s| s.rust_details.clone()).unwrap_or_default(),
         &theme,
     );
     let tools_hint = status
@@ -83,6 +84,7 @@ pub fn render_dependency_setup(
             })
         }),
         tools_hint,
+        status.as_ref().map(|s| s.tools_details.clone()).unwrap_or_default(),
         &theme,
     );
 
@@ -264,6 +266,10 @@ pub fn render_dependency_setup(
                         ),
                 ),
         )
+        .child(crate::screen::views::confetti::render_confetti(
+            screen.state.confetti_started,
+            window,
+        ))
 }
 
 enum Mark {
@@ -277,6 +283,7 @@ fn row(
     mark: Mark,
     detail: Option<String>,
     hint: Option<String>,
+    details: Vec<(String, String)>,
     theme: &ui::Theme,
 ) -> impl IntoElement {
     let (icon, color): (AnyElement, Hsla) = match mark {
@@ -328,6 +335,36 @@ fn row(
                         }),
                 ),
         )
+        .when(!details.is_empty(), |this| {
+            this.child(
+                v_flex()
+                    .gap_1()
+                    .pt_2()
+                    .border_t_1()
+                    .border_color(theme.border)
+                    .children(details.into_iter().map(|(label, value)| {
+                        h_flex()
+                            .gap_3()
+                            .items_start()
+                            .child(
+                                div()
+                                    .w(px(120.))
+                                    .flex_shrink_0()
+                                    .text_xs()
+                                    .text_color(theme.muted_foreground)
+                                    .child(label),
+                            )
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .text_xs()
+                                    .text_color(theme.foreground)
+                                    .child(value),
+                            )
+                    })),
+            )
+        })
         .when_some(hint, |this, hint| {
             this.child(
                 div()
